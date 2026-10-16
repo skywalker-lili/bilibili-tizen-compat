@@ -15,6 +15,30 @@
 
 当前是**源码与真机测试阶段**：55 吋 Q90T、固件 2743 上已完成人工测试。其他机型、其他地区及较新固件仍需反馈；「满足最低 Tizen 版本」不代表「全部功能已验证」。
 
+## 实际运行画面
+
+以下为 Q90T 真机实拍。公开版本只移除了照片文件内的元数据，画面像素未修改。
+
+![bilibili Tizen 兼容版主界面](docs/screenshots/01-home.jpg)
+
+*主界面。*
+
+![视频播放页面](docs/screenshots/02-player.jpg)
+
+*视频播放页面。*
+
+![边看视频边阅读评论](docs/screenshots/03-comments.jpg)
+
+*边看视频边阅读评论的页面。*
+
+![视频点赞、投币和收藏操作](docs/screenshots/04-video-actions.jpg)
+
+*对视频点赞的操作页面，也可投币或加入收藏夹。*
+
+![电视应用栏中安装完成的 bilibili 图标](docs/screenshots/05-installed-app.jpg)
+
+*在电视上安装完成后，应用出现在电视的应用栏中。*
+
 ## 什么情况下适合安装
 
 - 你的三星电视是 Tizen 系统，所在地区的应用商店找不到可用的 bilibili 客户端，而你想直接用遥控器浏览和播放。

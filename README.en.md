@@ -15,6 +15,30 @@ The installed TV app is named **Bilibili Tizen 兼容版 / Compatibility**. The 
 
 **Status:** tested by the user on a 55-inch 2020 Samsung Q90T with firmware 2743. Other models and regions have not been tested with this version. See the [Chinese README](README.md) for the full usage guide.
 
+## Screenshots from the tested TV
+
+These are photos of the app running on the Q90T. Only embedded file metadata was removed; the image pixels were left unchanged.
+
+![bilibili Tizen compatibility version home screen](docs/screenshots/01-home.jpg)
+
+*Home screen.*
+
+![Video playback screen](docs/screenshots/02-player.jpg)
+
+*Video playback.*
+
+![Comments beside the playing video](docs/screenshots/03-comments.jpg)
+
+*Reading comments while the video continues playing.*
+
+![Video like, coin, and favorite actions](docs/screenshots/04-video-actions.jpg)
+
+*Video like menu, with coin and favorite actions.*
+
+![Installed bilibili app in the TV app bar](docs/screenshots/05-installed-app.jpg)
+
+*The app in the TV app bar after installation.*
+
 ## Who is this for?
 
 Use it if your Samsung Tizen TV has no usable bilibili app in its regional store and you are willing to enable Developer Mode and sign/install a Tizen Web app for your own TV. It is **not** an Android APK or a USB-stick installation. If an official app is available and works for you, try that first.
