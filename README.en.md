@@ -113,4 +113,6 @@ Starting with **1.0.12**, a read-only **Settings → Account** line shows the st
 
 ## Project and license
 
+Before contributing, run `npm ci --prefix tools` and `npm test --prefix tools`. The test command checks JavaScript syntax and references, upstream account/playback invariants, and this fork's account-backed video actions and remote-control navigation. GitHub Actions runs the same checks on pushes and pull requests. Playback and service behavior still need device testing.
+
 The full [Chinese README](README.md) has a detailed walkthrough and troubleshooting. [BUGS.md](BUGS.md) tracks observed defects; [FEATURES.md](FEATURES.md) tracks requested work. This derivative keeps the upstream [MIT license](LICENSE) and attribution; bundled player licenses are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Credentials are stored on the TV and sent to bilibili for authentication, not to a project server. An optional LAN diagnostic collector receives logs only when you start it on your computer; review logs before sharing them.

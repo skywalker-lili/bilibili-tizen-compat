@@ -159,6 +159,7 @@
 
 - `app/`：Tizen Web APP，`config.xml` 声明最低系统版本；`app/js/` 为客户端逻辑。
 - `tools/`：首次配置、证书、打包安装和诊断脚本；目前自动化流程面向 macOS。
+- 提交改动前运行 `npm ci --prefix tools`、`npm test --prefix tools`；检查包括语法、脚本引用、账号与播放底层验证，以及本兼容版的视频操作接口和遥控器长按/翻页回归测试。GitHub Actions 会在推送和 PR 时执行同一命令。真机播放、登录与接口可用性仍需另行验证。
 - `docs/`：开发过程与平台排查资料，其中部分内容记录的是上游另一台电视的测试，**不能直接当作 Q90T 的实测结论**。
 - [FEATURES.md](FEATURES.md) 与 [BUGS.md](BUGS.md)：需求和缺陷清单。
 

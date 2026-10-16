@@ -104,6 +104,10 @@ node "$ROOT/tools/mpd-verify.mjs" >/dev/null || { echo "  the DASH manifest is m
 # Mirrors are ordered, never dropped. Dropping one played fine for a day and
 # then walled every 1080p video the evening the primary CDN went sour.
 node "$ROOT/tools/mirrors-verify.mjs" >/dev/null || { echo "  mirror ordering is wrong"; exit 1; }
+# The fork's interactive features have their own request/remote-control checks.
+# Keep deployment blocked if account-backed writes or hold navigation regress.
+node "$ROOT/tools/compat-api-verify.mjs" || { echo "  video actions or library API regressed"; exit 1; }
+node "$ROOT/tools/nav-verify.mjs" || { echo "  remote navigation regressed"; exit 1; }
 
 echo "== packaging =="
 cd "$APP"
