@@ -1,4 +1,4 @@
-/* Local verification entry point. Keep this list aligned with deploy.sh's checks. */
+/* Local and public-repository CI entry point. Keep aligned with deploy.sh's checks. */
 import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
