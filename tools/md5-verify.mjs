@@ -10,8 +10,9 @@
 import fs from "fs";
 import vm from "vm";
 import crypto from "crypto";
+import { fileURLToPath } from "url";
 
-const src = fs.readFileSync(new URL("../app/js/md5.js", import.meta.url).pathname, "utf8");
+const src = fs.readFileSync(fileURLToPath(new URL("../app/js/md5.js", import.meta.url)), "utf8");
 const sandbox = { unescape, encodeURIComponent, String, Math };
 vm.createContext(sandbox);
 vm.runInContext(src + "\nMD5", sandbox);

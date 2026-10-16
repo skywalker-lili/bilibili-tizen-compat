@@ -369,8 +369,8 @@ var Auth = (function () {
             return parts.join("; ");
         },
 
-        /* The CSRF token every write endpoint wants. The web flow never exposes
-         * one; the TV flow always does. Nothing writes yet — see CLAUDE.md. */
+        /* The CSRF token for cookie-style writes. The web flow never exposes
+         * one; TV accounts use their APP token for explicit video actions. */
         csrf: function () {
             var s = session();
             return (s && s.bili_jct) || "";

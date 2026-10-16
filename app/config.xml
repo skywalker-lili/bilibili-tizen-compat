@@ -2,14 +2,14 @@
 <widget xmlns="http://www.w3.org/ns/widgets"
         xmlns:tizen="http://tizen.org/ns/widgets"
         id="https://github.com/bilibili-tizen/bilibili-tizen"
-        version="1.0.0"
+        version="1.0.12"
         viewmodes="maximized">
 
     <!-- The 10-char prefix must match the package attribute below.
          If Tizen Studio assigns you a different ID on import, let it win. -->
-    <tizen:application id="BiliTvApp0.Bilibili"
-                       package="BiliTvApp0"
-                       required_version="6.0"/>
+    <tizen:application id="Q90TBili01.Bilibili"
+                       package="Q90TBili01"
+                       required_version="5.5"/>
 
     <!-- Wildcard network access. On Tizen this widget access policy replaces
          the browser CORS model, so XHR to bilivideo.com returns real status
@@ -21,17 +21,13 @@
     <feature name="http://tizen.org/feature/screen.size.normal.1080.1920"/>
 
     <icon src="icon.png"/>
-    <name>bilibili</name>
-    <description>bilibili client for Samsung TV</description>
+    <name>Bilibili Tizen 兼容版 / Compatibility</name>
+    <description>Community compatibility client for Samsung Tizen TVs</description>
 
     <tizen:privilege name="http://tizen.org/privilege/internet"/>
     <tizen:privilege name="http://tizen.org/privilege/tv.inputdevice"/>
-    <tizen:privilege name="http://tizen.org/privilege/application.launch"/>
-    <!-- bilibili ships DASH representations but no manifest, so one is built at
-         runtime and written to wgt-private for AVPlay to open. Without these two
-         tizen.filesystem.resolve throws Permission denied, synchronously. -->
-    <tizen:privilege name="http://tizen.org/privilege/filesystem.read"/>
-    <tizen:privilege name="http://tizen.org/privilege/filesystem.write"/>
+    <!-- DASH uses MSE. The optional updater/file-system probe is disabled in
+         this build, so it needs no file-system or app-launch privilege. -->
     <!-- Several people share this television, and the engine's cookie jar is
          global: without a way to empty it, an account signed in through the web
          fallback would ride along on requests made under the next person's

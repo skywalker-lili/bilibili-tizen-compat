@@ -5,3 +5,13 @@ author-signature.xml
 signature*.xml
 .DS_Store
 .gstack/
+app/Debug/
+app/Release/
+app/tizen_web_project.yaml
+*.p12
+*.pfx
+*.pwd
+*.dpapi
+*.env
+*.env.*
+*.log

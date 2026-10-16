@@ -1,207 +1,92 @@
-# bilibili on Samsung TV
+# bilibili for Samsung Tizen TV
 
 **[中文](README.md) · English**
 
-A bilibili client for Samsung Tizen televisions, driven entirely by the remote.
-The TV talks to bilibili directly: **no backend, no proxy, no server, and your
-credentials never leave the set.**
+An unofficial, remote-controlled bilibili client customized for **older Samsung Tizen TVs and TVs whose regional app store has no usable bilibili client**. This Q90T compatibility version builds on **[titlog/bilibili-tizen](https://github.com/titlog/bilibili-tizen)**. The original author, **titlog**, created the client architecture and much of its functionality; this branch adapts and extends that work while preserving the original [MIT copyright notice](LICENSE). The TV fetches videos and account data from bilibili directly; no computer needs to stay on while watching. This project is not affiliated with bilibili or Samsung.
 
-Several people can be signed in at once, each with their own watch history;
-what you half-watched on the phone is under the cursor when the TV comes on.
+| At a glance | Details |
+| --- | --- |
+| **Upstream base** | **titlog**'s [bilibili-tizen](https://github.com/titlog/bilibili-tizen), `master` at [commit `76003faf3ae1a647a92c532b968e4896427530cb`](https://github.com/titlog/bilibili-tizen/commit/76003faf3ae1a647a92c532b968e4896427530cb), dated **2026-10-02**. This is an exact commit, not an upstream release number. |
+| **This derivative** | **1.0.12**; independently maintained under the upstream MIT license and attribution. We plan to offer the changes back to the original maintainer for review. |
+| **Tested TV** | **55-inch Samsung Q90T (QN55Q90TAFXZA), Tizen 5.5, firmware 2743**. Installation, QR sign-in, and main remote-control flows were tested here; other models remain unverified. |
+| **Highlights** | Tizen 5.5 support, denser four/five-column browsing with publication dates, favorites and followed creators, long-press video actions, comments beside playback, subtitle/autoplay settings, and token-expiry display. See the [itemized changes](#what-this-version-adds-to-the-original-project). |
 
-> LG webOS has a good one, [bili-webos](https://github.com/asdf17128/bili-webos).
-> The Samsung side was empty. This fills that gap.
->
-> **Not affiliated with bilibili or Samsung.** Personal project, MIT.
+The installed TV app is named **Bilibili Tizen 兼容版 / Compatibility**. The name does not restrict it to Q90T, but Q90T remains the only model tested so far.
 
-|  |  |
-|---|---|
-| ![Home](docs/screenshots/01-home.jpg) | ![Playback](docs/screenshots/03-player-scrub.jpg) |
-| Home. The top row is 「continue watching」, and the cursor starts on it | 1080p H.265, scrubbing with thumbnail previews and chapter ticks |
-| ![Related](docs/screenshots/04-panel.jpg) | ![Search](docs/screenshots/02-search.jpg) |
-| Press down while playing for parts, description and related videos — **the video keeps running** | Search, with the TV's own Chinese IME one button away |
+**Status:** tested by the user on a 55-inch 2020 Samsung Q90T with firmware 2743. Other models and regions have not been tested with this version. See the [Chinese README](README.md) for the full usage guide.
 
-## Will it run on my TV
+## Who is this for?
 
-| | |
-|---|---|
-| **Verified** | Samsung 2023 65" **CU7090**, firmware Tizen 9.0 (Chromium 120). Every measurement in this project comes from this one set |
-| **Very likely** | Same generation or newer (2022 onwards, Tizen 7+). Playback uses standard MSE and AVPlay, nothing model-specific — but **nobody has tried another model yet** |
-| **No** | Non-Samsung sets; Samsung models from before 2016 (engine too old) |
+Use it if your Samsung Tizen TV has no usable bilibili app in its regional store and you are willing to enable Developer Mode and sign/install a Tizen Web app for your own TV. It is **not** an Android APK or a USB-stick installation. If an official app is available and works for you, try that first.
 
-Every build reports its engine string and codec support on boot; that line is
-the first thing to read. **If it works or fails on another model, please open an
-issue with the model and firmware version** — that is how this table grows.
+## Compatibility
 
-## Install
+| Status | TVs |
+| --- | --- |
+| **Verified** | 55-inch Samsung Q90T (2020), firmware 2743; this package requires Tizen 5.5. |
+| **Potentially compatible, untested** | Other 2020 Tizen 5.5 models and newer Samsung Tizen TVs. Installation, decoding, layout, and API behavior still need testing. |
+| **Not supported by this package** | Tizen versions below 5.5 (generally 2019 and earlier Samsung TVs), and non-Samsung platforms. |
 
-Samsung's store does not accept third-party clients for other people's services
-(it pulled the unofficial Twitch app in 2019 for exactly that), so this is
-sideloaded. You need a computer on the same network, **once**; after that the
-app opens from the TV like any other.
+Samsung lists the 2020 Q90 lineup under Tizen 5.5 in its [TV model groups](https://developer.samsung.com/smarttv/develop/specifications/tv-model-groups.html); the [Web engine table](https://developer.samsung.com/smarttv/develop/specifications/web-engine-specifications.html) covers model years. The package's minimum is declared in [app/config.xml](app/config.xml). If you test another TV, report its full model and firmware version, but never publish its DUID or certificates.
 
-**Everybody gets stuck on the certificate; `setup.sh` handles it.** Samsung sets
-from 2023 on only accept Samsung-issued distributor certificates — the ones that
-ship with Tizen Studio all fail with `Invalid certificate chain`. The script opens
-the Samsung account login, requests the certificate for you, and needs no Eclipse,
-no sudo, no certificate-manager GUI.
+**We have not found a verifiable published minimum Tizen version for an official bilibili client.** Samsung groups 2023 models under Tizen 7.0, but that model-year mapping does not establish the minimum for bilibili's app: each app declares its own minimum in its package, as [Samsung explains](https://developer.samsung.com/smarttv/develop/faq/specifications-and-feature-support.html). Store availability also depends on the [TV model's store region](https://developer.samsung.com/tv-seller-office/faq/tv-seller-office-use.html). **If your TV runs a version below Tizen 7.0 but at least 5.5, and its store has no usable bilibili app, you can try this compatibility version.** This is this project's tentative range, not a claim about an official 7.0 cutoff. Search your TV's store first.
 
-You need Node, Python 3, and the
-[Tizen Studio](https://developer.tizen.org/development/tizen-studio/download)
-command-line tools (**not the IDE**). On the TV, enable Developer Mode, register
-this computer's IP, then **power-cycle the set completely** — without that the
-registration does not take, and the symptom is `sdb` timing out silently.
+## Features and controls
 
-```bash
-git clone https://github.com/titlog/bilibili-tizen.git && cd bilibili-tizen
-zsh tools/setup.sh      # once: finds the TV, reads its DUID, issues the certificate; config lives outside the repo
-zsh tools/deploy.sh     # check, sign, install, launch — about 15 seconds
-```
+- Recommendations, continue watching, dynamic feed, watch later, popular videos, rankings, categories, search suggestions, watch history, favorite folders, followed creators, and multiple TV QR-signed-in accounts.
+- Up to requested 1080p playback when the video, account, network, and decoder allow it; multipart videos, resume, seek previews, playback speed, related videos, and optional subtitles.
+- Video cards show creator, view count, and publication date. Settings offer four or five cards per row and an autoplay-next toggle.
+- Short-press **OK** on a card to play. Long-press **OK** (about 0.65 seconds) to open like/coin/favorite actions. Coin spending requires a second confirmation. Arrow keys navigate cards directly.
+- During playback, **OK** pauses/resumes, left/right seek, and down opens the information panel with **Read comments** selected by default. Comments and nested replies appear beside the still-playing video. Comments are currently read-only.
 
-**Updating is the same command.** The app does not update itself yet (all five
-self-update routes have been proven on the set, but it is not built), so
-`git pull` and another `deploy.sh` is the upgrade.
+## What this version adds to the original project
 
-> Only need the certificate, for something unrelated? It is a standalone tool:
-> **[samsung-tv-cert](https://github.com/titlog/samsung-tv-cert)**
-> [![npm](https://img.shields.io/npm/v/samsung-tv-cert.svg)](https://www.npmjs.com/package/samsung-tv-cert)
-> — `npx samsung-tv-cert --duid <your DUID>`. Useful for Jellyfin, community
-> Twitch, or anything else you sideload onto a Samsung set.
+The original **[titlog/bilibili-tizen](https://github.com/titlog/bilibili-tizen)** by **titlog** already provided the core client: feeds and categories, search, QR sign-in and multiple accounts, playback and multipart videos, resume, seek previews, related videos, and creator uploads. This version starts from [upstream commit `76003fa` (2026-10-02)](https://github.com/titlog/bilibili-tizen/commit/76003faf3ae1a647a92c532b968e4896427530cb) and builds on that foundation with:
 
-## Accounts and privacy
+1. **Q90T / Tizen 5.5 compatibility:** a lower declared minimum Tizen version and fixes for the older TV browser and playback layout. Only the 2020 Q90T has been tested so far.
+2. **Denser browsing and dates:** four or five video cards per row, publication dates on cards and video details, and dates for uploads by followed creators. Long creator names take priority over date formatting.
+3. **Expanded My page:** favorite folders and their videos, followed creators and their uploads, plus removing videos from a favorite folder.
+4. **Video actions:** long-press OK on a card or use the playback panel to like/unlike a video, spend one or two coins, or add/remove it from a selected favorite folder. Coin spending requires confirmation; arrow-key browsing stays direct.
+5. **Comments beside playback:** video continues on the left while comments and nested replies appear on the right. Comments remain read-only.
+6. **Playback preferences:** toggles for autoplay-next and subtitles, a four/five-column choice, and a playback panel that initially focuses **Read comments**.
+7. **Navigation fixes:** the first related-video card can move down to the next row immediately, and the nonworking Chinese-input button has been removed pending real Pinyin support.
+8. **Token-expiry display:** Settings shows the locally stored TV access token's nominal expiry away from the home screen, without exposing the token.
 
-- QR sign-in, any number of accounts, switching needs no rescan.
-- **Credentials are stored only in the TV's local storage.** No server, no
-  analytics, no third party; the app talks to `bilibili.com` and its CDN and
-  nothing else. Stream URLs are pre-signed, so media requests carry no account.
-- Watch progress is reported back to bilibili (every 30 s), so the phone and the
-  web can pick up where the TV left off — and vice versa.
-- The default sign-in is the **TV login** route, signed with the official TV
-  client's appkey. That is what makes multiple accounts and progress reporting
-  possible; it also means your client presents itself to bilibili as the official
-  TV client. That is a terms-of-service judgement, not a technical one; the web
-  QR route is there if you would rather not, at the cost of one account and no
-  progress reporting. The full trade-off is in [`docs/登录路径.md`](docs/登录路径.md) (Chinese).
-- An expired token means scanning again (the refresh endpoint has not been
-  verified against the server, and guessing on the one path that holds the whole
-  household's credentials is not something this project does).
-- The deploy script bakes **your computer's LAN address** into the package as the
-  destination for diagnostic logs; anything is received only while you run the
-  collector on that computer, and only on your LAN.
+These are changes relative to the upstream client, not a claim that this branch designed every feature from scratch. See [BUGS.md](BUGS.md) and [FEATURES.md](FEATURES.md) for unresolved issues and plans.
 
-## What it does, and what it deliberately does not
+Currently unsupported: 4K, danmaku, reliable Chinese Pinyin entry, commenting or liking comments, and casting from a phone to this app. TV-to-bilibili watch-progress reporting has been observed to fail with HTTP 403; local TV resume still works. See [BUGS.md](BUGS.md) and [FEATURES.md](FEATURES.md).
 
-**Does**: recommendations / popular / rankings / food / dance / dynamic feed /
-watch-later / search with the TV's own Chinese IME, multi-part uploads, resume
-(remembers which part, picks up from the phone), autoplay next, scrub previews,
-parts and related videos over a running video, uploader pages (press the
-uploader's name in the panel, or 右 on the end-of-video screen, for everything
-they have posted; 返回 goes back to the tab you came from). About **2.5–3.5 s**
-from OK to a picture, 1080p H.265.
+**Known bugs:** watch-progress reporting and comment-like writes receive HTTP 403 on the tested TV. **Planned features:** standalone comment likes, danmaku with density controls, true Chinese Pinyin input, safer account retention across updates, token refresh, and subtitle track selection. See [BUGS.md](BUGS.md) and [FEATURES.md](FEATURES.md) for details.
 
-**Does not**:
-- **4K.** The two missing tiers (1080p high bitrate, 4K) are what the paid
-  membership sells, very few uploads have them, and whether this set's MSE can
-  hardware-decode 4K is unverified.
-- **Casting from the phone.** A cast receiver has to listen on a port; a Tizen
-  web widget cannot, regardless of how official it is. The substitute is
-  watch-later: tap on the phone, open on the TV.
-- **Subtitles, a settings screen.** The APIs exist; not built.
+## Installation
 
-## FAQ
+The automated scripts currently target **macOS with zsh**. A manual Windows route is outlined below but has not been verified on a newly configured Windows machine; Linux is also untested. For the Mac scripts you need Node.js, Python 3, Samsung TV-enabled [Tizen Studio tools](https://developer.samsung.com/smarttv/develop/getting-started/setting-up-sdk/installing-tv-sdk.html), a Samsung account, and a Mac on the same LAN as the TV.
 
-**`sdb` cannot reach the TV.** Is the IP registered in Developer Mode this
-computer's *current* IP, and did you power-cycle the set after changing it? A DHCP
-change means re-registering.
+1. On the TV, open **Apps → Settings**, enter `12345`, enable Developer Mode, set Host PC IP to the Mac's LAN address, and reboot. See [Samsung's device guide](https://developer.samsung.com/smarttv/develop/getting-started/using-sdk/tv-device.html).
+2. In a checkout containing this Q90T version, run:
 
-**`Invalid certificate chain`.** You are using a Tizen-bundled certificate. Run
-`zsh tools/setup.sh` for a Samsung-issued one.
+   ```bash
+   npm ci --prefix tools
+   zsh tools/setup.sh
+   zsh tools/deploy.sh
+   ```
 
-**A video will not open: 「视频流被拒绝（403）」.** Usually CDN throttling or a
-per-file refusal. The app rotates mirrors, escalates the token, switches codec
-family and drops tiers on its own; the message means all of that was tried. Wait
-a few minutes or pick another video.
+**Windows, manual route (fresh-machine verification pending):** Install Tizen Studio, TV Extensions, and Samsung Certificate Extension using [Samsung's SDK guide](https://developer.samsung.com/smarttv/develop/getting-started/setting-up-sdk/installing-tv-sdk.html). Set the TV's Developer Mode Host PC IP to your Windows PC's LAN address and reboot the TV. In Tizen Studio, create a TV Web project for Tizen 5.5 or newer and copy this repository's `app/config.xml`, `app/index.html`, `app/icon.png`, `app/css/`, `app/js/`, and `app/vendor/` into it; omit generated `Debug/`, `Release/`, and local configuration files. Create a Samsung certificate profile for **your TV's DUID**, connect the TV through Remote Device Manager on port `26101`, select it, then choose **Run As → Tizen Web Application**. Samsung documents [importing Web projects](https://developer.samsung.com/smarttv/develop/getting-started/creating-tv-applications/importing-tv-applications.html?device=htv) and [connecting/running on a TV](https://developer.samsung.com/smarttv/develop/getting-started/using-sdk/tv-device.html). Retain the same app ID and author certificate for updates; be prepared to sign in again after installation.
 
-**The dynamic feed / watch-later tab is empty.** Both need a signed-in account;
-scan from 「我的」 first.
+**New to sideloading? An AI agent with access to your computer can help.** Put the TV and computer on the **same reachable local network** (usually the same home Wi-Fi; guest networks or client isolation can block the connection). Sign in to your Samsung account on the TV. Under **Apps → Settings**, enter `12345`, enable Developer Mode, set Host PC IP to this computer's LAN address, confirm, and reboot, following [Samsung's device guide](https://developer.samsung.com/smarttv/develop/getting-started/using-sdk/tv-device.html). Then ask an agent that can operate the local computer to read this section and the repository, set up Tizen Studio and a signing certificate **for your TV**, connect, package, sideload, and verify the version actually running. Handle Samsung sign-in, authorization prompts, and remote-control steps yourself. Keep private keys, passwords, TV DUID, and login data on your computer rather than posting them in public chats or committing them. A text-only chatbot without computer access cannot perform the installation. No USB drive is needed, and the computer need not remain on after installation.
 
-**A code change has no effect.** Check the boot line the TV reports; `deploy.sh`
-derives the package name from `config.xml`, so after renaming the app make sure
-it is pushing the new package.
+`setup.sh` configures the TV and creates a Samsung certificate bound to your TV. Keep the DUID, private keys, certificate password, and TV account data out of GitHub. Daily viewing does not need the Mac; source updates require another deployment. Samsung says [app updates normally retain local Web storage, while uninstalling deletes it](https://developer.samsung.com/smarttv/develop/faq/data-and-file-handling.html). On the tested Q90T, Windows `tz install` removed the old package and its login data; `sdb install` reported only a successful transfer while the old UI remained. Verify the running version before treating a transfer as an update, and be prepared to sign in again.
 
-## For developers: what this platform actually allows
+## How long does sign-in last?
 
-The client is the result; the time went into finding out what the platform can
-do. Each of these cost at least a day and none of them is written down elsewhere:
+**There is no weekly rescan rule, but sign-in is not guaranteed forever.** TV QR sign-in returns an `expires_in` value; this app stores a nominal access-token expiry of `savedAt + expires_in`. It does not automatically refresh credentials or proactively delete an account at that date. If bilibili stops accepting the session, scan again from **My**.
 
-- **bilibili needs no `Referer`, but rejects by UA.** Probing with bare `curl`
-  makes every response read like "Referer required" — a false signal that nearly
-  put a proxy into this project that it never needed.
-- **This firmware's widget cannot send a `Cookie` header.** Chromium 120 silently
-  drops forbidden headers, so signed-in sessions ride in the query as
-  `access_key`. The earlier "it can" conclusion was measured with one account on
-  the set, where the measurement had no power to distinguish anything.
-- **The same upload plays on the phone and not on the TV because of playurl's
-  `platform`.** Tokens minted by the web endpoint get 403'd by strict CDN nodes;
-  tokens from the app endpoint are accepted.
-- **AVPlay plays DASH, but the manifest must arrive over HTTP**, and a widget
-  cannot listen on a port — so DASH goes through MSE. The same wall is why
-  casting cannot be built.
-- **Switching CDN nodes does not work, throttling is per IP, mirrors must be
-  ranked and never dropped.** Which mirror is dead is that day's weather: the same
-  host 403'd all evening and served all of the next.
+The default TV sign-in uses community-known parameters that present this client as bilibili's TV client. This is not an endorsement of this project by bilibili. Read the [login-route trade-off](docs/登录路径.md) before using it; the fallback Web QR route has limited multi-account persistence.
 
-The stories behind each are in [`docs/平台坑.md`](docs/平台坑.md) (Chinese); every
-measurement, log line and the debugging discipline are in [`CLAUDE.md`](CLAUDE.md),
-the project's working notes, including the conclusions that were later overturned.
+A [community-documented historical TV QR response](https://github.com/pskdje/bilibili-API-collect/blob/main/docs/login/login_action/QR.md) uses `15,552,000` seconds, about **180 days**. In **one Q90T test on 2026-10-15**, the user signed in again and reported a nominal expiry date of **2027-04-13** in **Settings → Account**, roughly 180 days later. This is a single observation, with no account or token published, **not a guarantee for other users or a live server-side validity check**. The server may issue a different lifetime or revoke a session earlier.
 
-The Tizen lessons that aren't specific to bilibili — getting logs off a retail set, how `allow-navigation`
-silently turns on a CSP, the single hardware decoder, the hardware video plane, a resident MSE pipeline — are
-collected in [tizen-tv-notes](https://github.com/titlog/tizen-tv-notes).
+Starting with **1.0.12**, a read-only **Settings → Account** line shows the stored token's nominal expiry in the TV's local time, without exposing the token. An incorrect TV clock or time zone can affect the displayed date. The fallback Web QR route has no readable token-expiry field.
 
-## Layout
+## Project and license
 
-```
-app/          the client (ES5, IIFE, no build step)
-  vendor/     Shaka Player, precompiled, checked in
-spike/        the rigs that established the platform facts
-tools/
-  setup.sh            once: your TV, your certificate
-  deploy.sh           check, sign, install, launch
-  samsung-cert.mjs    Samsung certificate issuance without a GUI
-  devserver.mjs       run the client in a desktop browser (screenshots, UI work without deploying)
-  collect.mjs         diagnostics collector on :8099
-  lint.mjs            catches calls to things that do not exist
-  *-verify.mjs        manifest / accounts / md5 / QR — any failure refuses to ship
-docs/         platform notes, login routes, the full stream-token investigation
-CLAUDE.md     everything learned, every trap, and how to debug on a retail set
-```
-
-## Debugging
-
-A retail set has every convenience switched off: `dlog` returns nothing, the Web
-Inspector port never opens, `sdb shell` is `closed`. So the app reports on
-itself — `tools/collect.mjs` listens on 8099 and `deploy.sh` writes the address
-into the build.
-
-```bash
-node tools/collect.mjs | tee /tmp/bili.log   # terminal 1, first
-zsh tools/deploy.sh                          # terminal 2
-```
-
-With no collector the reports fail silently; after five failures in a row the
-app sleeps five minutes and tries again, so a collector started late receives
-lines within five minutes, and a redeploy restores it at once.
-
-```bash
-zsh tools/deploy.sh --selftest
-```
-
-walks the whole flow on the set unattended — grid, playback, panel, scrolling,
-scrubbing, long seeks across the buffer, pause, resume, exit, accounts — reporting
-each step. **It is the only way to check a build without someone on the sofa.**
-Install a normal build again when it is done.
-
-## Licence
-
-MIT. bilibili is a trademark of its owner; this project is not affiliated.
+The full [Chinese README](README.md) has a detailed walkthrough and troubleshooting. [BUGS.md](BUGS.md) tracks observed defects; [FEATURES.md](FEATURES.md) tracks requested work. This derivative keeps the upstream [MIT license](LICENSE) and attribution; bundled player licenses are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Credentials are stored on the TV and sent to bilibili for authentication, not to a project server. An optional LAN diagnostic collector receives logs only when you start it on your computer; review logs before sharing them.

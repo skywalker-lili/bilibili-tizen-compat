@@ -14,6 +14,8 @@ set -e
 ROOT="${0:A:h:h}"
 CONF="${BILI_TIZEN_CONF:-$HOME/.bilibili-tizen.conf}"
 [ -f "$CONF" ] && source "$CONF"
+APP_ID=$(sed -n 's/.*<tizen:application id="\([^"]*\)".*/\1/p' "$ROOT/app/config.xml" | head -n 1)
+[ -n "$APP_ID" ] || { echo "app/config.xml 中找不到应用 ID"; exit 1; }
 
 export PATH="$HOME/tizen-studio/tools:$HOME/tizen-studio/tools/ide/bin:$PATH"
 
@@ -118,7 +120,7 @@ BILI_TV_IP="$TV_IP"
 BILI_TV_TARGET="$TARGET"
 BILI_TV_DUID="$TV_DUID"
 BILI_PROFILE="${BILI_PROFILE:-SamsungBili}"
-BILI_APP_ID="${BILI_APP_ID:-BiliTvApp0.Bilibili}"
+BILI_APP_ID="$APP_ID"
 EOF
 chmod 600 "$CONF"
 echo "     -> $CONF"

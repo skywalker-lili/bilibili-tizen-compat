@@ -8,6 +8,7 @@
     <meta name="viewport" content="width=1920, height=1080">
     <title>bilibili</title>
     <link rel="stylesheet" href="css/app.css">
+    <link rel="stylesheet" href="css/legacy-layout.css">
 </head>
 <body>
 
@@ -33,6 +34,7 @@
             <div class="tab focusable" data-screen="food">美食</div>
             <div class="tab focusable" data-screen="dance">舞蹈</div>
             <div class="tab focusable" data-screen="search">搜索</div>
+            <div class="tab focusable" data-screen="settings">设置</div>
         </nav>
         <!-- Who the set is currently signed in as. Right of the tabs, so the
              remote reaches it by pressing right past the last of them. -->
@@ -55,6 +57,7 @@
 </div>
 
 <div id="pause-glyph" class="hidden"><div class="bar"></div><div class="bar"></div></div>
+<div id="subtitle-overlay" class="hidden"><div id="subtitle-text"></div></div>
 
 <div id="playerui" class="hidden">
     <div id="player-part"></div>
@@ -84,6 +87,10 @@
         <div id="panel-title"></div>
         <div id="panel-meta"></div>
         <div id="panel-desc"></div>
+        <div class="actions" id="panel-actions">
+            <div class="btn ghost focusable" id="panel-action">点赞 · 投币 · 收藏</div>
+            <div class="btn ghost focusable" id="panel-comments">看评论</div>
+        </div>
     </div>
     <div class="opt-group" id="opt-parts-group">
         <div class="opt-label">分P</div>
@@ -97,6 +104,26 @@
         <div class="opt-label">相关推荐</div>
         <div id="opt-related"></div>
     </div>
+</div>
+
+<div id="comments-view" class="hidden">
+    <div id="comments-video-meta">
+        <div id="comments-video-title"></div>
+        <div id="comments-video-hint">视频继续播放中 · 播放/暂停键控制视频 · 返回键关闭评论</div>
+    </div>
+    <div id="comments-pane">
+        <div id="comments-head">
+            <div id="comments-title">评论</div>
+            <div id="comments-level"></div>
+        </div>
+        <div id="comments-hint">上下浏览 · 右键看楼中楼 · 返回退出 · 评论只读</div>
+        <div id="comments-list" class="scroll"></div>
+        <div id="comments-status"></div>
+    </div>
+</div>
+
+<div id="video-actions" class="hidden">
+    <div id="video-actions-box" class="scroll"></div>
 </div>
 
 <!-- The end of a video is a decision, not a notice: carry on with what is
@@ -136,11 +163,6 @@
     </div>
 </div>
 
-<div id="ime-wrap" class="hidden">
-    <input id="ime" type="text" autocomplete="off" placeholder="输入关键词">
-    <div id="ime-hint">用电视键盘输入 &middot; 完成后按确认键搜索 &middot; 返回键取消</div>
-</div>
-
 <div id="toast" class="hidden"></div>
 
 <!-- Shaka does the DASH. This replaced a hand-rolled MSE byte pump that had to
@@ -151,6 +173,7 @@
      after the first screen (withShakaScript). It was 322ms of the 756ms to
      onload, parsed ahead of a screen that never uses it. -->
 
+<script src="js/compat.js"></script>
 <script src="js/config.js"></script>
 <script src="js/md5.js"></script>
 <script src="js/mpd.js"></script>

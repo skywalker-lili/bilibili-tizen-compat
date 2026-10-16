@@ -10,6 +10,8 @@ var Nav = (function () {
 
     var current = null;
     var handlers = {};
+    var enterHold = null;
+    var LONG_ENTER_MS = 650;
 
     var KEY = {
         LEFT: 37, UP: 38, RIGHT: 39, DOWN: 40,
@@ -19,7 +21,11 @@ var Nav = (function () {
     };
 
     function focusables() {
-        var all = document.querySelectorAll(".focusable");
+        var modal = document.getElementById("video-actions");
+        var comments = document.getElementById("comments-view");
+        var scope = modal && modal.offsetParent !== null ? modal :
+                    (comments && comments.offsetParent !== null ? comments : document);
+        var all = scope.querySelectorAll(".focusable");
         var out = [];
         for (var i = 0; i < all.length; i++) {
             var el = all[i];
@@ -35,6 +41,10 @@ var Nav = (function () {
 
     function setFocus(el) {
         if (!el) { return; }
+        if (enterHold && !enterHold.fired && enterHold.target !== el) {
+            clearTimeout(enterHold.timer);
+            enterHold = null;
+        }
         if (current && current !== el) { current.className = current.className.replace(/\s*focused/g, ""); }
         current = el;
         if (el.className.indexOf("focused") < 0) { el.className += " focused"; }
@@ -42,8 +52,8 @@ var Nav = (function () {
         if (handlers.focus) { handlers.focus(el); }
     }
 
-    /* The TV browser's own scrollIntoView jumps; easing by hand keeps the
-     * selected row roughly centred, which is what makes a grid feel right.
+    /* Scroll only when focus leaves the visible area. Centring every card
+     * cut off the rows above and below it on the Q90T.
      *
      * The container is found by the "scroll" class, so any code that rewrites a
      * scroller's className must keep it — losing it does not fail loudly, it
@@ -60,8 +70,12 @@ var Nav = (function () {
         if (!scroller || scroller === document.body) { return; }
         var er = el.getBoundingClientRect();
         var sr = scroller.getBoundingClientRect();
-        var target = er.top - sr.top + scroller.scrollTop - (sr.height / 2) + (er.height / 2);
-        scroller.scrollTop = Math.max(0, target);
+        var pad = 18;
+        if (er.top < sr.top + pad) {
+            scroller.scrollTop = Math.max(0, scroller.scrollTop + er.top - sr.top - pad);
+        } else if (er.bottom > sr.bottom - pad) {
+            scroller.scrollTop += er.bottom - sr.bottom + pad;
+        }
     }
 
     function move(dx, dy) {
@@ -113,7 +127,30 @@ var Nav = (function () {
 
     document.addEventListener("keydown", function (e) {
         var k = e.keyCode;
+        if (enterHold && k !== KEY.ENTER) {
+            clearTimeout(enterHold.timer);
+            enterHold = null;
+        }
         if (handlers.key && handlers.key(k) === true) { return; }
+
+        /* Cards keep short Enter for playback. Only a card with onlongselect
+         * defers that action until release, so a hold can open its menu without
+         * first starting the video. Other buttons retain immediate Enter. */
+        if (k === KEY.ENTER && enterHold) {
+            e.preventDefault();
+            return;                 /* auto-repeat must not activate the menu */
+        }
+        if (k === KEY.ENTER && current && current.onlongselect) {
+            var hold = { target: current, started: new Date().getTime(), fired: false, timer: null };
+            enterHold = hold;
+            hold.timer = setTimeout(function () {
+                if (enterHold !== hold || current !== hold.target) { return; }
+                hold.fired = true;
+                hold.target.onlongselect();
+            }, LONG_ENTER_MS);
+            e.preventDefault();
+            return;
+        }
 
         switch (k) {
             case KEY.LEFT:  move(-1, 0); break;
@@ -132,6 +169,24 @@ var Nav = (function () {
             default: return;
         }
         e.preventDefault();
+    });
+
+    document.addEventListener("keyup", function (e) {
+        if (e.keyCode !== KEY.ENTER || !enterHold) { return; }
+        var hold = enterHold;
+        enterHold = null;
+        clearTimeout(hold.timer);
+        e.preventDefault();
+        if (hold.fired || current !== hold.target) { return; }
+        if (new Date().getTime() - hold.started >= LONG_ENTER_MS) {
+            hold.target.onlongselect();
+        } else if (hold.target.onselect) {
+            hold.target.onselect();
+        }
+    });
+
+    window.addEventListener("blur", function () {
+        if (enterHold) { clearTimeout(enterHold.timer); enterHold = null; }
     });
 
     return {
