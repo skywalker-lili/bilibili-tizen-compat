@@ -75,9 +75,6 @@ account once.
 The package is re-signed with your own certificate on install, so the same file
 works for everyone.
 
-> Nobody has walked this path on a real TV yet (the author's set runs a build from
-> source). Whether it works or fails, please open an issue.
-
 ### From source
 
 You need Node, Python 3, and the
