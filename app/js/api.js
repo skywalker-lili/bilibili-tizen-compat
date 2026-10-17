@@ -114,7 +114,8 @@ var API = (function () {
         xhr.send();
     }
 
-    /* The one write this app makes. Everything else here reads.
+    /* Form writes use the same transport for watch history and explicit video
+     * actions. Never send a mutation until the viewer selects it on the TV.
      *
      * bilibili's history endpoint wants the CSRF token that came with the
      * session. The TV login hands it over in the response body, so accounts
@@ -188,15 +189,20 @@ var API = (function () {
         return (major < 5 || (major === 5 && minor < 5)) ? "jpg" : "webp";
     })();
 
+    /* The width of a card in the grid, which app.js sets from the cards-per-row
+     * setting (576 at three across, 430 at four, 344 at five). */
+    var cardWidth = 576;
+
     /* Thumbnails come back as http:// or protocol-relative, and some are huge.
      * bilibili's image service resizes on demand via the @wxh suffix. */
     function thumb(url, w, h) {
         if (!url) { return ""; }
         var u = url.replace(/^http:/, "https:");
         if (u.indexOf("//") === 0) { u = "https:" + u; }
-        /* The card's own size since the grid went to three columns (576×324);
-         * the old 480×300 was the four-column card, upscaled and soft. */
-        return u + "@" + (w || 576) + "w_" + (h || 324) + "h_1c." + THUMB_FORMAT;
+        /* The card's own size, 16:9: smaller is upscaled and soft (the old
+         * 480×300 on three-column cards was), larger is bytes nobody sees. */
+        return u + "@" + (w || cardWidth) + "w_" + (h || Math.round(cardWidth * 9 / 16)) +
+               "h_1c." + THUMB_FORMAT;
     }
 
     function stripEm(s) {
@@ -299,13 +305,16 @@ var API = (function () {
              * a month because nothing asked. The uploader page asks. */
             mid: (v.owner && v.owner.mid) || v.mid || 0,
             duration: duration(v.duration),
-            play: count(v.stat ? v.stat.view : v.play)
+            play: count(v.stat ? v.stat.view : v.play),
+            publishedAt: Number(v.pubdate || v.pubtime || v.pub_time || 0) || 0
         };
     }
 
     return {
         /* Which cover format this set was given, for the boot line. */
         thumbFormat: THUMB_FORMAT,
+
+        setCardWidth: function (px) { if (px > 0) { cardWidth = px; } },
 
         /* The web home page's feed. Personalised once the session cookies are
          * in play, generic before that — same endpoint either way. */
@@ -444,7 +453,8 @@ var API = (function () {
                         author: ((m.module_author || {}).name) || "",
                         mid: ((m.module_author || {}).mid) || 0,
                         duration: arch.duration_text || "",
-                        play: (arch.stat || {}).play || ""
+                        play: (arch.stat || {}).play || "",
+                        publishedAt: Number(arch.pubdate || arch.pub_time || 0) || 0
                     });
                 }
                 onOk(out, next);
@@ -537,6 +547,7 @@ var API = (function () {
                         mid: x.author_mid || 0,
                         duration: duration(secs),
                         play: "",
+                        publishedAt: Number(x.history.pubdate || x.pubdate || 0) || 0,
                         seen: seen,
                         /* Multi-part entries say which part, same as ours. */
                         page: (x.history.page && x.history.page > 1) ? x.history.page : 0,
@@ -560,6 +571,172 @@ var API = (function () {
             }
 
             fetchPage(null);
+        },
+
+        /* Read-only personal library. withSession attaches the TV access_key;
+         * the installed widget still has to prove these endpoints accept it.
+         * Keep authentication failures distinct from genuinely empty lists. */
+        favoriteFolders: function (mid, onOk, onFail, aid) {
+            getJson(BASE + "/x/v3/fav/folder/created/list-all?up_mid=" +
+                    encodeURIComponent(mid) + "&type=2" +
+                    (aid ? "&rid=" + encodeURIComponent(aid) : ""), function (d) {
+                var raw = (d && d.list) || [], out = [];
+                for (var i = 0; i < raw.length; i++) {
+                    var f = raw[i];
+                    if (!f || !f.id) { continue; }
+                    out.push({ id: f.id, title: f.title || "未命名收藏夹",
+                               count: Number(f.media_count) || 0,
+                               selected: Number(f.fav_state) === 1 });
+                }
+                onOk(out);
+            }, onFail);
+        },
+
+        videoLikeState: function (aid, onOk, onFail) {
+            getJson(BASE + "/x/web-interface/archive/has/like?aid=" +
+                    encodeURIComponent(aid), function (d) { onOk(Number(d) === 1); }, onFail);
+        },
+
+        videoCoinState: function (aid, onOk, onFail) {
+            getJson(BASE + "/x/web-interface/archive/coins?aid=" +
+                    encodeURIComponent(aid), function (d) {
+                onOk(Math.max(0, Number((d || {}).multiply) || 0));
+            }, onFail);
+        },
+
+        /* TV QR login supplies an APP token; browser fallback only works here
+         * when this very account owns the engine jar and has a CSRF token. */
+        videoActionReady: function () {
+            return !!(Auth.accessKey() || (Auth.jarIsOurs() && Auth.csrf()));
+        },
+
+        /* The non-WBI reply route still answers on this TV and accepts a page
+         * number. Keep comment traffic lazy so it never delays video startup. */
+        comments: function (aid, page, onOk, onFail) {
+            getJson(BASE + "/x/v2/reply?type=1&oid=" + encodeURIComponent(aid) +
+                    "&pn=" + (page || 1) + "&ps=20&sort=2", function (d) {
+                var rows = (d && d.replies) || [];
+                onOk(rows, !!(d && d.page && page * 20 < Number(d.page.count || 0)));
+            }, onFail);
+        },
+
+        commentReplies: function (aid, root, page, onOk, onFail) {
+            getJson(BASE + "/x/v2/reply/reply?type=1&oid=" + encodeURIComponent(aid) +
+                    "&root=" + encodeURIComponent(root) + "&pn=" + (page || 1) +
+                    "&ps=20", function (d) {
+                var rows = (d && d.replies) || [];
+                onOk(rows, !!(d && d.page && page * 20 < Number(d.page.count || 0)));
+            }, onFail);
+        },
+
+        videoLike: function (aid, liked, onOk, onFail) {
+            var key = Auth.accessKey(), csrf = Auth.csrf();
+            function failed(why) {
+                /* The status GET only remembers recent likes. A stale 0 can
+                 * therefore meet an already-liked video; the server's explicit
+                 * duplicate code means the requested final state is true. */
+                if (liked && /^code 65006\b/.test(String(why))) { onOk({}); }
+                else { onFail(why); }
+            }
+            if (key) {
+                postForm("https://app.bilibili.com/x/v2/view/like",
+                         Auth.signTv({ access_key: key, aid: aid, like: liked ? 0 : 1 }),
+                         null, onOk, failed);
+            } else if (Auth.jarIsOurs() && csrf) {
+                postForm(BASE + "/x/web-interface/archive/like",
+                         { aid: aid, like: liked ? 1 : 2, csrf: csrf },
+                         null, onOk, failed);
+            } else { onFail("此账号缺少可用于操作的登录凭证，请用电视二维码重新登录"); }
+        },
+
+        videoCoin: function (aid, amount, onOk, onFail) {
+            var key = Auth.accessKey(), csrf = Auth.csrf();
+            if (key) {
+                postForm("https://app.bilibili.com/x/v2/view/coin/add",
+                         Auth.signTv({ access_key: key, aid: aid, multiply: amount,
+                                       select_like: 0 }), null, onOk, onFail);
+            } else if (Auth.jarIsOurs() && csrf) {
+                postForm(BASE + "/x/web-interface/coin/add",
+                         { aid: aid, multiply: amount, select_like: 0, csrf: csrf },
+                         null, onOk, onFail);
+            } else { onFail("此账号缺少可用于操作的登录凭证，请用电视二维码重新登录"); }
+        },
+
+        videoFavorite: function (aid, folderId, add, onOk, onFail) {
+            var key = Auth.accessKey(), csrf = Auth.csrf();
+            var fields = { rid: aid, type: 2,
+                           add_media_ids: add ? folderId : "",
+                           del_media_ids: add ? "" : folderId };
+            if (key) {
+                fields.access_key = key;
+                postForm(BASE + "/medialist/gateway/coll/resource/deal",
+                         Auth.signTv(fields), null, onOk, onFail);
+            } else if (Auth.jarIsOurs() && csrf) {
+                fields.csrf = csrf;
+                postForm(BASE + "/x/v3/fav/resource/deal", fields,
+                         null, onOk, onFail);
+            } else { onFail("此账号缺少可用于操作的登录凭证，请用电视二维码重新登录"); }
+        },
+
+        favoriteVideos: function (folderId, page, onOk, onFail) {
+            getJson(BASE + "/x/v3/fav/resource/list?media_id=" +
+                    encodeURIComponent(folderId) + "&pn=" + (page || 1) +
+                    "&ps=20&order=mtime&platform=web", function (d) {
+                var raw = (d && d.medias) || [], out = [];
+                for (var i = 0; i < raw.length; i++) {
+                    var v = raw[i];
+                    if (!v || Number(v.type) !== 2 || !(v.bvid || v.bv_id) || v.attr) { continue; }
+                    out.push({
+                        bvid: v.bvid || v.bv_id, aid: v.id || 0, cid: null,
+                        title: stripEm(v.title), pic: thumb(v.cover),
+                        author: (v.upper || {}).name || "",
+                        mid: (v.upper || {}).mid || 0,
+                        duration: duration(v.duration || 0),
+                        play: count((v.cnt_info || {}).play),
+                        publishedAt: Number(v.pubtime || 0) || 0
+                    });
+                }
+                onOk(out, !!(d && d.has_more), raw.length);
+            }, onFail);
+        },
+
+        followings: function (mid, page, onOk, onFail) {
+            page = page || 1;
+            var query = "vmid=" + encodeURIComponent(mid) + "&pn=" + page + "&ps=50";
+            function deliver(d, appRoute) {
+                var raw = (d && d.list) || [], out = [];
+                for (var i = 0; i < raw.length; i++) {
+                    var u = raw[i];
+                    if (!u || !u.mid) { continue; }
+                    out.push({ mid: u.mid, name: u.uname || "UP 主",
+                               face: thumb(u.face, 160, 160),
+                               sign: u.sign || "" });
+                }
+                var total = Number((d || {}).total || 0);
+                var limit = appRoute && page >= 5 && page * 50 < total;
+                onOk(out, raw.length > 0 && page * 50 < total && !(appRoute && page >= 5), limit);
+            }
+            function appFallback() {
+                /* The web relation endpoint can return code 0 with an empty
+                 * list when a TV's file:// request has no bilibili Referer.
+                 * The app endpoint uses the same video uploader records and
+                 * does not require that browser-only header. */
+                var app = "https://app.bilibili.com/x/v2/relation/followings?";
+                var key = Auth.accessKey();
+                var url = app + (key
+                    ? Auth.signTv({ access_key: key, vmid: mid, pn: page, ps: 50 })
+                    : query);
+                getJson(url, function (d) { deliver(d, true); }, function () {
+                    /* The public app route is still useful if a TV token is
+                     * rejected by this older endpoint. */
+                    if (key) { getJson(app + query, function (d) { deliver(d, true); }, onFail); }
+                    else { onFail("关注列表暂时无法读取"); }
+                });
+            }
+            getJson(BASE + "/x/relation/followings?" + query, function (d) {
+                if (!d || !d.list || (!d.list.length && page === 1)) { appFallback(); }
+                else { deliver(d, false); }
+            }, appFallback);
         },
 
         /* 稍后再看 — the pull-side substitute for casting.
@@ -657,7 +834,10 @@ var API = (function () {
                         author: x.author || "",
                         mid: mid,
                         duration: duration(x.duration || 0),
-                        play: count(x.play)
+                        play: count(x.play),
+                        /* The app space route calls this ctime, unlike web
+                         * feeds and view(), which call it pubdate. */
+                        publishedAt: Number(x.pubdate || x.pubtime || x.ctime || 0) || 0
                     });
                 }
                 var last = raw.length ? raw[raw.length - 1] : null;
@@ -691,9 +871,49 @@ var API = (function () {
                 onOk({
                     cid: d.last_play_cid || 0,
                     positionMs: d.last_play_time || 0,
-                    chapters: vp
+                    chapters: vp,
+                    subtitles: (d.subtitle && d.subtitle.subtitles) || []
                 });
             }, onFail);
+        },
+
+        /* Subtitle files are plain JSON, not the usual {code,data} envelope.
+         * Accept only bilibili's HTTPS media hosts: the URL comes from the
+         * player metadata, but it still must never carry a session elsewhere. */
+        subtitle: function (url, onOk, onFail) {
+            var u = String(url || "");
+            if (u.indexOf("//") === 0) { u = "https:" + u; }
+            var host = /^https:\/\/([^\/?#]+)/i.exec(u);
+            if (!host || !/(^|\.)(hdslb\.com|bilibili\.com|biliimg\.com)$/i.test(host[1])) {
+                onFail("invalid subtitle URL");
+                return;
+            }
+            var xhr = new XMLHttpRequest(), done = false;
+            function fail(why) { if (!done) { done = true; onFail(why); } }
+            xhr.open("GET", u, true);
+            xhr.timeout = 12000;
+            xhr.onreadystatechange = function () {
+                if (xhr.readyState !== 4 || done) { return; }
+                if (xhr.status !== 200) { fail("HTTP " + xhr.status); return; }
+                var j;
+                try { j = JSON.parse(xhr.responseText); }
+                catch (e) { fail("bad subtitle JSON"); return; }
+                var body = j && j.body, cues = [];
+                if (!body || !body.length) { done = true; onOk(cues); return; }
+                for (var i = 0; i < body.length; i++) {
+                    if (!body[i]) { continue; }
+                    var from = Number(body[i].from), to = Number(body[i].to);
+                    if (!isFinite(from) || !isFinite(to) || to <= from ||
+                            typeof body[i].content !== "string") { continue; }
+                    cues.push({ from: from, to: to, text: body[i].content.slice(0, 400) });
+                }
+                cues.sort(function (a, b) { return a.from - b.from; });
+                done = true;
+                onOk(cues);
+            };
+            xhr.onerror = function () { fail("network error"); };
+            xhr.ontimeout = function () { fail("timeout"); };
+            try { xhr.send(); } catch (e) { fail("request error"); }
         },
 
         /* The sprite sheets behind the scrub preview.
@@ -816,6 +1036,7 @@ var API = (function () {
                     face: thumb((d.owner || {}).face, 120, 120),
                     duration: duration(d.duration),
                     play: count((d.stat || {}).view),
+                    publishedAt: Number(d.pubdate || 0) || 0,
                     pages: (d.pages || []).map(function (p) {
                         /* Per-part length, formatted here like every other
                          * duration in this file. It is seconds on a page and

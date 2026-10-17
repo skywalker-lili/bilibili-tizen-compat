@@ -3,7 +3,7 @@
  * in Chromium 69. Margins replace flex gap; grid-gap keeps the exact card grid.
  *
  * From PR #2 (skywalker-lili, tested on a Q90T), cut to this layout: three
- * 576px columns rather than the fork's four, and none of its new screens.
+ * 576px columns by default (and the fork's four and five as settings).
  * Every flex container with `gap` in app.css needs its twin here — a new one
  * without it renders with its children touching on these sets.
  */
@@ -26,7 +26,13 @@
 .legacy-flex-gap .up-head,
 .legacy-flex-gap .opt-row,
 .legacy-flex-gap .opt,
-.legacy-flex-gap #player-loading { gap: 0; }
+.legacy-flex-gap #player-loading,
+.legacy-flex-gap .card-info,
+.legacy-flex-gap .card-byline,
+.legacy-flex-gap .action-row,
+.legacy-flex-gap .library-head,
+.legacy-flex-gap .library-grid,
+.legacy-flex-gap .library-item { gap: 0; }
 
 .legacy-flex-gap #tabs > :not(.hidden) ~ :not(.hidden) { margin-left: 10px; }
 .legacy-flex-gap #account > :not(.hidden) ~ :not(.hidden) { margin-left: 14px; }
@@ -43,13 +49,31 @@
 /* Preserve the original auto margin that right-aligns the part duration. */
 .legacy-flex-gap .opt > .opt-dur { margin-left: auto; padding-left: 16px; }
 
-/* .grid is flex-wrap with gap: 32px around 576px cards (border-box), so three
- * fixed tracks with the same gap reproduce it exactly. */
-.legacy-flex-gap .grid {
+/* .grid is flex-wrap with gap around fixed-width cards (border-box), so fixed
+ * tracks with the same gap reproduce it exactly — one set per cards-per-row
+ * setting. The folder and following lists use the same widths. */
+.legacy-flex-gap .grid,
+.legacy-flex-gap .library-grid {
     display: grid;
     grid-template-columns: repeat(3, 576px);
     grid-gap: 32px;
 }
+.legacy-flex-gap body.density-4 .grid,
+.legacy-flex-gap body.density-4 .library-grid {
+    grid-template-columns: repeat(4, 430px);
+    grid-gap: 24px;
+}
+.legacy-flex-gap body.density-5 .grid,
+.legacy-flex-gap body.density-5 .library-grid {
+    grid-template-columns: repeat(5, 344px);
+    grid-gap: 18px;
+}
+
+.legacy-flex-gap .card-info .card-part { margin-right: 6px; }
+.legacy-flex-gap .card-views { margin-left: 6px; }
+.legacy-flex-gap .action-row > * + * { margin-left: 14px; }
+.legacy-flex-gap .library-head > * + * { margin-left: 28px; }
+.legacy-flex-gap .library-item .library-text { margin-left: 16px; }
 
 /* A trailing child margin plus an equal negative container margin reproduces
  * the available wrap width. Compensate the original bottom margins separately.

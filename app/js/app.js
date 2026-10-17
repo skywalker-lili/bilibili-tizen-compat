@@ -10,6 +10,8 @@
     var screenEl, statusEl, toastEl;
     var state = { screen: "rcmd", query: "", results: null };
     var playing = null;
+    var actionView = null;
+    var interactionCache = {};
 
     function el(id) { return document.getElementById(id); }
 
@@ -279,6 +281,8 @@
         Resume.flush();          /* into the outgoing account's namespace */
         Accounts.switchTo(id);
         feedCache = {};
+        mineLibraryCache = {};
+        mineView = { kind: "history", id: 0, title: "" };
         /* Another account, another history. */
         serverHistory = { at: 0, items: null };
         state.query = "";
@@ -297,32 +301,326 @@
 
     /* ---------------- grid of videos ---------------- */
 
+    /* Cards per row, a setting because the right answer is the room: how big
+     * the panel is and how far the sofa is from it. Three is the default and
+     * what this set settled on (2026-09-16, see app.css); four and five are
+     * PR #2's, for a closer seat or a smaller screen. Every width fills the
+     * same 1792px: 3×576+2×32, 4×430+3×24, 5×344+4×18. */
+    var GRID_WIDTHS = { 3: 576, 4: 430, 5: 344 };
+
+    function gridColumns() {
+        var n = Settings.get("gridColumns", 3);
+        return GRID_WIDTHS[n] ? n : 3;
+    }
+
+    function applyGridDensity() {
+        document.body.className = document.body.className.replace(/\s*density-[45]/g, "");
+        if (gridColumns() !== 3) { document.body.className += " density-" + gridColumns(); }
+        /* Covers at the card's own width — five across do not need 576px
+         * images, and three across should not be stretching 344px ones. */
+        API.setCardWidth(GRID_WIDTHS[gridColumns()]);
+    }
+
+    function publishedDate(seconds) {
+        var n = Number(seconds) || 0;
+        if (n > 100000000000) { n = Math.floor(n / 1000); }
+        if (n < 1230768000 || n > new Date().getTime() / 1000 + 31536000) { return ""; }
+        /* Match bilibili's publication day (China time), rather than the TV's
+         * local day; a California evening is already tomorrow in China. */
+        var d = new Date((n + 8 * 3600) * 1000);
+        function two(v) { return v < 10 ? "0" + v : String(v); }
+        return d.getUTCFullYear() + "-" + two(d.getUTCMonth() + 1) + "-" + two(d.getUTCDate());
+    }
+
     function cardHtml(v, i) {
         /* Server-side history carries its own progress; everything else asks
          * the local record. */
         var seen = (typeof v.seen === "number") ? v.seen : Resume.fraction(v.bvid);
+        var date = publishedDate(v.publishedAt);
+        var views = v.play ? String(v.play) : "";
         return '<div class="card focusable" data-i="' + i + '">' +
                '<div class="thumb"><img src="' + esc(v.pic) + '" alt="">' +
                '<span class="dur">' + esc(v.duration) + '</span>' +
                (seen ? '<span class="seen" style="width:' + Math.round(seen * 100) + '%"></span>' : "") +
                '</div>' +
                '<div class="card-title">' + esc(v.title) + '</div>' +
-               '<div class="card-meta">' +
+               '<div class="card-info"><div class="card-byline">' +
                /* Which part you were on, on the history cards — "看到一半" is
                 * not much use on a 24-part upload without it. */
                (v.page ? '<span class="card-part">P' + esc(v.page) + '</span>' : "") +
-               esc(v.author) + (v.play ? ' &middot; ' + esc(v.play) + '次观看' : "") +
+               '<span class="card-author">' + esc(v.author) + '</span>' +
+               (views ? '<span class="card-views" data-short="· ' + esc(views) + '">· ' +
+                   esc(views) + '次</span>' : "") + '</div>' +
+               (date ? '<span class="card-info-date" data-compact="' + esc(date.replace(/-/g, "")) +
+                   '">' + esc(date) + '</span>' : "") +
                '</div>' +
                '</div>';
     }
 
-    /* What is half-watched, newest first, for the strip across the top of the
-     * home screen.
-     *
-     * Three, because three is one row at this card width — a "continue watching"
-     * that takes two rows has stopped being a strip and started being a screen.
-     * It was four while the grid was four wide: this number follows the column
-     * count, and has to move with it.
+    function cardActionLabel(v) {
+        var key = activeAccountId() + ":" + (v.bvid || "");
+        var s = interactionCache[key];
+        if (!s) { return "赞 / 币 / 收藏"; }
+        return (s.liked ? "已赞" : "赞") + " · " +
+            (s.coins ? "币" + s.coins : "投币") + " · " +
+            (s.favoured ? "已藏" : "收藏");
+    }
+
+    function bindCardAction(card, video, folderId) {
+        card.onlongselect = function () { openActionMenu(video, folderId || 0); };
+    }
+
+    function actionCurrent(view) {
+        return actionView === view && activeAccountId() === view.accountId;
+    }
+
+    function rememberActionState(view) {
+        interactionCache[view.accountId + ":" + view.video.bvid] = {
+            liked: view.liked, coins: view.coins,
+            favoured: !!(view.folders && view.folders.some(function (f) { return f.selected; }))
+        };
+        if (playing && playing.detail && playing.detail.bvid === view.video.bvid) {
+            var panel = el("panel-action");
+            if (panel) { panel.textContent = cardActionLabel(view.video); }
+        }
+    }
+
+    function invalidateFavoriteLibrary() {
+        for (var key in mineLibraryCache) {
+            if (mineLibraryCache.hasOwnProperty(key) &&
+                    (/:(folders|videos):/).test(key)) { delete mineLibraryCache[key]; }
+        }
+    }
+
+    function closeActionMenu() {
+        if (!actionView) { return; }
+        if (actionView.busy) { toast("正在提交，请等待结果"); return; }
+        var view = actionView, prior = view.focusBefore;
+        actionView = null;
+        el("video-actions").className = "hidden";
+        el("video-actions-box").innerHTML = "";
+        if (view.changedFolderId && !playing && state.screen === "mine" &&
+                mineView.kind === "videos" && mineView.id === view.changedFolderId) {
+            renderMineLibrary(false);
+        } else if (prior && prior.offsetParent !== null) { Nav.focus(prior); }
+        else if (playing && optionsOpen) { Nav.reset("#panel-action"); }
+        else { Nav.reset("#screen .card"); }
+    }
+
+    function paintActionMenu(focusId) {
+        var view = actionView;
+        if (!view) { return; }
+        var box = el("video-actions-box"), html =
+            '<div class="action-title">' + esc(view.video.title || "视频操作") + '</div>' +
+            '<div class="action-row"><div class="action-choice focusable" id="action-close">返回</div></div>';
+        if (view.loading) {
+            html += '<div class="action-status">正在读取点赞、投币与收藏状态…</div>';
+        } else if (view.confirmCoin) {
+            html += '<div class="action-status">确定为此视频投 ' + view.confirmCoin +
+                ' 枚硬币？投币成功后不能撤回，也不会同时点赞。</div>' +
+                '<div class="action-row"><div class="action-choice focusable" id="action-cancel">取消</div>' +
+                '<div class="action-choice danger focusable" id="action-confirm">确认投币</div></div>';
+        } else {
+            if (view.error) { html += '<div class="action-error">' + esc(view.error) + '</div>'; }
+            if (view.busy) { html += '<div class="action-status">正在提交，请稍候…</div>'; }
+            var canWrite = !view.busy && API.videoActionReady();
+            html += '<div class="action-label">视频互动</div><div class="action-row">';
+            if (view.liked !== null) {
+                html += '<div class="action-choice' + (view.liked ? ' active' : '') +
+                    (canWrite ? ' focusable' : ' disabled') + '" id="action-like">' +
+                    (view.liked ? '已点赞 · 取消' : '点赞') + '</div>';
+            }
+            if (view.coins !== null) {
+                html += '<div class="action-choice disabled">已投 ' + view.coins + ' / 2 枚</div>';
+            }
+            html += '</div>';
+            if (view.coins !== null && view.coins < 2) {
+                html += '<div class="action-row">' +
+                    '<div class="action-choice' + (canWrite ? ' focusable' : ' disabled') +
+                    '" id="action-coin-1">投 1 枚</div>' +
+                    (view.coins === 0 ? '<div class="action-choice' +
+                    (canWrite ? ' focusable' : ' disabled') + '" id="action-coin-2">投 2 枚</div>' : '') +
+                    '</div>';
+            }
+            html += '<div class="action-label">收藏夹</div>';
+            if (view.folders && view.folders.length) {
+                for (var i = 0; i < view.folders.length; i++) {
+                    var folder = view.folders[i];
+                    html += '<div class="action-row"><div class="action-choice' +
+                        (folder.selected ? ' active' : '') +
+                        (canWrite ? ' focusable' : ' disabled') + '" id="action-folder-' + i + '">' +
+                        (folder.selected ? '★ 从「' : '☆ 加入「') + esc(folder.title) +
+                        (folder.selected ? '」移出' : '」') + '</div></div>';
+                }
+            } else if (view.folders) {
+                html += '<div class="action-status">还没有收藏夹</div>';
+            }
+            if (view.statusFailed) {
+                html += '<div class="action-row"><div class="action-choice focusable" id="action-retry">重新读取状态</div></div>';
+            }
+        }
+        box.innerHTML = html;
+        el("action-close").onselect = closeActionMenu;
+        if (el("action-cancel")) {
+            el("action-cancel").onselect = function () { view.confirmCoin = 0; paintActionMenu("action-coin-1"); };
+            el("action-confirm").onselect = function () {
+                var amount = view.confirmCoin;
+                view.confirmCoin = 0;
+                mutateAction(view, "coin", amount);
+            };
+        }
+        if (el("action-like") && canWrite) {
+            el("action-like").onselect = function () { mutateAction(view, "like", !view.liked); };
+        }
+        for (var n = 1; n <= 2; n++) {
+            (function (amount) {
+                var b = el("action-coin-" + amount);
+                if (b && canWrite) { b.onselect = function () {
+                    view.confirmCoin = amount; paintActionMenu("action-cancel");
+                }; }
+            })(n);
+        }
+        if (view.folders && canWrite) {
+            for (var j = 0; j < view.folders.length; j++) {
+                (function (index) {
+                    var b = el("action-folder-" + index);
+                    if (b) { b.onselect = function () { mutateAction(view, "favorite", index); }; }
+                })(j);
+            }
+        }
+        if (el("action-retry")) { el("action-retry").onselect = function () { loadActionState(view); }; }
+        Nav.reset(focusId && el(focusId) ? "#" + focusId : "#action-close");
+    }
+
+    function mutateAction(view, kind, value) {
+        if (!actionCurrent(view) || view.busy || !API.videoActionReady()) { return; }
+        view.busy = true; view.error = "";
+        paintActionMenu("action-close");
+        function failed(why) {
+            if (!actionCurrent(view)) { return; }
+            view.busy = false;
+            view.error = "操作没有成功：" + why;
+            report("action", kind + " 失败 " + why);
+            paintActionMenu("action-close");
+        }
+        function succeeded() {
+            if (!actionCurrent(view)) { return; }
+            view.busy = false;
+            if (kind === "like") { view.liked = value; toast(value ? "已点赞" : "已取消点赞"); }
+            if (kind === "coin") { view.coins += value; toast("已投 " + value + " 枚硬币"); }
+            if (kind === "favorite") {
+                var folder = view.folders[value];
+                folder.selected = !folder.selected;
+                view.changedFolderId = folder.id;
+                invalidateFavoriteLibrary();
+                toast(folder.selected ? "已加入「" + folder.title + "」" : "已从「" + folder.title + "」移出");
+            }
+            rememberActionState(view);
+            paintActionMenu(kind === "like" ? "action-like" :
+                            kind === "favorite" ? "action-folder-" + value : "action-close");
+        }
+        if (kind === "like") { API.videoLike(view.aid, value, succeeded, failed); }
+        else if (kind === "coin") { API.videoCoin(view.aid, value, succeeded, failed); }
+        else if (kind === "favorite") {
+            API.videoFavorite(view.aid, view.folders[value].id,
+                              !view.folders[value].selected, succeeded, failed);
+        }
+    }
+
+    function loadActionState(view) {
+        if (!actionCurrent(view)) { return; }
+        view.loading = true; view.statusFailed = false; view.error = "";
+        view.liked = null; view.coins = null; view.folders = null;
+        paintActionMenu("action-close");
+        var left = 3;
+        function done() {
+            if (!actionCurrent(view)) { return; }
+            left--;
+            if (left) { return; }
+            view.loading = false;
+            if (view.statusFailed) { view.error = "部分状态读取失败；未确认的操作暂不可用。"; }
+            rememberActionState(view);
+            paintActionMenu(view.liked !== null ? "action-like" : "action-close");
+        }
+        API.videoLikeState(view.aid, function (liked) { view.liked = liked; done(); },
+            function (why) { view.statusFailed = true; report("action", "点赞状态 " + why); done(); });
+        API.videoCoinState(view.aid, function (coins) { view.coins = coins; done(); },
+            function (why) { view.statusFailed = true; report("action", "投币状态 " + why); done(); });
+        API.favoriteFolders(Accounts.active().mid, function (folders) {
+            view.folders = folders;
+            if (view.sourceFolderId) {
+                for (var i = 0; i < folders.length; i++) {
+                    if (folders[i].id === view.sourceFolderId) { folders[i].selected = true; }
+                }
+            }
+            done();
+        }, function (why) { view.statusFailed = true; report("action", "收藏夹状态 " + why); done(); }, view.aid);
+    }
+
+    function openActionMenu(video, sourceFolderId) {
+        if (!video || !video.bvid || actionView) { return; }
+        if (pendingNext) { stopCountdown(); }
+        var view = actionView = {
+            video: video, sourceFolderId: sourceFolderId || 0,
+            accountId: activeAccountId(), focusBefore: Nav.current(),
+            aid: Number(video.aid) || 0, liked: null, coins: null, folders: null,
+            loading: true, busy: false, confirmCoin: 0, statusFailed: false,
+            changedFolderId: 0, error: ""
+        };
+        el("video-actions").className = "";
+        if (!Auth.isLoggedIn()) {
+            view.loading = false; view.error = "请先在「我的」扫码登录，才能点赞、投币或收藏。";
+            paintActionMenu("action-close"); return;
+        }
+        if (!API.videoActionReady()) {
+            view.loading = false;
+            view.error = "当前登录方式不能提交视频操作，请用电视二维码重新登录。";
+            paintActionMenu("action-close"); return;
+        }
+        if (!Accounts.active() || !Accounts.active().mid) {
+            view.loading = false; view.error = "还没有读取到账号 UID，请稍后重试。";
+            paintActionMenu("action-close"); return;
+        }
+        paintActionMenu("action-close");
+        if (view.aid) { loadActionState(view); return; }
+        API.view(video.bvid, function (full) {
+            if (!actionCurrent(view)) { return; }
+            view.aid = Number(full.aid) || 0;
+            if (!view.aid) {
+                view.loading = false; view.error = "没有取得视频编号，无法提交操作。";
+                paintActionMenu("action-close"); return;
+            }
+            video.aid = view.aid;
+            loadActionState(view);
+        }, function (why) {
+            if (!actionCurrent(view)) { return; }
+            view.loading = false; view.error = "视频资料读取失败：" + why;
+            paintActionMenu("action-close");
+        });
+    }
+
+    /* Four-column cards put metadata on one row. Preserve the UP name first:
+     * shave the date punctuation, then the viewing-count suffix, and only let
+     * the browser ellipsize the name when even those savings are insufficient.
+     * Measure the actual TV font instead of guessing Chinese glyph widths. */
+    function fitCardMeta(root) {
+        if (gridColumns() !== 4 || !root) { return; }
+        var rows = root.querySelectorAll(".card-info");
+        for (var i = 0; i < rows.length; i++) {
+            var author = rows[i].querySelector(".card-author");
+            var date = rows[i].querySelector(".card-info-date");
+            var views = rows[i].querySelector(".card-views");
+            if (!author) { continue; }
+            if (date && author.scrollWidth > author.clientWidth + 1) {
+                date.textContent = date.getAttribute("data-compact");
+            }
+            if (views && author.scrollWidth > author.clientWidth + 1) {
+                views.textContent = views.getAttribute("data-short");
+            }
+        }
+    }
+
+    /* What is half-watched, newest first, for one full row at this density.
      *
      * Finished videos are dropped: the row exists to answer "what was I in the
      * middle of", and something watched to the end is not an answer to that. */
@@ -335,7 +633,7 @@
          * lists it: it was watched, and that stays true after the takedown. */
         var dead = Resume.dead();
         var out = [];
-        for (var i = 0; i < merged.length && out.length < 3; i++) {
+        for (var i = 0; i < merged.length && out.length < gridColumns(); i++) {
             if ((merged[i].seen || 0) >= 0.95) { continue; }
             if (dead[merged[i].bvid]) { continue; }
             out.push(merged[i]);
@@ -408,6 +706,7 @@
         html += '<div class="grid" id="feed-grid">';
         for (var i = 0; i < items.length; i++) { html += cardHtml(items[i], i); }
         screenEl.innerHTML = html + "</div>";
+        fitCardMeta(el("feed-grid"));
 
         if (resume.length) { paintCards(el("resume-row"), resume); }
 
@@ -419,6 +718,7 @@
             (function (card, v) {
                 card.__video = v;
                 card.onselect = function () { playVideo(v); };
+                bindCardAction(card, v);
             })(cards[j], items[Number(cards[j].getAttribute("data-i"))]);
         }
     }
@@ -430,6 +730,7 @@
         var html = '<div class="grid">';
         for (var i = 0; i < items.length; i++) { html += cardHtml(items[i], i); }
         container.innerHTML = html + "</div>";
+        fitCardMeta(container);
 
         var cards = container.querySelectorAll(".card");
         for (var j = 0; j < cards.length; j++) {
@@ -438,6 +739,7 @@
                 card.onselect = function () {
                     playVideo(items[Number(card.getAttribute("data-i"))]);
                 };
+                bindCardAction(card, card.__video);
             })(cards[j]);
         }
     }
@@ -480,6 +782,7 @@
             var html = "";
             for (var i = shown; i < upto; i++) { html += cardHtml(items[i], i); }
             grid.insertAdjacentHTML("beforeend", html);
+            fitCardMeta(grid);
             shown = upto;
             /* Only the new cards need wiring — the ones already up kept their
              * onselect through the append. */
@@ -492,6 +795,7 @@
                      * is steady (prefetchAllowed). */
                     node.__video = v;
                     node.onselect = function () { if (v) { pick(v); } };
+                    bindCardAction(node, v);
                 })(cards[c], items[Number(cards[c].getAttribute("data-i"))]);
             }
         }
@@ -518,7 +822,8 @@
                 if (!/(^|\s)card(\s|$)/.test(focused.className)) { return; }
                 var box = el(boxId);
                 if (!box || !box.contains(focused)) { return; }
-                if (Number(focused.getAttribute("data-i")) < shown - 3) { return; }
+                /* Column one of the last row must reveal the next row too. */
+                if (Number(focused.getAttribute("data-i")) < shown - gridColumns()) { return; }
                 grow(shown + page);
             }
         };
@@ -742,6 +1047,7 @@
     function showScreen(kind, restore) {
         if (kind === "search") { renderSearch(); }
         else if (kind === "mine") { renderMine(); }
+        else if (kind === "settings") { renderSettings(); }
         else { loadFeed(kind, restore); }
     }
     function openUp(mid, name, face) {
@@ -908,9 +1214,11 @@
             (function (card, v) {
                 card.__video = v;
                 card.onselect = function () { playVideo(v); };
+                bindCardAction(card, v);
             })(
                 node, items[Number(node.getAttribute("data-i")) - offset]);
         }
+        fitCardMeta(grid);
     }
 
     /* Coming back to the home tab is the moment to notice that the phone has
@@ -1651,6 +1959,7 @@
         var html = '<div class="grid">';
         for (var i = 0; i < items.length; i++) { html += cardHtml(items[i], i); }
         results.innerHTML = html + "</div>";
+        fitCardMeta(results);
         /* Fold the keyboard away once there is something to look at, so the
          * results are not buried under four rows of letters. */
         var kb = screenEl.querySelector(".keyboard");
@@ -1660,6 +1969,7 @@
             (function (card, v) {
                 card.__video = v;
                 card.onselect = function () { playVideo(v); };
+                bindCardAction(card, v);
             })(
                 cards[j], items[Number(cards[j].getAttribute("data-i"))]);
         }
@@ -1851,9 +2161,291 @@
         Nav.reset("#btn-cancel");
     }
 
+    /* Playback preferences apply to the television, including guest viewing.
+     * Autoplay stays on unless switched off: it is how this app has always
+     * behaved, and AUTOPLAY_UNATTENDED already stops a sleeping viewer's chain. */
+    function autoNextEnabled() {
+        return Settings.get("autoplayNext", true) === true;
+    }
+
+    function subtitlesEnabled() {
+        return Settings.get("showSubtitles", false) === true;
+    }
+
+    function clearSubtitles() {
+        el("subtitle-overlay").className = "hidden";
+        el("subtitle-text").textContent = "";
+    }
+
+    function paintSubtitleAt(positionMs) {
+        if (!playing || !subtitlesEnabled() || !playing.subtitleCues) { return; }
+        var cues = playing.subtitleCues, secs = positionMs / 1000;
+        var lo = 0, hi = cues.length - 1, found = -1;
+        while (lo <= hi) {
+            var mid = (lo + hi) >> 1;
+            if (cues[mid].from <= secs) { found = mid; lo = mid + 1; }
+            else { hi = mid - 1; }
+        }
+        var value = found >= 0 && secs < cues[found].to ? cues[found].text : "";
+        var text = el("subtitle-text");
+        if (text.textContent !== value) { text.textContent = value; }
+        el("subtitle-overlay").className = value ? "" : "hidden";
+    }
+
+    function startSubtitles() {
+        if (!playing || !playing.timed || !subtitlesEnabled() ||
+                playing.subtitleStarted || !playing.subtitleTracks) { return; }
+        var session = playing, tracks = session.subtitleTracks, choice = null;
+        /* Prefer human Chinese, then AI Chinese, then the first other language. */
+        for (var i = 0; i < tracks.length; i++) {
+            if (!tracks[i] || !tracks[i].subtitle_url) { continue; }
+            var lang = String(tracks[i].lan || "").toLowerCase();
+            var score = /^zh/.test(lang) ? (tracks[i].ai_type ? 2 : 3) : 1;
+            if (!choice || score > choice.score) {
+                choice = { url: tracks[i].subtitle_url, score: score,
+                    label: tracks[i].lan_doc || lang };
+            }
+        }
+        session.subtitleStarted = true;
+        if (!choice) { return; }
+        API.subtitle(choice.url, function (cues) {
+            if (playing !== session) { return; }
+            session.subtitleCues = cues;
+            report("subtitle", "已加载 " + choice.label + "，" + cues.length + " 条");
+            paintSubtitleAt(lastKnownPosition);
+        }, function (why) {
+            if (playing === session) { report("subtitle", "字幕取不到：" + why); }
+        });
+    }
+
+    function renderSettings() {
+        newView();
+        state.screen = "settings";
+        markTab();
+        Auth.cancelLogin();
+        var account = Accounts.active();
+        var session = account && account.session;
+        var expiryNote = "未登录；扫码后可在这里查看 TV 令牌的标称到期时间。";
+        if (session) {
+            expiryNote = "当前登录方式没有可读取的令牌到期时间。";
+            if (session.expiresAt && session.savedAt &&
+                    session.expiresAt > session.savedAt) {
+                var expiry = new Date(session.expiresAt);
+                var pad = function (n) { return n < 10 ? "0" + n : String(n); };
+                expiryNote = "TV 令牌标称到期：" + expiry.getFullYear() + "-" +
+                    pad(expiry.getMonth() + 1) + "-" + pad(expiry.getDate()) + " " +
+                    pad(expiry.getHours()) + ":" + pad(expiry.getMinutes()) +
+                    "（电视本地时间）。服务端可能提前使登录失效；本版本不会自动续期。";
+            }
+        }
+        /* From the installed package, so it cannot drift from config.xml. */
+        var version = "";
+        try { version = tizen.application.getCurrentApplication().appInfo.version || ""; }
+        catch (e) {}
+        screenEl.innerHTML = '<div class="mine">' +
+            '<div class="me"><div class="me-name">设置</div>' +
+            '<div class="me-sub">' + (version ? "版本 " + esc(version) + " · " : "") +
+            '这里的设置保存在这台电视上</div></div>' +
+            '<div class="section">账号</div>' +
+            '<div class="me-sub" style="margin-top:12px">' + esc(expiryNote) + '</div>' +
+            '<div class="section">播放</div>' +
+            '<div class="actions"><div class="btn focusable" id="btn-autoplay"></div>' +
+            '<div class="btn focusable" id="btn-subtitles"></div></div>' +
+            '<div class="me-sub" style="margin-top:24px">关闭后，视频或分 P 播完会停在下一条推荐页面，按确认键才会继续播放。</div>' +
+            '<div class="me-sub" style="margin-top:12px">字幕只在视频提供字幕轨道时显示；设置会在下一次播放时生效。</div>' +
+            '<div class="section">浏览</div>' +
+            '<div class="actions"><div class="btn focusable" id="btn-density"></div></div>' +
+            '<div class="me-sub" style="margin-top:24px">离电视远就选 3 个，标题看得清；坐得近或屏幕小，4 个、5 个能一屏看到更多。</div></div>';
+        var button = el("btn-autoplay");
+        function paint() {
+            button.textContent = "自动播放下一个：" + (autoNextEnabled() ? "开" : "关");
+        }
+        paint();
+        button.onselect = function () {
+            Settings.set("autoplayNext", !autoNextEnabled());
+            paint();
+            report("settings", "自动播放下一个=" + (autoNextEnabled() ? "开" : "关"));
+        };
+        var subtitleButton = el("btn-subtitles");
+        function paintSubtitles() {
+            subtitleButton.textContent = "显示字幕：" + (subtitlesEnabled() ? "开" : "关");
+        }
+        paintSubtitles();
+        subtitleButton.onselect = function () {
+            Settings.set("showSubtitles", !subtitlesEnabled());
+            paintSubtitles();
+            report("settings", "显示字幕=" + (subtitlesEnabled() ? "开" : "关"));
+        };
+        var density = el("btn-density");
+        function paintDensity() { density.textContent = "每行视频：" + gridColumns() + " 个"; }
+        paintDensity();
+        density.onselect = function () {
+            Settings.set("gridColumns", gridColumns() === 5 ? 3 : gridColumns() + 1);
+            applyGridDensity();
+            /* Cached pages carry covers sized for the old width: refetch them
+             * rather than stretch 344px images across a 576px card. */
+            feedCache = {};
+            mineLibraryCache = {};
+            paintDensity();
+            report("settings", "每行视频=" + gridColumns());
+        };
+        Nav.reset("#btn-autoplay");
+        report("settings", "打开设置，自动播放下一个=" + (autoNextEnabled() ? "开" : "关"));
+    }
+
     /* ---------------- mine / login ---------------- */
 
+    var mineView = { kind: "history", id: 0, title: "" };
+    var mineLibraryCache = {};
+
+    function mineCacheKey() {
+        return activeAccountId() + ":" + mineView.kind + ":" + (mineView.id || 0);
+    }
+
+    function openMineLibrary(kind, id, title) {
+        mineView = { kind: kind, id: id || 0, title: title || "" };
+        renderMineLibrary(false);
+    }
+
+    function renderMineLibrary(restore) {
+        if (!Auth.isLoggedIn()) { mineView.kind = "history"; renderMine(); return; }
+        state.screen = "mine";
+        markTab();
+        var token = newView();
+        var accId = activeAccountId();
+        var key = mineCacheKey();
+        var cache = restore ? mineLibraryCache[key] : null;
+        var kind = mineView.kind;
+        var title = kind === "folders" ? "我的收藏" :
+                    kind === "following" ? "关注的 UP 主" : mineView.title;
+
+        screenEl.innerHTML = '<div class="library-head">' +
+            '<div class="btn ghost focusable" id="mine-back">返回</div>' +
+            '<div class="me-name">' + esc(title) + '</div></div>' +
+            '<div id="mine-library"><div class="empty">读取中…</div></div>';
+        el("mine-back").onselect = function () {
+            mineView = kind === "videos"
+                ? { kind: "folders", id: 0, title: "" }
+                : { kind: "history", id: 0, title: "" };
+            renderMine();
+        };
+        Nav.reset("#mine-back");
+
+        function paint(focusIndex) {
+            if (!stillViewing(token) || activeAccountId() !== accId) { return; }
+            var box = el("mine-library");
+            if (!box || !cache) { return; }
+            var list = cache.items;
+            if (kind === "videos") {
+                if (list.length) { paintCards(box, list); }
+                else { box.innerHTML = '<div class="empty">这个收藏夹里没有可播放的视频</div>'; }
+                var videos = box.querySelectorAll(".card");
+                for (var v = 0; v < videos.length; v++) {
+                    (function (card, index) {
+                        card.onselect = function () {
+                            cache.index = index;
+                            cache.scrollTop = screenEl.scrollTop;
+                            playVideo(list[index]);
+                        };
+                        bindCardAction(card, list[index], mineView.id);
+                    })(videos[v], v);
+                }
+            } else {
+                var html = '<div class="library-grid">';
+                for (var i = 0; i < list.length; i++) {
+                    var item = list[i];
+                    html += '<div class="library-item focusable" data-i="' + i + '">' +
+                        (kind === "following" && item.face
+                            ? '<img class="library-face" src="' + esc(item.face) + '" alt="">'
+                            : '<span class="library-symbol">' + (kind === "folders" ? "★" : "UP") + '</span>') +
+                        '<span class="library-text"><strong>' +
+                        esc(kind === "folders" ? item.title : item.name) + '</strong><small>' +
+                        esc(kind === "folders" ? item.count + " 个视频" : item.sign) +
+                        '</small></span></div>';
+                }
+                html += '</div>';
+                if (!list.length) { html = '<div class="empty">' +
+                    (kind === "folders" ? "还没有收藏夹" : "还没有关注 UP 主") + '</div>'; }
+                box.innerHTML = html;
+                var nodes = box.querySelectorAll(".library-item");
+                for (var j = 0; j < nodes.length; j++) {
+                    (function (node, index) {
+                        node.onselect = function () {
+                            cache.index = index;
+                            cache.scrollTop = screenEl.scrollTop;
+                            var entry = list[index];
+                            if (kind === "folders") { openMineLibrary("videos", entry.id, entry.title); }
+                            else { openUp(entry.mid, entry.name, entry.face); }
+                        };
+                    })(nodes[j], j);
+                }
+            }
+            if (cache.more) {
+                box.insertAdjacentHTML("beforeend", '<div class="actions library-more">' +
+                    '<div class="btn focusable" id="mine-more">加载更多</div></div>');
+                el("mine-more").onselect = function () { fetchMore(cache.page + 1, list.length); };
+            }
+            if (cache.limited) {
+                box.insertAdjacentHTML("beforeend", '<div class="me-sub library-limit">' +
+                    '当前接口最多显示前 250 位关注的 UP 主</div>');
+            }
+            if (focusIndex !== undefined && list.length) {
+                var all = box.querySelectorAll(kind === "videos" ? ".card" : ".library-item");
+                Nav.focus(all[Math.min(focusIndex, all.length - 1)]);
+                if (restore && cache.scrollTop) { screenEl.scrollTop = cache.scrollTop; }
+            }
+        }
+
+        function fail(why) {
+            if (!stillViewing(token) || activeAccountId() !== accId) { return; }
+            report("mine", kind + " 读取失败 " + why);
+            if (cache && cache.items.length) { toast("加载下一页失败：" + why); return; }
+            delete mineLibraryCache[key];
+            el("mine-library").innerHTML = '<div class="empty">读取失败：' + esc(why) + '</div>' +
+                '<div class="actions"><div class="btn focusable" id="mine-retry">重试</div></div>';
+            el("mine-retry").onselect = function () { renderMineLibrary(false); };
+            Nav.focus(el("mine-retry"));
+        }
+
+        function fetchMore(page, focusIndex) {
+            if (cache.loading) { return; }
+            cache.loading = true;
+            var done = function (items, more, limited) {
+                if (!stillViewing(token) || activeAccountId() !== accId) { return; }
+                cache.loading = false;
+                cache.items = cache.items.concat(items);
+                cache.page = page;
+                cache.more = !!more;
+                cache.limited = !!limited;
+                paint(focusIndex === undefined ? cache.index : focusIndex);
+            };
+            var failed = function (why) { cache.loading = false; fail(why); };
+            if (kind === "videos") {
+                API.favoriteVideos(mineView.id, page, function (items, more) { done(items, more); }, failed);
+            } else {
+                API.followings(Accounts.active().mid, page, done, failed);
+            }
+        }
+
+        if (cache) { paint(cache.index || 0); return; }
+        cache = { items: [], page: 0, more: false, limited: false,
+                  index: 0, scrollTop: 0, loading: false };
+        mineLibraryCache[key] = cache;
+        if (kind === "folders" || kind === "following") {
+            var account = Accounts.active();
+            if (!account || !account.mid) { fail("未取得当前账号的 UID，请重新进入“我的”"); return; }
+            if (kind === "folders") {
+                API.favoriteFolders(account.mid, function (items) {
+                    if (!stillViewing(token) || activeAccountId() !== accId) { return; }
+                    cache.items = items;
+                    paint(items.length ? 0 : undefined);
+                }, fail);
+            } else { fetchMore(1, 0); }
+        } else { fetchMore(1, 0); }
+    }
+
     function renderMine() {
+        if (mineView.kind !== "history") { renderMineLibrary(true); return; }
         state.screen = "mine";
         markTab();
         Auth.cancelLogin();
@@ -1967,9 +2559,18 @@
             /* One list. The local record is painted straight away because it
              * costs nothing and the screen should not open empty; the server's
              * arrives a moment later and the two are merged in place. */
+            if (me.isLogin) {
+                html += '<div class="actions library-links">' +
+                    '<div class="btn focusable" id="mine-favorites">我的收藏</div>' +
+                    '<div class="btn focusable" id="mine-following">关注的 UP 主</div></div>';
+            }
             html += '<div class="section">观看历史</div><div id="hist"></div>' +
                     '<div id="hist-note"></div></div>';
             screenEl.innerHTML = html;
+            if (me.isLogin) {
+                el("mine-favorites").onselect = function () { openMineLibrary("folders"); };
+                el("mine-following").onselect = function () { openMineLibrary("following"); };
+            }
 
             /* The local store keeps 300; asking for 40 was throwing away most of
              * it. One card per video after the merge, so a set that watches a
@@ -2011,6 +2612,8 @@
                 el("btn-remove").onselect = function () {
                     Auth.logout();
                     feedCache = {};
+                    mineLibraryCache = {};
+                    mineView = { kind: "history", id: 0, title: "" };
                     /* Another account, another history. */
                     serverHistory = { at: 0, items: null };
                     state.query = "";
@@ -2590,7 +3193,7 @@
         if (paused) {
             Player.pause();
             el("pause-glyph").className = "";
-            el("playerui").className = "";
+            if (!commentsView) { el("playerui").className = ""; }
             if (chromeTimer) { clearTimeout(chromeTimer); chromeTimer = null; }
         } else {
             Player.resume();
@@ -2802,14 +3405,166 @@
     /* ---------------- options: quality and parts ---------------- */
 
     var optionsOpen = false;
+    var commentsView = null;
+    var commentsToken = 0;
+
+    function commentId(row) { return String(row.rpid_str || row.rpid || ""); }
+
+    function commentHtml(row, index) {
+        var name = (row.member || {}).uname || "用户";
+        var content = (row.content || {}).message || "";
+        var replies = Number(row.rcount || row.count || 0);
+        var liked = Number(row.action) === 1;
+        var likes = Number(row.like) || 0;
+        return '<div class="comment-item focusable" data-comment-index="' + index + '">' +
+            '<div class="comment-author">' + esc(name) + '</div>' +
+            '<div class="comment-date">' + esc(publishedDate(row.ctime)) + '</div>' +
+            '<div class="comment-text">' + esc(content) + '</div>' +
+            '<div class="comment-foot"><span class="' + (liked ? 'comment-liked' : '') +
+            '">♥ ' + likes + ' 次赞' + (liked ? ' · 已赞' : '') + '</span>' +
+            (!commentsView.root && replies ?
+                '<span class="comment-replies">' + replies + ' 条回复 ›</span>' : '') +
+            '</div></div>';
+    }
+
+    function commentRows() {
+        return commentsView.root ? commentsView.children : commentsView.roots;
+    }
+
+    function paintComments(focusIndex) {
+        if (!commentsView) { return; }
+        var rows = commentRows(), html = "";
+        for (var i = 0; i < rows.length; i++) { html += commentHtml(rows[i], i); }
+        if (!html) {
+            html = '<div class="comment-item focusable" id="comments-empty">' +
+                esc(commentsView.loading ? "正在加载评论…" :
+                    (commentsView.error || "这里还没有评论")) + '</div>';
+        }
+        el("comments-list").innerHTML = html;
+        el("comments-title").textContent = commentsView.root ? "楼中楼" : "评论";
+        el("comments-level").textContent = commentsView.root ? "返回键回到评论" : "";
+        el("comments-hint").textContent = commentsView.root
+            ? "上下浏览 · 返回上一级 · 评论只读"
+            : "上下浏览 · 右键看楼中楼 · 返回退出 · 评论只读";
+        el("comments-status").textContent = commentsView.loading ? "正在加载…" :
+            (commentsView.error ? "加载失败；返回后可重试" :
+             (commentsView.more ? "继续向下可加载更多" : ""));
+        Nav.reset(rows.length ? '#comments-list [data-comment-index="' +
+                  Math.min(focusIndex || 0, rows.length - 1) + '"]' : "#comments-empty");
+    }
+
+    function loadComments() {
+        var view = commentsView;
+        if (!view || view.loading || !view.more) { return; }
+        view.loading = true;
+        el("comments-status").textContent = "正在加载…";
+        var root = view.root, page = root ? view.childPage + 1 : view.page + 1;
+        var token = view.token;
+        function received(rows, more) {
+            if (commentsView !== view || view.token !== token || view.root !== root) { return; }
+            var target = root ? view.children : view.roots;
+            var seen = {}, i;
+            for (i = 0; i < target.length; i++) { seen[commentId(target[i])] = 1; }
+            for (i = 0; i < rows.length; i++) {
+                if (!seen[commentId(rows[i])]) { target.push(rows[i]); seen[commentId(rows[i])] = 1; }
+            }
+            if (root) { view.childPage = page; } else { view.page = page; }
+            view.more = !!more && rows.length > 0;
+            if (!root) { view.rootMore = view.more; }
+            view.loading = false;
+            var focus = Nav.current(), index = focus && Number(focus.getAttribute("data-comment-index"));
+            paintComments(isNaN(index) ? 0 : index);
+        }
+        function failed(why) {
+            if (commentsView !== view || view.token !== token || view.root !== root) { return; }
+            view.loading = false;
+            view.more = false;
+            view.error = "评论暂时无法读取（" + why + "）";
+            report("comments", view.error);
+            paintComments(0);
+        }
+        if (root) { API.commentReplies(view.aid, root, page, received, failed); }
+        else { API.comments(view.aid, page, received, failed); }
+    }
+
+    function openComments() {
+        if (!playing || commentsView) { return; }
+        var aid = Number(playing.detail.aid) || 0;
+        if (!aid) {
+            var session = playing;
+            toast("正在获取评论编号…");
+            API.view(session.detail.bvid, function (d) {
+                if (playing !== session) { return; }
+                if (!d || !d.aid) { toast("这个视频暂时没有可读取的评论"); return; }
+                session.detail.aid = d.aid;
+                openComments();
+            }, function (why) {
+                if (playing === session) { toast("评论暂时无法打开：" + why); }
+            });
+            return;
+        }
+        closeOptions();
+        cancelScrub();
+        commentsView = { aid: aid, token: ++commentsToken,
+            roots: [], children: [], root: "", page: 0, childPage: 0,
+            loading: false, more: true, rootMore: true,
+            error: "", rootIndex: 0, rootScroll: 0 };
+        el("comments-video-title").textContent = playing.detail.title || "";
+        document.body.className += " comments-open";
+        el("comments-view").className = "";
+        el("playerui").className = "hidden";
+        Player.setViewport(48, 72, 1216, 684);
+        paintComments(0);
+        loadComments();
+    }
+
+    function closeComments(silent) {
+        if (!commentsView) { return; }
+        commentsView = null;
+        ++commentsToken;
+        document.body.className = document.body.className.replace(/\s*comments-open/g, "");
+        el("comments-view").className = "hidden";
+        el("comments-list").innerHTML = "";
+        Player.setViewport(0, 0, 1920, 1080);
+        if (playing && !silent) { showChrome(); }
+    }
+
+    function openCommentReplies(row, index) {
+        if (!commentsView || commentsView.root || !Number(row.rcount || row.count || 0)) { return; }
+        var view = commentsView;
+        view.rootIndex = index;
+        view.rootScroll = el("comments-list").scrollTop;
+        view.root = commentId(row);
+        view.children = [];
+        view.childPage = 0;
+        view.more = true;
+        view.error = "";
+        view.loading = false;
+        view.token = ++commentsToken;
+        el("comments-list").scrollTop = 0;
+        paintComments(0);
+        loadComments();
+    }
+
+    function leaveCommentReplies() {
+        if (!commentsView || !commentsView.root) { closeComments(); return; }
+        var view = commentsView;
+        view.root = "";
+        view.more = view.rootMore;
+        view.error = "";
+        view.loading = false;
+        view.token = ++commentsToken;
+        paintComments(view.rootIndex);
+        el("comments-list").scrollTop = view.rootScroll;
+    }
 
     /* Two rows on open, two more per step down. Two rather than the old sixteen
      * because this panel comes up over a video that is still buffering: the
      * cheapest moment to spend on thumbnails is after the ring starts moving,
      * which is also the only moment they are being looked at. Six, not eight,
      * since the grid went three wide — these are rows counted in cards. */
-    var PANEL_FIRST = 6;
-    var PANEL_PAGE = 6;
+    function panelFirst() { return gridColumns() * 2; }
+    function panelPage() { return gridColumns() * 2; }
 
     var QUALITY_NAMES = {
         127: "8K", 120: "4K", 116: "1080P60", 112: "1080P+",
@@ -2930,7 +3685,8 @@
          * word in a line of grey text. It sits above the part row, which is
          * where 上键 from the parts already goes; one more press up from the
          * chip closes the panel as before (nothingAboveInPanel). */
-        var rest = [d.duration, d.play ? d.play + "次观看" : ""]
+        var rest = [d.duration, d.play ? d.play + "次观看" : "",
+                    publishedDate(d.publishedAt) ? "发布于 " + publishedDate(d.publishedAt) : ""]
             .filter(function (x) { return !!x; }).join("  ·  ");
         el("panel-meta").innerHTML =
             '<span class="opt-up focusable" id="panel-up">' + esc(d.author || "UP 主") + '</span>' +
@@ -2949,6 +3705,11 @@
             stopPlayback(function () { openUp(mid, name, face); });
         };
         el("panel-desc").textContent = (d.desc || "").slice(0, 400);
+        el("panel-action").textContent = cardActionLabel(d);
+        el("panel-action").onselect = function () {
+            if (playing) { openActionMenu(playing.detail, 0); }
+        };
+        el("panel-comments").onselect = openComments;
 
         paintParts();
         paintSpeed();
@@ -2961,7 +3722,7 @@
         var rg = el("opt-related-group");
         rg.className = "opt-group";
         if (d.related && d.related.length) {
-            panelGrid.reset(d.related, PANEL_FIRST);
+            panelGrid.reset(d.related, panelFirst());
         } else {
             panelGrid.clear();
             el("opt-related").innerHTML = '<div class="empty">正在加载相关视频…</div>';
@@ -3013,8 +3774,8 @@
      * while the countdown is still running, which is the one paint that competes
      * with the next video's start: a row is the right unit for it either way,
      * and three is one thumbnail cheaper than four was. */
-    var NEXTUP_FIRST = 3;
-    var NEXTUP_PAGE = 6;
+    function nextupFirst() { return gridColumns(); }
+    function nextupPage() { return gridColumns() * 2; }
 
     /* Autoplays in a row with no key pressed in between. After this many the
      * countdown is not started: a viewer who fell asleep otherwise chained
@@ -3086,7 +3847,7 @@
                 if (next.detail && rel[r].bvid === next.detail.bvid) { continue; }
                 more.push(rel[r]);
             }
-            nextupGrid.reset(more, NEXTUP_FIRST);
+            nextupGrid.reset(more, nextupFirst());
             el("nextup-more").className = more.length ? "nextup-more" : "nextup-more hidden";
             /* `has-more` is what turns the centred column into a scroller — and
              * it can only be decided here, once it is known whether there is
@@ -3110,6 +3871,11 @@
             Nav.focus(el("nextup-go"));
             prefetchCard(queued, true);
 
+            if (!autoNextEnabled()) {
+                report("player", "自动播放已关闭，等待观众选择下一条");
+                el("nextup-hint").textContent = "自动播放已关闭 · 确认键 播放 · 返回键 退出";
+                return;
+            }
             if (autoplaysSinceKey >= AUTOPLAY_UNATTENDED) {
                 report("player", "连着自动播了 " + autoplaysSinceKey +
                        " 个都没人按键，这次不倒计时，等观众确认");
@@ -3128,6 +3894,7 @@
                 (hasUp ? ' &middot; 右键 看这位 UP 主' : "") +
                 ' &middot; 返回键 退出';
             nextTimer = setInterval(function () {
+                if (!autoNextEnabled()) { stopCountdown(); return; }
                 left--;
                 var c = el("nextup-count");
                 if (c) { c.textContent = left; }
@@ -3212,6 +3979,7 @@
      * take it away again so the picture is unobstructed while watching. */
     function showChrome() {
         if (!playing) { return; }
+        if (commentsView) { return; }
         el("playerui").className = "";
         /* Fresh start for the "how long has it been trying to hide" clock: a
          * keypress puts the banner up on purpose, so the four seconds that
@@ -3332,6 +4100,7 @@
          * head seeded from the last video would jump a fresh one straight to its
          * own ending. */
         closeOptions();
+        closeComments(true);
         cancelScrub();
         /* Diagnostics are per-video too: a capped count that is never reset
          * would go quiet after the first bad video of the evening, which is
@@ -3360,6 +4129,7 @@
                            Math.floor(lastKnownDuration / 1000));
         }
         Player.stop();
+        clearSubtitles();
         playing = { detail: detail, cid: cid };
 
         var startMs = Resume.positionMs(detail.bvid, cid);
@@ -3515,7 +4285,10 @@
              * Same floor as everywhere else — under 30 seconds there is nothing
              * worth resuming, and starting ten seconds in reads as a glitch. */
             var r = got.resume;
-            if (r) { playing.chapters = r.chapters || []; }
+            if (r) {
+                playing.chapters = r.chapters || [];
+                playing.subtitleTracks = r.subtitles || [];
+            }
             if (r && r.cid === cid && r.positionMs >= 30000 &&
                     r.positionMs > playing.startMs) {
                 playing.startMs = r.positionMs;
@@ -3751,7 +4524,11 @@
             API.playerV2(detail.bvid, cid, ok, fail);
         }, function (r) {
             clearTimeout(resumeTimer);
-            if (playing !== session || got.resume !== undefined) { return; }
+            if (playing !== session) { return; }
+            /* Resume's 1.2s deadline must not discard a later subtitle list. */
+            session.subtitleTracks = r.subtitles || [];
+            startSubtitles();
+            if (got.resume !== undefined) { return; }
             got.resume = r;
             decide();
         }, function () {
@@ -3909,6 +4686,7 @@
      * fetched is not thrown away only to be fetched again a second later. */
     function absorbMeta(session, full) {
         full.related = session.detail.related;
+        if (!full.publishedAt) { full.publishedAt = session.detail.publishedAt || 0; }
         /* aid may already have been filled in by withAid() on the 403 path; a
          * full view() carries it too, so nothing is lost. */
         session.detail = full;
@@ -3921,6 +4699,12 @@
         if (optionsOpen) {
             paintParts();
             el("panel-desc").textContent = (full.desc || "").slice(0, 400);
+            var meta = el("panel-meta").querySelector(".panel-meta-rest");
+            if (meta) {
+                meta.textContent = [full.duration, full.play ? full.play + "次观看" : "",
+                    publishedDate(full.publishedAt) ? "发布于 " + publishedDate(full.publishedAt) : ""]
+                    .filter(function (x) { return !!x; }).join("  ·  ");
+            }
         }
     }
 
@@ -3968,7 +4752,7 @@
                 session.detail.related = list;
                 /* In place, like the part list: reopening the panel reset its
                  * scroll and yanked the ring back to 「当前」. */
-                if (optionsOpen) { panelGrid.reset(list, PANEL_FIRST); }
+                if (optionsOpen) { panelGrid.reset(list, panelFirst()); }
             }, function (why) {
                 if (playing !== session) { return; }
                 report("meta", videoTag(d) + " 相关视频取不到（" + why + "）");
@@ -4137,12 +4921,14 @@
         }
         Resume.flush();
         cancelScrub();
+        closeComments(true);
         closeOptions();
         el("pause-glyph").className = "hidden";
         cancelNext();
         playedInChain = {};
         Player.stop();
         playing = null;
+        clearSubtitles();
         showPlayerUi(false);
         /* Unless the set slept through the middle of this video, in which case
          * what is behind the player is last night's screen and the owed refresh
@@ -4157,6 +4943,7 @@
     Player.on(function (kind, data) {
         if (kind === "time") {
             if (playing) {
+                paintSubtitleAt(data.position);
                 var d0 = playing.detail;
                 /* Which part this is, so 我的 can say P7 and reopening the
                  * video can land back on it. */
@@ -4172,6 +4959,7 @@
                 Resume.record(d0.bvid, playing.cid, data.position, data.duration, {
                     bvid: d0.bvid, aid: d0.aid, title: d0.title, pic: d0.pic,
                     author: d0.author, duration: d0.duration, play: d0.play,
+                    publishedAt: d0.publishedAt || 0,
                     cid: playing.cid, page: pg, part: ptitle
                 });
             }
@@ -4243,6 +5031,7 @@
                 playing.prefetchNote = "";
             }
             loadMetaForPlaying();
+            startSubtitles();
             /* The duration is only real once there is a picture, and the marks
              * are placed as a fraction of it. */
             paintChapters();
@@ -4272,10 +5061,13 @@
                 bufferNoticeTimer = null;
             }
         } else if (kind === "ended") {
+            if (playing) { playing.subtitleCues = []; }
+            clearSubtitles();
             if (playing) {
                 Resume.finished(playing.detail.bvid, playing.cid);
                 reportProgress(-1, true);   /* -1 is bilibili's "watched to the end" */
             }
+            closeComments(true);
             beginAutoNext();
         } else if (kind === "log") {
             report("player", data);
@@ -4679,6 +5471,30 @@
 
     Nav.onKey(function (k) {
         autoplaysSinceKey = 0;
+        if (actionView) {
+            if (k === Nav.KEY.RETURN) { closeActionMenu(); return true; }
+            return false;
+        }
+        if (commentsView) {
+            if (k === Nav.KEY.RETURN) { leaveCommentReplies(); return true; }
+            if (k === Nav.KEY.PLAY_PAUSE) { setPaused(!Player.userPaused()); return true; }
+            if (k === Nav.KEY.PLAY) { if (Player.userPaused()) { setPaused(false); } return true; }
+            if (k === Nav.KEY.PAUSE) { if (!Player.userPaused()) { setPaused(true); } return true; }
+            /* TODO: comment likes need a TV-only route that Bilibili accepts.
+             * This widget's file origin is rejected (HTTP 403) on reply/action;
+             * do not leave an Enter shortcut that makes a known-bad request. */
+            if (k === Nav.KEY.ENTER) { return true; }
+            if (k === Nav.KEY.RIGHT && !commentsView.root) {
+                var cur = Nav.current();
+                var index = cur ? Number(cur.getAttribute("data-comment-index")) : -1;
+                var row = commentsView.roots[index];
+                if (row) { openCommentReplies(row, index); }
+                return true;
+            }
+            if (k === Nav.KEY.UP || k === Nav.KEY.DOWN) { return false; }
+            if (k === Nav.KEY.EXIT) { return false; }
+            return true;
+        }
         if (pendingNext) { return handleNextKeys(k); }
         if (optionsOpen) {
             if (k === Nav.KEY.RETURN) { closeOptions(); return true; }
@@ -4740,12 +5556,21 @@
 
     Nav.onBack(function () {
         if (imeOpen) { closeIme(false); return; }
+        if (actionView) { closeActionMenu(); return; }
+        if (commentsView) { leaveCommentReplies(); return; }
         if (playing) { stopPlayback(); return; }
         Auth.cancelLogin();
         /* Backing out of "add an account" belongs on the switcher, not on the
          * home feed — the viewer was one press into a two-press errand. */
         if (state.screen === "login" && Accounts.count()) { renderAccounts(false); return; }
         if (isUp(state.screen)) { showScreen(upFrom, true); return; }
+        if (state.screen === "mine" && mineView.kind !== "history") {
+            mineView = mineView.kind === "videos"
+                ? { kind: "folders", id: 0, title: "" }
+                : { kind: "history", id: 0, title: "" };
+            renderMine();
+            return;
+        }
         if (state.screen !== "rcmd") { loadFeed("rcmd"); return; }
         try { tizen.application.getCurrentApplication().exit(); } catch (e) {}
     });
@@ -4754,12 +5579,19 @@
 
     window.onload = function () {
         boot.onload = new Date().getTime();
+        applyGridDensity();
         screenEl = el("screen");
         statusEl = el("status");
         toastEl = el("toast");
 
         Nav.registerKeys();
         Nav.onFocus(function (elm) {
+            if (commentsView && elm && elm.getAttribute) {
+                var ci = Number(elm.getAttribute("data-comment-index"));
+                if (elm.hasAttribute("data-comment-index") &&
+                        ci >= commentRows().length - 3) { loadComments(); }
+                return;
+            }
             maybeLoadMore(elm); maybeLoadMoreSearch(elm);
             schedulePrefetch(elm);
             /* The two paged grids of related videos. The feeds' own version is
@@ -4767,12 +5599,9 @@
              * maybeLoadMore), because these cards carry a `data-i` of their own
              * that would otherwise read as the viewer reaching the end of the
              * grid behind them. */
-            if (pendingNext) { nextupGrid.follow(elm, NEXTUP_PAGE); }
-            if (optionsOpen) { panelGrid.follow(elm, PANEL_PAGE); }
+            if (pendingNext) { nextupGrid.follow(elm, nextupPage()); }
+            if (optionsOpen) { panelGrid.follow(elm, panelPage()); }
         });
-        /* Settings were only consulted from inside 我的, so a quality picked in
-         * the panel was forgotten on the next launch. */
-
         var tabs = document.querySelectorAll("#tabs .tab");
         for (var i = 0; i < tabs.length; i++) {
             (function (tab) {
@@ -4780,7 +5609,11 @@
                     var s = tab.getAttribute("data-screen");
                     Auth.cancelLogin();
                     if (s === "search") { renderSearch(); }
-                    else if (s === "mine") { renderMine(); }
+                    else if (s === "mine") {
+                        mineView = { kind: "history", id: 0, title: "" };
+                        renderMine();
+                    }
+                    else if (s === "settings") { renderSettings(); }
                     /* Pressing the tab you are already on reloads it; coming
                      * back to a tab restores where you were, which is what a
                      * television expects — refetching and jumping to the first

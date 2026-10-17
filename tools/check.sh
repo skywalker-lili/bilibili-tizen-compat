@@ -25,6 +25,10 @@ node "$ROOT/tools/mpd-verify.mjs" >/dev/null || { echo "  the DASH manifest is m
 # Mirrors are ordered, never dropped. Dropping one played fine for a day and
 # then walled every 1080p video the evening the primary CDN went sour.
 node "$ROOT/tools/mirrors-verify.mjs" >/dev/null || { echo "  mirror ordering is wrong"; exit 1; }
+# The interactive features (PR #2): a write must never leave without a
+# credential, and a hold on OK opens the menu without starting the video.
+node "$ROOT/tools/compat-api-verify.mjs" || { echo "  video actions or library API regressed"; exit 1; }
+node "$ROOT/tools/nav-verify.mjs" || { echo "  remote navigation regressed"; exit 1; }
 # Tizen 5.5 has no flex gap. A new gap without its fallback looks fine on any
 # set made since, and cramped on the ones this check exists for.
 node "$ROOT/tools/legacy-css-verify.mjs" || exit 1

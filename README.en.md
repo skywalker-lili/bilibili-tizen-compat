@@ -26,7 +26,8 @@ what you half-watched on the phone is under the cursor when the TV comes on.
 | | |
 |---|---|
 | **Verified** | Samsung 2023 65" **CU7090**, firmware Tizen 9.0 (Chromium 120). Every measurement in this project comes from this one set |
-| **Very likely** | Same generation or newer (2022 onwards, Tizen 7+). Playback uses standard MSE and AVPlay, nothing model-specific — but **nobody has tried another model yet** |
+| **Community-tested** | Samsung 2020 55" **Q90T**, Tizen 5.5 (Chromium 69), tested by the author of [PR #2](https://github.com/titlog/bilibili-tizen/pull/2) on their branch; the old-engine compatibility comes from there |
+| **Very likely** | 2020 onwards (Tizen 5.5+). Playback uses standard MSE and AVPlay, nothing model-specific — but **no other model has been tried yet** |
 | **No** | Non-Samsung sets; Samsung models from before 2016 (engine too old) |
 
 A build from source reports its engine string and codec support on boot; that
@@ -133,6 +134,13 @@ uploader's name in the panel, or 右 on the end-of-video screen, for everything
 they have posted; 返回 goes back to the tab you came from). About **2.5–3.5 s**
 from OK to a picture, 1080p H.265.
 
+Also: favourite folders and followed uploaders under 「我的」; comments (with
+replies) beside the running video; subtitles; like, coin and favourite (hold OK
+on a card, or the buttons in the playback panel; a coin asks once more); and a
+「设置」 tab — autoplay next, subtitles on/off, and cards per row (3 / 4 / 5, to
+suit how big the TV is and how far the sofa). These come from
+[PR #2](https://github.com/titlog/bilibili-tizen/pull/2).
+
 **Does not**:
 - **4K.** The two missing tiers (1080p high bitrate, 4K) are what the paid
   membership sells, very few uploads have them, and whether this set's MSE can
@@ -140,7 +148,7 @@ from OK to a picture, 1080p H.265.
 - **Casting from the phone.** A cast receiver has to listen on a port; a Tizen
   web widget cannot, regardless of how official it is. The substitute is
   watch-later: tap on the phone, open on the TV.
-- **Subtitles, a settings screen.** The APIs exist; not built.
+- **Liking or posting comments.** The TV's direct calls to the comment write endpoints are refused (403); comments are read-only.
 
 ## FAQ
 

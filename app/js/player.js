@@ -17,6 +17,7 @@ var Player = (function () {
 
     var obj = null;
     var mode = null;          /* "avplay" | "mse" | null */
+    var viewport = { x: 0, y: 0, w: 1920, h: 1080 };
     var ms = null;
     var onEvent = function () {};
     var duration = 0;
@@ -803,10 +804,10 @@ var Player = (function () {
          * setDisplayRect. Leave the size off and the video lands in a ~300x150
          * corner while setDisplayRect quietly reports success. */
         obj.style.position = "absolute";
-        obj.style.left = "0px";
-        obj.style.top = "0px";
-        obj.style.width = "1920px";
-        obj.style.height = "1080px";
+        obj.style.left = viewport.x + "px";
+        obj.style.top = viewport.y + "px";
+        obj.style.width = viewport.w + "px";
+        obj.style.height = viewport.h + "px";
         el("video-stage").appendChild(obj);
         return obj;
     }
@@ -888,7 +889,7 @@ var Player = (function () {
         catch (e) { emit("error", "open failed: " + e.message); return; }
 
         try { webapis.avplay.setDisplayMethod("PLAYER_DISPLAY_MODE_LETTER_BOX"); } catch (e) {}
-        webapis.avplay.setDisplayRect(0, 0, 1920, 1080);
+        webapis.avplay.setDisplayRect(viewport.x, viewport.y, viewport.w, viewport.h);
         try { webapis.avplay.setStreamingProperty("USER_AGENT", USER_AGENT); } catch (e) {}
         /* No COOKIE property, on purpose (2026-09-07). Stream urls are
          * pre-signed and AVPlay needs no session to fetch them — CLAUDE.md has
@@ -2474,6 +2475,26 @@ var Player = (function () {
 
     return {
         on: function (fn) { onEvent = fn; },
+
+        /* Both renderers must use the same TV-space rectangle. Remember it
+         * through a stream rebuild: reset() may recreate the AVPlay object. */
+        setViewport: function (x, y, w, h) {
+            viewport = { x: x, y: y, w: w, h: h };
+            if (obj) {
+                obj.style.left = x + "px";
+                obj.style.top = y + "px";
+                obj.style.width = w + "px";
+                obj.style.height = h + "px";
+            }
+            var v = el("html5-video");
+            v.style.left = x + "px";
+            v.style.top = y + "px";
+            v.style.width = w + "px";
+            v.style.height = h + "px";
+            if (mode === "avplay") {
+                try { webapis.avplay.setDisplayRect(x, y, w, h); } catch (e) {}
+            }
+        },
 
         /* The real playhead, in ms — video.currentTime, and what seeks write.
          * app.js's own lastKnownPosition freezes at 0 through a stall (no

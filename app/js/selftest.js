@@ -137,7 +137,14 @@ var SelfTest = (function () {
         var f = document.querySelector("#nextup .focusable.focused");
         if (!f || f.id !== "nextup-go") { return "焦点没有落在排队的那个视频上"; }
         var n = document.getElementById("nextup-count");
-        if (!n || !/^\d+$/.test(n.textContent)) { return "倒计时没有在走"; }
+        if (Settings.get("autoplayNext", true) === true) {
+            if (!n || !/^\d+$/.test(n.textContent)) { return "倒计时没有在走"; }
+        } else {
+            if (n) { return "自动播放已关闭，却仍有倒计时"; }
+            if (document.getElementById("nextup-hint").textContent.indexOf("自动播放已关闭") < 0) {
+                return "没有提示等待手动播放";
+            }
+        }
         var row = document.getElementById("nextup-more");
         var cards = count("#nextup-related .card");
         if (row && row.className.indexOf("hidden") >= 0) {
@@ -145,7 +152,7 @@ var SelfTest = (function () {
             window.__stNoRelated = true;
             return null;
         }
-        post("即将播放：相关推荐 " + cards + " 张，倒计时 " + n.textContent);
+        post("即将播放：相关推荐 " + cards + " 张，" + (n ? "倒计时 " + n.textContent : "等待手动选择"));
         if (!cards) { return "相关推荐那一行在，但一张卡都没有"; }
         key(KEY.DOWN);
         return null;
@@ -276,6 +283,19 @@ var SelfTest = (function () {
          * to grow — which looks exactly like a video that only had two rows of
          * related videos, and is why the total is asked for rather than guessed
          * at from the DOM. */
+        ["第一张相关推荐的下键进入下一排", 700, function () {
+            var first = document.querySelector("#opt-related .card");
+            var total = typeof window.__stPanelTotal === "function"
+                        ? window.__stPanelTotal() : 0;
+            var m = /density-([45])/.exec(document.body.className);
+            var columns = m ? Number(m[1]) : 3;
+            if (!first || total <= columns) { return null; }
+            Nav.focus(first);
+            key(KEY.DOWN);
+            var focused = Nav.current();
+            return focused && Number(focused.getAttribute("data-i")) >= columns
+                ? null : "从第一张推荐按下键，没有进入下一排";
+        }],
         ["面板里的相关推荐能一直往下翻", 700, function () {
             if (!visible("options")) { return "面板不见了"; }
             var total = typeof window.__stPanelTotal === "function"
@@ -763,6 +783,31 @@ var SelfTest = (function () {
             if (!count("#screen .card")) { return "返回之后网格是空的"; }
             if (!document.querySelector("#screen .card.focused")) { return "返回之后没有选中的卡片"; }
             return null;
+        }],
+        ["设置入口能用遥控器打开", 300, function () {
+            Nav.focus(document.querySelector('#tabs .tab[data-screen="search"]'));
+            key(KEY.RIGHT);
+            var tab = document.querySelector('#tabs .tab.focused[data-screen="settings"]');
+            if (!tab) { return "右键没有到设置页签"; }
+            key(KEY.ENTER);
+            return document.querySelector("#btn-autoplay.focused") ? null : "设置没有把焦点放在自动播放开关";
+        }],
+        ["自动播放开关可切换并保留", 300, function () {
+            var before = Settings.get("autoplayNext", true) === true;
+            key(KEY.ENTER);
+            var changed = Settings.get("autoplayNext", true) === !before;
+            var label = document.getElementById("btn-autoplay").textContent;
+            Nav.focus(document.querySelector('#tabs .tab[data-screen="settings"]'));
+            key(KEY.ENTER);
+            var retained = Settings.get("autoplayNext", true) === !before;
+            var shown = document.getElementById("btn-autoplay").textContent === label;
+            key(KEY.ENTER); /* Restore the viewer's preference. */
+            return changed && retained && shown && Settings.get("autoplayNext", true) === before
+                ? null : "开关切换、重进设置或恢复原偏好失败";
+        }],
+        ["退出设置回到推荐", 300, function () {
+            key(KEY.RETURN);
+            return document.querySelector('#tabs .tab.active[data-screen="rcmd"]') ? null : "没有回到推荐";
         }]
     ];
 

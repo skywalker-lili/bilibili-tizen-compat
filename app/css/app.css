@@ -93,10 +93,15 @@ body {
  * wide on a 65" panel, and from the sofa the title under it was a grey smear.
  * Three is one card wider than a phone grid and a third bigger everywhere —
  * picture, title and byline all scale with the column, or the extra width goes
- * to the picture alone and the text stays just as unreadable. */
+ * to the picture alone and the text stays just as unreadable.
+ *
+ * Which is a fact about that sofa and that panel, so since 2026-10-18 it is a
+ * setting (设置 → 每行视频): body.density-4 and body.density-5 below, PR #2's
+ * sizes, for a closer seat or a smaller screen. All three fill the 1792px. */
 .grid { display: flex; flex-wrap: wrap; gap: 32px; }
 
 .card {
+    position: relative;
     width: 576px;
     border-radius: 12px;
     border: 4px solid transparent;
@@ -124,7 +129,39 @@ body {
     margin-top: 12px; font-size: 30px; line-height: 1.35;
     height: 81px; overflow: hidden;
 }
-.card-meta { margin-top: 6px; font-size: 24px; color: #8b959e; }
+/* Uploader, views and the publication date on one line. The date sits right;
+ * when space runs short the name is what gets an ellipsis (fitCardMeta shaves
+ * the date and the count first at four across). */
+.card-info {
+    display: flex; align-items: center; gap: 6px;
+    margin-top: 6px; height: 32px; color: #8b959e;
+    white-space: nowrap; font-size: 24px;
+}
+.card-byline { display: flex; align-items: center; gap: 6px; min-width: 0; flex: 0 1 auto; }
+.card-author {
+    flex: 0 1 auto; min-width: 0; overflow: hidden;
+    text-overflow: ellipsis;
+}
+.card-views { flex: 0 0 auto; }
+.card-info-date { flex: 0 0 auto; margin-left: auto; font-size: 22px; }
+.card-info .card-part { flex: 0 0 auto; margin-right: 0; }
+
+body.density-4 .grid { gap: 24px; }
+body.density-4 .card { width: 430px; }
+body.density-4 .card.focused, body.density-5 .card.focused { transform: scale(1.02); }
+body.density-4 .thumb { height: 228px; }
+body.density-4 .dur, body.density-5 .dur { font-size: 21px; padding: 2px 10px; }
+body.density-4 .card-title { margin-top: 8px; font-size: 25px; line-height: 1.25; height: 63px; }
+body.density-4 .card-info { margin-top: 4px; height: 24px; font-size: 20px; }
+body.density-4 .card-info-date { font-size: 19px; }
+
+body.density-5 .grid { gap: 18px; }
+body.density-5 .card { width: 344px; }
+body.density-5 .thumb { height: 180px; }
+body.density-5 .card-title { margin-top: 8px; font-size: 22px; line-height: 1.25; height: 55px; }
+body.density-5 .card-info { display: block; margin-top: 4px; height: 47px; font-size: 18px; }
+body.density-5 .card-byline { width: 100%; height: 24px; }
+body.density-5 .card-info-date { display: block; width: 100%; margin: 2px 0 0; font-size: 18px; }
 
 .empty { padding: 80px 0; font-size: 30px; color: #6b7680; text-align: center; }
 
@@ -201,6 +238,33 @@ body {
     width: 1920px; padding: 60px 64px 48px;
     background: linear-gradient(to top, rgba(0,0,0,0.92), rgba(0,0,0,0));
 }
+
+#panel-actions { margin: 22px 0 6px; }
+#panel-actions .btn { font-size: 24px; padding: 10px 24px; }
+
+#video-actions {
+    position: absolute; top: 0; right: 0; bottom: 0; left: 0; z-index: 40;
+    display: flex; justify-content: center; align-items: center;
+    background: rgba(0,0,0,0.78);
+}
+#video-actions-box {
+    width: 1080px; max-height: 900px; overflow-y: auto;
+    padding: 38px 46px; border: 3px solid #ff6699; border-radius: 18px;
+    background: #172029;
+}
+.action-title { font-size: 33px; line-height: 1.3; margin-bottom: 18px; }
+.action-status { font-size: 23px; color: #a8b2bb; margin: 12px 0 20px; }
+.action-row { display: flex; gap: 14px; margin: 14px 0; }
+.action-choice {
+    flex: 1; min-width: 0; padding: 14px 18px; font-size: 24px;
+    background: #263440; border: 3px solid transparent; border-radius: 9px;
+}
+.action-choice.focused { border-color: #ff6699; background: #593145; }
+.action-choice.active { color: #ff8fb4; }
+.action-choice.danger { color: #ffb3a8; }
+.action-choice.disabled { opacity: 0.45; }
+.action-label { font-size: 23px; color: #8b959e; margin-top: 22px; }
+.action-error { font-size: 21px; color: #ffb3a8; margin: 12px 0; }
 #player-title { font-size: 36px; margin-bottom: 24px; }
 #player-bar { display: flex; align-items: center; gap: 24px; }
 #player-pos, #player-dur { font-size: 24px; color: #cbd3da; min-width: 110px; }
@@ -231,6 +295,36 @@ body {
 .me { margin-bottom: 20px; }
 .me-name { font-size: 46px; margin-bottom: 12px; }
 .me-sub { font-size: 24px; color: #8b959e; margin-bottom: 28px; }
+
+.library-links { margin: 10px 0 32px; }
+.library-head { display: flex; align-items: center; gap: 28px; margin: 12px 0 26px; }
+.library-head .me-name { margin-bottom: 0; }
+/* Same widths as the cards at each setting, so a folder list lines up with
+ * the grid it opens onto. */
+.library-grid { display: flex; flex-wrap: wrap; gap: 32px; }
+.library-item {
+    width: 576px; min-height: 116px; padding: 16px;
+    display: flex; align-items: center; gap: 16px;
+    background: #182029; border: 4px solid transparent;
+    border-radius: 12px;
+}
+.library-item.focused { border-color: #ff6699; background: rgba(255,102,153,0.16); }
+.library-face, .library-symbol {
+    width: 72px; height: 72px; flex: 0 0 auto; border-radius: 50%;
+    object-fit: cover; background: #2a3540;
+}
+.library-symbol { line-height: 72px; text-align: center; color: #ff6699; font-size: 32px; }
+.library-text { min-width: 0; display: block; }
+.library-text strong, .library-text small {
+    display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+}
+.library-text strong { font-size: 26px; }
+.library-text small { font-size: 20px; color: #9aa4ad; margin-top: 6px; }
+.library-more { margin: 28px 0 48px; }
+body.density-4 .library-grid { gap: 24px; }
+body.density-4 .library-item { width: 430px; }
+body.density-5 .library-grid { gap: 18px; }
+body.density-5 .library-item { width: 344px; }
 
 /* ---------------- account switcher ---------------- */
 
@@ -426,6 +520,17 @@ body {
     box-shadow: 0 4px 24px rgba(0,0,0,0.6);
 }
 
+/* DOM captions work over both the native AVPlay plane and the MSE video. */
+#subtitle-overlay { position: absolute; left: 0; top: 0; width: 1920px;
+    height: 1080px; padding: 0 100px 182px; display: flex;
+    align-items: flex-end; justify-content: center; pointer-events: none; }
+#subtitle-text { max-width: 1500px; text-align: center; white-space: pre-line;
+    font-size: 42px; line-height: 1.35; color: #fff; font-weight: 600;
+    text-shadow: 0 2px 5px #000, 0 0 12px #000, 0 0 22px #000; }
+.comments-open #subtitle-overlay { left: 48px; top: 72px; width: 1216px;
+    height: 684px; padding: 0 38px 34px; }
+.comments-open #subtitle-text { font-size: 31px; max-width: 1100px; }
+
 /* Pulled up from the bottom over the still-playing video, the way a television
    player shows "what else" without leaving the video. Scrolls, because related
    videos are the point of it. */
@@ -436,6 +541,41 @@ body {
     background: linear-gradient(to top, rgba(0,0,0,0.97) 30%, rgba(0,0,0,0.55));
 }
 #options::-webkit-scrollbar { display: none; }
+
+/* Comments share the screen with the playing hardware or MSE video plane. */
+#comments-view { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px;
+    background: transparent; }
+.comments-open #player-loading { left: 48px; top: 72px; width: 1216px; height: 684px; }
+.comments-open #loading-title { max-width: 1080px; }
+.comments-open #pause-glyph { left: 656px; top: 414px; }
+#comments-video-meta { position: absolute; left: 48px; top: 814px; width: 1220px; }
+#comments-video-title { font-size: 34px; font-weight: 700; line-height: 1.35;
+    max-height: 92px; overflow: hidden; }
+#comments-video-hint { color: #9ba3ac; font-size: 23px; margin-top: 18px; }
+#comments-pane { position: absolute; left: 1300px; top: 0; width: 620px;
+    height: 1080px; padding: 50px 42px 45px 36px; background: #17191f;
+    border-left: 2px solid #343841; display: flex; flex-direction: column; }
+#comments-head { display: flex; align-items: baseline; justify-content: space-between;
+    margin-bottom: 12px; }
+#comments-title { font-size: 39px; font-weight: 700; }
+#comments-level { font-size: 22px; color: #a5acb6; }
+#comments-hint { color: #a5acb6; font-size: 21px; line-height: 1.4;
+    margin-bottom: 20px; }
+#comments-list { flex: 1; overflow-y: auto; overflow-x: hidden; }
+#comments-list::-webkit-scrollbar { width: 5px; }
+#comments-list::-webkit-scrollbar-thumb { background: #575f6d; }
+#comments-status { min-height: 34px; color: #aab2bc; font-size: 21px; padding-top: 12px; }
+.comment-item { border: 2px solid transparent; border-radius: 12px; padding: 18px;
+    margin: 0 0 13px; background: #22262e; }
+.comment-item.focused { border-color: #ff69a1; background: #34303b; }
+.comment-author { font-size: 23px; font-weight: 700; color: #fff; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap; }
+.comment-date { color: #a3aab4; font-size: 18px; margin-top: 3px; }
+.comment-text { font-size: 25px; line-height: 1.48; white-space: pre-wrap;
+    word-break: break-word; margin: 12px 0; }
+.comment-foot { color: #b4bbc5; font-size: 21px; }
+.comment-liked { color: #ff80ab; }
+.comment-replies { float: right; color: #ffb2cc; }
 
 #panel-head { margin-bottom: 32px; }
 #panel-title { font-size: 38px; line-height: 1.3; margin-bottom: 10px; }
