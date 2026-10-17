@@ -48,6 +48,33 @@ TV="$TV_IP:26101"
 # with no error anywhere — the failure this project has burned the most hours on.
 NET_IF="${BILI_NET_IF:-en0}"
 
+# The flags below go into the package, never into a commit. It escaped once:
+# `var SELFTEST = true;` reached master and, worse, the television kept a build
+# that walked the whole flow — playing videos and pressing its own buttons —
+# every single time it was opened.
+#
+# REPORT_TO goes back to empty for the same reason (2026-09-07): it holds this
+# machine's LAN address, the repository is public and the convention is that no
+# address lives in it. Only SELFTEST was reset here, so every deploy left the
+# working tree dirty with the address in it, one `git add -A` away from master.
+#
+# And on every exit, not only the one after packaging (2026-10-17): a failed
+# check, a failed package or a Ctrl-C used to leave the script before the reset
+# ran, with the address still sitting in config.js.
+restore_config() {
+  APP="$APP" python3 - <<'PY'
+import os, re
+p = os.path.join(os.environ["APP"], "js", "config.js")
+src = open(p).read()
+src = re.sub(r'var SELFTEST = [a-z]+;', 'var SELFTEST = false;', src)
+src = re.sub(r'var REPORT_TO = "[^"]*";', 'var REPORT_TO = "";', src, count=1)
+open(p, "w").write(src)
+PY
+}
+trap restore_config EXIT
+# A signal would otherwise end the script without running the EXIT trap.
+trap 'exit 130' INT TERM
+
 # The client fetches its own stream urls at runtime, so nothing needs pinning
 # any more; only the dev reporting address is injected.
 echo "== pointing reporting at this machine =="
@@ -103,23 +130,10 @@ WGT=${WGTS[1]}
 [ -n "$WGT" ] || { echo "packaging produced no wgt"; exit 1; }
 echo "  built $WGT"
 
-# The flag is now inside the package, so put the source back before anything can
-# commit it. It escaped once: `var SELFTEST = true;` reached master and, worse,
-# the television kept a build that walked the whole flow — playing videos and
-# pressing its own buttons — every single time it was opened.
-#
-# REPORT_TO goes back to empty for the same reason (2026-09-07): it holds this
-# machine's LAN address, the repository is public and the convention is that no
-# address lives in it. Only SELFTEST was reset here, so every deploy left the
-# working tree dirty with the address in it, one `git add -A` away from master.
-python3 - <<PY
-import os, re
-p = os.path.join("$APP", "js", "config.js")
-src = open(p).read()
-src = re.sub(r'var SELFTEST = [a-z]+;', 'var SELFTEST = false;', src)
-src = re.sub(r'var REPORT_TO = "[^"]*";', 'var REPORT_TO = "";', src, count=1)
-open(p, "w").write(src)
-PY
+# The flags are inside the package now, so put the source back straight away
+# rather than at exit: connecting can wait minutes for a sleeping TV, and the
+# working tree should not carry the address through all of it.
+restore_config
 
 # The set only accepts sdb from the address registered in Developer Mode. When
 # DHCP moves this machine, the failure is a silent timeout, so say plainly what
