@@ -54,6 +54,30 @@ var SelfTest = (function () {
      * string means it answered and agreed; null means it never answered. */
     var identityVerdict = "凭证检查没有回应";
 
+    /* What the PR #2 steps learn on the way: which lists were there to open,
+     * which video has a subtitle track, what the server said. Steps run on
+     * timers, so an asynchronous answer is parked here for the next step. */
+    var probe = {};
+
+    function rect(id) {
+        var n = document.getElementById(id);
+        var r = n && n.getBoundingClientRect();
+        return r ? [r.left, r.top, r.width, r.height].map(Math.round).join(",") : "?";
+    }
+
+    /* Walk the feed one player/v2 at a time until a video has a subtitle track.
+     * One at a time, not all at once: twelve parallel calls is the kind of burst
+     * the API's IP gate answers with 412. */
+    function findSubtitled(items, i, done) {
+        if (i >= items.length) { done(null, i); return; }
+        var v = items[i];
+        if (!v || !v.cid) { findSubtitled(items, i + 1, done); return; }
+        API.playerV2(v.bvid, v.cid, function (r) {
+            if (r.subtitles && r.subtitles.length) { done({ v: v, idx: i, tracks: r.subtitles }, i + 1); }
+            else { findSubtitled(items, i + 1, done); }
+        }, function () { findSubtitled(items, i + 1, done); });
+    }
+
     /* "3:30" or "1:06:40" back into seconds, for the position readouts. */
     function secs(text) {
         var parts = String(text || "").split(":");
@@ -815,6 +839,245 @@ var SelfTest = (function () {
         ["退出设置回到推荐", 300, function () {
             key(KEY.RETURN);
             return document.querySelector('#tabs .tab.active[data-screen="rcmd"]') ? null : "没有回到推荐";
+        }],
+
+        /* ---- PR #2's features (2026-10-18). Read-only: nothing here writes to
+         * the account, and every setting touched is put back. ---- */
+        ["每行视频 3→4→5 转一圈回到原值", 600, function () {
+            Nav.focus(document.querySelector('#tabs .tab[data-screen="settings"]'));
+            key(KEY.ENTER);
+            var btn = document.getElementById("btn-density");
+            if (!btn) { return "设置页里没有每行视频按钮"; }
+            var start = Settings.get("gridColumns", 3), seen = [];
+            for (var i = 0; i < 3; i++) {
+                Nav.focus(btn);
+                key(KEY.ENTER);
+                var n = Settings.get("gridColumns", 3);
+                var cls = Number((/density-([45])/.exec(document.body.className) || [0, 3])[1]);
+                if (cls !== n) { return "设成 " + n + " 个，页面却是 " + cls + " 列"; }
+                if (btn.textContent.indexOf(n + " 个") < 0) { return "按钮上没写当前值 " + n; }
+                seen.push(n);
+            }
+            post("每行视频：" + start + " → " + seen.join(" → "));
+            return Settings.get("gridColumns", 3) === start ? null : "转一圈没有回到原值";
+        }],
+        ["回到推荐", 300, function () {
+            Nav.focus(document.querySelector('#tabs .tab[data-screen="rcmd"]'));
+            key(KEY.ENTER);
+            return null;
+        }],
+        ["首页按设置的列数排开", 4500, function () {
+            var cards = document.querySelectorAll("#feed-grid .card");
+            if (cards.length < 6) { return "首页卡片不够 6 张"; }
+            var top = cards[0].getBoundingClientRect().top, row = 0;
+            while (row < cards.length && Math.abs(cards[row].getBoundingClientRect().top - top) < 30) { row++; }
+            var want = Settings.get("gridColumns", 3);
+            var src = (cards[0].querySelector("img") || {}).src || "";
+            post("首页第一行 " + row + " 张（设置 " + want + "），封面 " + (src.split("@")[1] || "?"));
+            return row === want ? null : "第一行 " + row + " 张，设置是 " + want;
+        }],
+
+        ["进「我的」", 300, function () {
+            Nav.focus(document.querySelector('#tabs .tab[data-screen="mine"]'));
+            key(KEY.ENTER);
+            return null;
+        }],
+        ["「我的」里有收藏和关注的入口", 4000, function () {
+            if (!Auth.isLoggedIn()) { probe.skipMine = true; post("跳过收藏和关注：没有登录"); return null; }
+            if (!document.getElementById("mine-favorites")) { return "没有「我的收藏」按钮"; }
+            if (!document.getElementById("mine-following")) { return "没有「关注的 UP 主」按钮"; }
+            return null;
+        }],
+        ["打开我的收藏", 300, function () {
+            if (probe.skipMine) { return null; }
+            Nav.focus(document.getElementById("mine-favorites"));
+            key(KEY.ENTER);
+            return null;
+        }],
+        ["收藏夹列表读出来了", 3500, function () {
+            if (probe.skipMine) { return null; }
+            var box = document.getElementById("mine-library");
+            if (!box) { return "没有进到收藏夹页面"; }
+            if (/读取失败/.test(box.textContent)) { return box.textContent.trim().slice(0, 60); }
+            probe.folders = count("#mine-library .library-item");
+            var first = document.querySelector("#mine-library .library-item strong");
+            post("收藏夹 " + probe.folders + " 个" + (first ? "，第一个「" + first.textContent + "」" : ""));
+            return (probe.folders || /还没有收藏夹/.test(box.textContent)) ? null : "既没有收藏夹也没说是空的";
+        }],
+        ["打开第一个收藏夹", 300, function () {
+            if (probe.skipMine || !probe.folders) { return null; }
+            Nav.focus(document.querySelector("#mine-library .library-item"));
+            key(KEY.ENTER);
+            return null;
+        }],
+        ["收藏夹里的视频读出来了", 4000, function () {
+            if (probe.skipMine || !probe.folders) { return null; }
+            var box = document.getElementById("mine-library");
+            if (!box) { return "没有进到收藏夹里"; }
+            if (/读取失败/.test(box.textContent)) { return box.textContent.trim().slice(0, 60); }
+            var n = count("#mine-library .card");
+            post("这个收藏夹里 " + n + " 个视频");
+            return (n || /没有可播放的视频/.test(box.textContent)) ? null : "既没有视频也没说是空的";
+        }],
+        ["返回键退到收藏夹列表", 300, function () {
+            if (probe.skipMine || !probe.folders) { return null; }
+            key(KEY.RETURN);
+            return null;
+        }],
+        ["返回键退回「我的」", 1500, function () {
+            if (probe.skipMine) { return null; }
+            key(KEY.RETURN);
+            return null;
+        }],
+        ["打开关注的 UP 主", 2500, function () {
+            if (probe.skipMine) { return null; }
+            var b = document.getElementById("mine-following");
+            if (!b) { return "返回之后没有回到「我的」"; }
+            Nav.focus(b);
+            key(KEY.ENTER);
+            return null;
+        }],
+        ["关注列表读出来了", 4000, function () {
+            if (probe.skipMine) { return null; }
+            var box = document.getElementById("mine-library");
+            if (!box) { return "没有进到关注页面"; }
+            if (/读取失败|暂时无法读取/.test(box.textContent)) { return box.textContent.trim().slice(0, 60); }
+            var n = count("#mine-library .library-item");
+            post("关注的 UP 主 " + n + " 位");
+            return (n || /还没有关注/.test(box.textContent)) ? null : "既没有 UP 主也没说是空的";
+        }],
+        ["退出「我的」回到推荐", 300, function () {
+            if (!probe.skipMine) { key(KEY.RETURN); }
+            Nav.focus(document.querySelector('#tabs .tab[data-screen="rcmd"]'));
+            key(KEY.ENTER);
+            return null;
+        }],
+
+        ["开一个视频看评论", 4000, function () {
+            var card = document.querySelector("#feed-grid .card.focused") ||
+                       document.querySelector("#feed-grid .card");
+            if (!card) { return "推荐网格没有回来"; }
+            Nav.focus(card);
+            key(KEY.ENTER);
+            return null;
+        }],
+        ["画面起来了（评论）", 8000, function () {
+            if (visible("player-loading")) { return "八秒后仍停在加载画面"; }
+            if (visible("shell")) { return "没有进入播放"; }
+            key(KEY.DOWN);
+            return null;
+        }],
+        ["面板里的「看评论」", 1200, function () {
+            if (!visible("options")) { return "面板没有出现"; }
+            var b = document.getElementById("panel-comments");
+            if (!b || b.offsetParent === null) { return "面板里没有「看评论」"; }
+            Nav.focus(b);
+            key(KEY.ENTER);
+            return null;
+        }],
+        ["评论侧栏打开，视频缩到左边接着播", 4000, function () {
+            if (!visible("comments-view")) { return "评论侧栏没有出现"; }
+            if (visible("options")) { return "面板没有收起"; }
+            var n = count("#comments-list [data-comment-index]");
+            post("评论 " + n + " 条，视频区域 " + rect("html5-video"));
+            if (!n) {
+                var empty = document.getElementById("comments-empty");
+                return "没有评论：" + (empty ? empty.textContent : "列表是空的");
+            }
+            return null;
+        }],
+        ["右键看楼中楼", 300, function () {
+            var rows = document.querySelectorAll("#comments-list [data-comment-index]");
+            for (var i = 0; i < rows.length; i++) {
+                if (rows[i].querySelector(".comment-replies")) {
+                    Nav.focus(rows[i]);
+                    key(KEY.RIGHT);
+                    probe.replies = true;
+                    return null;
+                }
+            }
+            post("前 " + rows.length + " 条评论都没有回复，跳过楼中楼");
+            return null;
+        }],
+        ["楼中楼读出来了", 3500, function () {
+            if (!probe.replies) { return null; }
+            var t = document.getElementById("comments-title").textContent;
+            if (t !== "楼中楼") { return "标题是「" + t + "」"; }
+            var n = count("#comments-list [data-comment-index]");
+            post("楼中楼 " + n + " 条");
+            return n ? null : "楼中楼是空的";
+        }],
+        ["返回键回到评论", 300, function () {
+            if (!probe.replies) { return null; }
+            key(KEY.RETURN);
+            return document.getElementById("comments-title").textContent === "评论" ? null : "没有回到评论";
+        }],
+        ["返回键关掉评论，视频回到全屏", 400, function () {
+            key(KEY.RETURN);
+            if (visible("comments-view")) { return "评论还开着"; }
+            if (visible("shell")) { return "关评论把播放也退出了"; }
+            var v = document.getElementById("html5-video");
+            var w = v ? Math.round(v.getBoundingClientRect().width) : 0;
+            return (!w || w === 1920) ? null : "视频没有回到全屏（宽 " + w + "）";
+        }],
+        ["退出播放", 500, function () { key(KEY.RETURN); return null; }],
+
+        ["在推荐里找一个有字幕的视频", 2500, function () {
+            var items = (window.__stItems || []).slice(0, 10);
+            probe.subDone = false;
+            findSubtitled(items, 0, function (found, scanned) {
+                probe.sub = found; probe.subScanned = scanned; probe.subDone = true;
+            });
+            return null;
+        }],
+        ["下载字幕文件", 9000, function () {
+            if (!probe.subDone) { return "player/v2 九秒内没问完"; }
+            if (!probe.sub) { post("跳过字幕：推荐里前 " + probe.subScanned + " 个视频都没有字幕轨"); return null; }
+            var t = probe.sub.tracks;
+            post("字幕轨 " + t.map(function (x) { return x.lan_doc || x.lan; }).join(" / ") +
+                 "（" + probe.sub.v.bvid + "，推荐第 " + (probe.sub.idx + 1) + " 个）");
+            API.subtitle(t[0].subtitle_url, function (cues) { probe.cues = cues.length; },
+                         function (why) { probe.cueErr = String(why); });
+            return null;
+        }],
+        ["字幕文件解析出了字幕行", 3000, function () {
+            if (!probe.sub) { return null; }
+            if (probe.cueErr) { return "字幕文件取不到：" + probe.cueErr; }
+            post("字幕 " + probe.cues + " 行");
+            return probe.cues ? null : "字幕文件是空的";
+        }],
+        ["打开字幕开关，播这个视频", 300, function () {
+            if (!probe.sub) { return null; }
+            probe.subWas = Settings.get("showSubtitles", false);
+            Settings.set("showSubtitles", true);
+            var card = document.querySelector('#feed-grid .card[data-i="' + probe.sub.idx + '"]');
+            if (!card) { Settings.set("showSubtitles", probe.subWas); return "网格里找不到这张卡片"; }
+            Nav.focus(card);
+            key(KEY.ENTER);
+            /* A line only shows while a cue is running, so look the whole time
+             * rather than at one instant that might fall between two. */
+            probe.subSeen = "";
+            probe.subTimer = setInterval(function () {
+                var tx = document.getElementById("subtitle-text");
+                if (!probe.subSeen && visible("subtitle-overlay") && tx && tx.textContent) {
+                    probe.subSeen = tx.textContent;
+                }
+            }, 250);
+            return null;
+        }],
+        ["画面上出现了字幕", 20000, function () {
+            if (!probe.sub) { return null; }
+            clearInterval(probe.subTimer);
+            Settings.set("showSubtitles", probe.subWas);
+            if (visible("shell")) { return "没有进入播放"; }
+            if (!probe.subSeen) { return "播了 20 秒，画面上一行字幕都没出现"; }
+            post("字幕：「" + probe.subSeen.slice(0, 30) + "」");
+            return null;
+        }],
+        ["退出播放，字幕开关恢复原样", 600, function () {
+            if (!probe.sub) { return null; }
+            key(KEY.RETURN);
+            return Settings.get("showSubtitles", false) === probe.subWas ? null : "字幕开关没有恢复";
         }]
     ];
 
