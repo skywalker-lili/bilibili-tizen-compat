@@ -17,9 +17,11 @@ what you half-watched on the phone is under the cursor when the TV comes on.
 |  |  |
 |---|---|
 | ![Home](docs/screenshots/01-home.jpg) | ![Playback](docs/screenshots/03-player-scrub.jpg) |
-| Home. The top row is 「continue watching」, and the cursor starts on it | 1080p H.265, scrubbing with thumbnail previews and chapter ticks |
-| ![Related](docs/screenshots/04-panel.jpg) | ![Search](docs/screenshots/02-search.jpg) |
-| Press down while playing for parts, description and related videos — **the video keeps running** | Search, with the TV's own Chinese IME one button away |
+| Three big cards a row, readable from the sofa; signed in, the top row is 「continue watching」 and the cursor starts on it | Scrubbing with thumbnail previews; up to 1080p H.265 when signed in |
+| ![Panel](docs/screenshots/04-panel.jpg) | ![Comments](docs/screenshots/05-comments.jpg) |
+| Press down while playing for the description, speed, parts and related videos — **the video keeps running**; like / coin / favourite and comments are here too | Comments and replies beside the video, which keeps playing |
+| ![Settings](docs/screenshots/06-settings.jpg) | ![Search](docs/screenshots/02-search.jpg) |
+| Settings: autoplay, subtitles, and cards per row to suit the TV and the sofa | Search, with the TV's own Chinese IME one button away |
 
 ## Will it run on my TV
 
@@ -110,6 +112,8 @@ zsh tools/deploy.sh     # check, sign, install, launch — about 15 seconds
   nothing else. Stream URLs are pre-signed, so media requests carry no account.
 - Watch progress is reported back to bilibili (every 30 s), so the phone and the
   web can pick up where the TV left off — and vice versa.
+- Like, coin and favourite write to your bilibili account, and only when you pick
+  them on the TV; a coin cannot be taken back, so it asks once more.
 - The default sign-in is the **TV login** route, signed with the official TV
   client's appkey. That is what makes multiple accounts and progress reporting
   possible; it also means your client presents itself to bilibili as the official
@@ -220,7 +224,8 @@ tools/
   devserver.mjs       run the client in a desktop browser (screenshots, UI work without deploying)
   collect.mjs         diagnostics collector on :8099
   lint.mjs            catches calls to things that do not exist
-  *-verify.mjs        manifest / accounts / md5 / QR — any failure refuses to ship
+  *-verify.mjs        manifest / accounts / md5 / QR / interaction APIs / hold-to-open
+                      navigation / old-engine layout — any failure refuses to ship
 docs/         platform notes, login routes, the full stream-token investigation
 CLAUDE.md     everything learned, every trap, and how to debug on a retail set
 ```
@@ -246,8 +251,8 @@ zsh tools/deploy.sh --selftest
 ```
 
 walks the whole flow on the set unattended — grid, playback, panel, scrolling,
-scrubbing, long seeks across the buffer, pause, resume, exit, accounts — reporting
-each step. **It is the only way to check a build without someone on the sofa.**
+scrubbing, long seeks across the buffer, pause, resume, exit, accounts, settings,
+favourites and followings, comments, subtitles — reporting each step. **It is the only way to check a build without someone on the sofa.**
 Install a normal build again when it is done.
 
 ## Licence
