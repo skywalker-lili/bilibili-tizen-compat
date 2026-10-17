@@ -569,6 +569,8 @@ JSON 就行。
 ```
 app/          客户端
   vendor/shaka-player.compiled.js   DASH 播放器；预编译，不需要打包工具
+  js/compat.js   量引擎有没有 flex gap，没有就给 <html> 加 legacy-flex-gap
+  css/legacy-layout.css  只在 legacy-flex-gap 下生效，用 margin / grid-gap 顶替 flex gap
   js/config.js   UA、首选画质、上报地址
   js/md5.js      TV 登录接口的签名摘要
   js/mpd.js      写出交给 Shaka 的 DASH 清单
@@ -594,6 +596,7 @@ tools/
   md5-verify.mjs      把 md5.js 对着 node 的实现回环验证；卡发布
   mpd-verify.mjs      检查清单是否合法且转义正确；卡发布
   mirrors-verify.mjs  检查镜像是排序而不是丢弃；卡发布
+  legacy-css-verify.mjs  app.css 里带 gap 的 flex 容器在 legacy-layout.css 里都有替身；卡发布
   devserver.mjs       在开发机上跑 playurl/清单那套，不碰电视
   samsung-cert.mjs    无 GUI 的三星证书签发
   qr-verify.mjs       把 qr.js 过一遍真实解码器
@@ -613,6 +616,13 @@ docs/
 > 俱全 —— 出厂之后升级过。ES5 风格现在是**约定**而不是**约束**，「引擎太老所以
 > 不能用 X」这个论据对任何事情都不再成立。每个构建启动时都会上报引擎字符串，
 > **先读它，再做假设。**
+>
+> **⟶ 2026-10-18 起这句只对这台成立。** `required_version` 降到 5.5（PR #2，Q90T 上实测的
+> 兼容部分），最老要跑在 Chromium 69 上，ES5 又成了约束；CSS 也一样 —— Chromium 69 没有
+> flex 布局的 `gap`。`js/compat.js` 实测有没有它，没有就给 `<html>` 加 `legacy-flex-gap`，
+> 由 `css/legacy-layout.css` 用 margin 和 grid-gap 顶替。**`app.css` 里每加一个带 `gap`
+> 的 flex 容器，都要在 `legacy-layout.css` 里补一条**，否则老电视上子元素会挤在一起，
+> 而在这台电视上什么都看不出来。
 
 唯一的依赖是 `app/vendor/shaka-player.compiled.js`，以预编译包的形式入库。它不
 需要打包工具，而且它本身就是 ES5。

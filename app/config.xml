@@ -6,10 +6,12 @@
         viewmodes="maximized">
 
     <!-- The 10-char prefix must match the package attribute below.
-         If Tizen Studio assigns you a different ID on import, let it win. -->
+         If Tizen Studio assigns you a different ID on import, let it win.
+         5.5, not 6.0: Chromium 69 there lacks flex gap, which compat.js and
+         css/legacy-layout.css stand in for (PR #2, from a Q90T). -->
     <tizen:application id="BiliTvApp0.Bilibili"
                        package="BiliTvApp0"
-                       required_version="6.0"/>
+                       required_version="5.5"/>
 
     <!-- Wildcard network access. On Tizen this widget access policy replaces
          the browser CORS model, so XHR to bilivideo.com returns real status

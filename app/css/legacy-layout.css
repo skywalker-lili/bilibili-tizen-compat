@@ -1,0 +1,70 @@
+/* Conditional fallback for Chromium 69 (2020/Tizen 5.5). The modern layout is
+ * untouched on engines that implement flex gap. All selectors are also valid
+ * in Chromium 69. Margins replace flex gap; grid-gap keeps the exact card grid.
+ *
+ * From PR #2 (skywalker-lili, tested on a Q90T), cut to this layout: three
+ * 576px columns rather than the fork's four, and none of its new screens.
+ * Every flex container with `gap` in app.css needs its twin here — a new one
+ * without it renders with its children touching on these sets.
+ */
+.legacy-flex-gap #tabs,
+.legacy-flex-gap #account,
+.legacy-flex-gap .grid,
+.legacy-flex-gap .krow,
+.legacy-flex-gap .detail-head,
+.legacy-flex-gap .actions,
+.legacy-flex-gap .parts,
+.legacy-flex-gap #player-bar,
+.legacy-flex-gap .login,
+.legacy-flex-gap .acc-row,
+.legacy-flex-gap #ime-wrap,
+.legacy-flex-gap .suggests,
+.legacy-flex-gap .nextup-row,
+.legacy-flex-gap .nextup-up,
+.legacy-flex-gap #pause-glyph,
+.legacy-flex-gap #panel-meta,
+.legacy-flex-gap .up-head,
+.legacy-flex-gap .opt-row,
+.legacy-flex-gap .opt,
+.legacy-flex-gap #player-loading { gap: 0; }
+
+.legacy-flex-gap #tabs > :not(.hidden) ~ :not(.hidden) { margin-left: 10px; }
+.legacy-flex-gap #account > :not(.hidden) ~ :not(.hidden) { margin-left: 14px; }
+.legacy-flex-gap .krow > * + * { margin-left: 12px; }
+.legacy-flex-gap .detail-head > * + * { margin-left: 36px; }
+.legacy-flex-gap .actions > * + * { margin-left: 20px; }
+.legacy-flex-gap #player-bar > :not(.hidden) ~ :not(.hidden) { margin-left: 24px; }
+.legacy-flex-gap .login > * + * { margin-left: 72px; }
+.legacy-flex-gap .nextup-row > * + * { margin-left: 48px; }
+.legacy-flex-gap #pause-glyph > * + * { margin-left: 18px; }
+.legacy-flex-gap #panel-meta > * + * { margin-left: 22px; }
+.legacy-flex-gap .up-head > * + * { margin-left: 24px; }
+.legacy-flex-gap .opt > .opt-name { margin-left: 16px; }
+/* Preserve the original auto margin that right-aligns the part duration. */
+.legacy-flex-gap .opt > .opt-dur { margin-left: auto; padding-left: 16px; }
+
+/* .grid is flex-wrap with gap: 32px around 576px cards (border-box), so three
+ * fixed tracks with the same gap reproduce it exactly. */
+.legacy-flex-gap .grid {
+    display: grid;
+    grid-template-columns: repeat(3, 576px);
+    grid-gap: 32px;
+}
+
+/* A trailing child margin plus an equal negative container margin reproduces
+ * the available wrap width. Compensate the original bottom margins separately.
+ */
+.legacy-flex-gap .parts { margin-right: -14px; margin-bottom: -14px; }
+.legacy-flex-gap .parts > * { margin-right: 14px; margin-bottom: 14px; }
+.legacy-flex-gap .suggests { margin-right: -14px; margin-bottom: 14px; }
+.legacy-flex-gap .suggests > * { margin-right: 14px; margin-bottom: 14px; }
+.legacy-flex-gap .suggests > .suggest-label { width: calc(100% - 14px); }
+.legacy-flex-gap .acc-row { margin-right: -40px; margin-bottom: 0; }
+.legacy-flex-gap .acc-row > * { margin-right: 40px; margin-bottom: 40px; }
+.legacy-flex-gap .opt-row { margin-right: -16px; margin-bottom: -16px; }
+.legacy-flex-gap .opt-row > * { margin-right: 16px; margin-bottom: 16px; }
+
+.legacy-flex-gap #ime-wrap > * + * { margin-top: 24px; }
+.legacy-flex-gap .nextup-up > * + * { margin-top: 12px; }
+.legacy-flex-gap .nextup-up > .nextup-up-name { margin-top: 18px; }
+.legacy-flex-gap #player-loading > * + * { margin-top: 32px; }

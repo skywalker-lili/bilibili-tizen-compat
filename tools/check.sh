@@ -25,3 +25,6 @@ node "$ROOT/tools/mpd-verify.mjs" >/dev/null || { echo "  the DASH manifest is m
 # Mirrors are ordered, never dropped. Dropping one played fine for a day and
 # then walled every 1080p video the evening the primary CDN went sour.
 node "$ROOT/tools/mirrors-verify.mjs" >/dev/null || { echo "  mirror ordering is wrong"; exit 1; }
+# Tizen 5.5 has no flex gap. A new gap without its fallback looks fine on any
+# set made since, and cramped on the ones this check exists for.
+node "$ROOT/tools/legacy-css-verify.mjs" || exit 1
