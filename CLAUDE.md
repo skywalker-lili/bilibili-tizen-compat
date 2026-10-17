@@ -497,7 +497,8 @@ zsh tools/deploy.sh --selftest  # 同上，但构建会自己走一遍全流程�
 要求陌生人去改三个文件里的常量，而其中任何一个改错都表现成别的故障 —— 主机地址错
 是 sdb 静默超时，DUID 错是证书签得出来、装不上去。
 
-`deploy.sh` 先对每个文件跑 `node --check`，然后依次跑 `tools/lint.mjs`、
+`tools/check.sh`（`deploy.sh` 和 `release.sh` 共用，2026-10-17 从 `deploy.sh` 里抽出来）
+先对每个文件跑 `node --check`，然后依次跑 `tools/lint.mjs`、
 `tools/md5-verify.mjs`、`tools/accounts-verify.mjs`、`tools/mpd-verify.mjs`、
 `tools/mirrors-verify.mjs`，
 **任何一个失败就拒绝安装** —— 光靠语法检查曾经放过一个「按确认键什么都不发生」
@@ -517,6 +518,35 @@ zsh tools/deploy.sh --selftest  # 同上，但构建会自己走一遍全流程�
 旧的要单独卸（`tizen uninstall -p BiLiSpiKe0.BiliSpike -t <设备>`，或者电视上长按图标删），应用里存的东西
 （扫码登录、进度、自更新落盘的版本）不跟过来。`~/.bilibili-tizen.conf` 里的 `BILI_APP_ID` 同时改了。
 签名档 / 证书目录仍叫 `BiliSpike`，那是证书的名字，和应用编号无关，没动。
+
+### 发布包（2026-10-17 起）
+
+```bash
+zsh tools/release.sh   # → dist/bilibili-tizen-<config.xml 的 version>.wgt
+```
+
+给陌生人用 [Apps2Samsung](https://github.com/Apps2Samsung/Apps2Samsung) 装的包，不碰电视。
+
+- **绝不能用 `SamsungBili` 签。** 那套证书里有三星账号邮箱、真实姓名和公司、客厅这台电视的
+  DUID，签进 `signature1.xml` / `author-signature.xml` 就等于公开发布 —— 用 openssl 读一个
+  部署包就看得到。发布用 `BiliRelease` 签名档：一次性的作者证书 `CN=bilibili-tizen`
+  （`~/tizen-studio-data/keystore/author/bilibili-tizen-release.p12`，密码在
+  `~/.bilibili-tizen-release-password`，首次运行自动生成）加 SDK 自带的测试分发证书 ——
+  和 TizenTube 发布包的签名形态一模一样。
+- 这套签名装不上任何一台 2023+ 的电视，**也不需要装得上**：Apps2Samsung 安装时用用户自己的
+  三星证书重签（`WgtInstaller` → `ResignAsync`），按 `config.xml` 里的权限自动选 Public /
+  Partner，我们的权限全是 Public 级。
+- **取自 `git archive HEAD`**，`app/` 有未提交改动就拒绝 —— `app/` 里常年躺着上次部署的
+  wgt 和签名文件，直接打包目录会把它们带进去。
+- **打完包读回来验，不信前面的步骤**：文件清单必须正好是 `git ls-files app` 加两个签名文件，
+  `REPORT_TO` 为空、`SELFTEST` 为 false，签名里不许有三星签发的、带 `deviceid=` 或
+  `emailAddress` 的证书。拿一个旧部署包喂过，全部报出来。
+- **别把签名档里的密码改成明文。** `deploy.sh` 建 `SamsungBili` 时会把 `*.pwd` 改写成明文；
+  `release.sh` 照做之后 `tizen package` 停在 `Author password:`，然后 NullPointerException。
+  这台 Mac 上那些 `.pwd` 文件根本不在磁盘上，路径只是 CLI 存密码用的键；本机三个能用的签名档
+  （包括 `SamsungBili`）现在都是没改写的形态。
+- 发布包没有诊断通道，`Updater.probe` 也就不跑（它只在上报通过之后才跑）。
+- **截至 2026-10-17 还没有用 Apps2Samsung 在电视上实装过这个包。** 装过之后改掉这一条。
 
 ## 证书
 
@@ -556,6 +586,8 @@ spike/        当初摸清平台事实的工装；不参与发布
 tools/
   setup.sh            只跑一次：把电视地址/证书写进仓库外的 ~/.bilibili-tizen.conf
   deploy.sh           一条命令完成构建 + 安装 + 启动
+  release.sh          打给陌生人的发布包，见「发布包」
+  check.sh            deploy 和 release 共用的检查；卡发布
   collect.mjs         :8099 上的诊断收集器
   lint.mjs            抓「调用了不存在的东西」；卡发布
   accounts-verify.mjs 用假设备驱动整个账号层；卡发布

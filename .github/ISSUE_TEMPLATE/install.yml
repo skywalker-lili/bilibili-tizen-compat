@@ -22,6 +22,7 @@ body:
     attributes:
       label: Which step / 卡在哪一步
       options:
+        - Apps2Samsung, release .wgt / 用 Apps2Samsung 装发布包
         - tools/setup.sh
         - Certificate issuance / 证书签发 (samsung-tv-cert)
         - tizen package / 打包签名
@@ -55,5 +56,5 @@ body:
   - type: input
     id: env
     attributes:
-      label: OS, Node version, Tizen Studio version / 系统、Node 版本、Tizen Studio 版本
-      placeholder: macOS 15.5, Node 22.3, Tizen Studio 5.5 CLI
+      label: OS, Node version, Tizen Studio version — or Apps2Samsung version / 系统、Node 版本、Tizen Studio 版本，或 Apps2Samsung 版本
+      placeholder: macOS 15.5, Node 22.3, Tizen Studio 5.5 CLI  |  Apps2Samsung 2.8.3, Android

@@ -29,28 +29,62 @@ what you half-watched on the phone is under the cursor when the TV comes on.
 | **Very likely** | Same generation or newer (2022 onwards, Tizen 7+). Playback uses standard MSE and AVPlay, nothing model-specific — but **nobody has tried another model yet** |
 | **No** | Non-Samsung sets; Samsung models from before 2016 (engine too old) |
 
-Every build reports its engine string and codec support on boot; that line is
-the first thing to read. **If it works or fails on another model, please open an
-issue with the model and firmware version** — that is how this table grows.
+A build from source reports its engine string and codec support on boot; that
+line is the first thing to read (the release package reports nothing). **Either
+way, if it works or fails on another model, please open an issue with the model
+and firmware version** — that is how this table grows.
 
 ## Install
 
 Samsung's store does not accept third-party clients for other people's services
 (it pulled the unofficial Twitch app in 2019 for exactly that), so this is
-sideloaded. You need a computer on the same network, **once**; after that the
-app opens from the TV like any other.
+sideloaded — **once**; after that the app opens from the TV like any other. Two
+ways:
 
-**Everybody gets stuck on the certificate; `setup.sh` handles it.** Samsung sets
+| | Release package (recommended) | From source |
+|---|---|---|
+| For | Watching bilibili on the TV | Changing the code, reading diagnostics |
+| Needs | A computer (Windows / macOS / Linux) **or an Android phone** with [Apps2Samsung](https://github.com/Apps2Samsung/Apps2Samsung) | macOS, Node, Python 3, Tizen Studio CLI |
+| Upgrade | Download the new `.wgt`, install it again | `git pull`, run `deploy.sh` again |
+
+The app does not update itself yet (all five self-update routes have been proven
+on the set, but it is not built), so upgrading is manual either way.
+
+**Both ways start here:** enable Developer Mode on the TV — on the Apps screen,
+type `12345` with the remote, switch it on, and set Host PC IP to the computer or
+phone you will install from — then **power-cycle the set completely**. Without
+that the registration does not take, and the symptom is the TV not being found,
+or connections timing out silently.
+
+**Everybody gets stuck on the certificate; both ways handle it.** Samsung sets
 from 2023 on only accept Samsung-issued distributor certificates — the ones that
-ship with Tizen Studio all fail with `Invalid certificate chain`. The script opens
-the Samsung account login, requests the certificate for you, and needs no Eclipse,
-no sudo, no certificate-manager GUI.
+ship with Tizen Studio all fail with `Invalid certificate chain`. The certificate
+is bound to your TV's DUID and is requested by signing in to your own Samsung
+account once.
+
+### Release package
+
+1. Download `bilibili-tizen-<version>.wgt` from
+   [Releases](https://github.com/titlog/bilibili-tizen/releases/latest).
+2. Install [Apps2Samsung](https://github.com/Apps2Samsung/Apps2Samsung/releases),
+   desktop or Android.
+3. Open it, select your TV (enter its IP if it is not listed), choose a custom
+   `.wgt` as the app, pick the file from step 1, and install. The first time, it
+   asks you to sign in to Samsung and issues the certificate for this TV.
+
+The package is re-signed with your own certificate on install, so the same file
+works for everyone.
+
+> Nobody has walked this path on a real TV yet (the author's set runs a build from
+> source). Whether it works or fails, please open an issue.
+
+### From source
 
 You need Node, Python 3, and the
 [Tizen Studio](https://developer.tizen.org/development/tizen-studio/download)
-command-line tools (**not the IDE**). On the TV, enable Developer Mode, register
-this computer's IP, then **power-cycle the set completely** — without that the
-registration does not take, and the symptom is `sdb` timing out silently.
+command-line tools (**not the IDE**). `setup.sh` opens the Samsung account login,
+requests the certificate for you, and needs no Eclipse, no sudo, no
+certificate-manager GUI.
 
 ```bash
 git clone https://github.com/titlog/bilibili-tizen.git && cd bilibili-tizen
@@ -58,9 +92,11 @@ zsh tools/setup.sh      # once: finds the TV, reads its DUID, issues the certifi
 zsh tools/deploy.sh     # check, sign, install, launch — about 15 seconds
 ```
 
-**Updating is the same command.** The app does not update itself yet (all five
-self-update routes have been proven on the set, but it is not built), so
-`git pull` and another `deploy.sh` is the upgrade.
+> **Do not switch between the two.** They sign with different certificates, and
+> the TV will not let a package signed with one replace the same app signed with
+> the other. To switch, delete the app on the TV first, then install — that wipes
+> the QR sign-ins and local watch history, so accounts need scanning again;
+> progress already reported to the bilibili account is kept.
 
 > Only need the certificate, for something unrelated? It is a standalone tool:
 > **[samsung-tv-cert](https://github.com/titlog/samsung-tv-cert)**
@@ -85,9 +121,10 @@ self-update routes have been proven on the set, but it is not built), so
 - An expired token means scanning again (the refresh endpoint has not been
   verified against the server, and guessing on the one path that holds the whole
   household's credentials is not something this project does).
-- The deploy script bakes **your computer's LAN address** into the package as the
-  destination for diagnostic logs; anything is received only while you run the
-  collector on that computer, and only on your LAN.
+- From source, `deploy.sh` bakes **your computer's LAN address** into the package
+  as the destination for diagnostic logs; anything is received only while you run
+  the collector on that computer, and only on your LAN. **The release package has
+  no such address** and sends logs nowhere.
 
 ## What it does, and what it deliberately does not
 
@@ -110,12 +147,16 @@ from OK to a picture, 1080p H.265.
 
 ## FAQ
 
-**`sdb` cannot reach the TV.** Is the IP registered in Developer Mode this
-computer's *current* IP, and did you power-cycle the set after changing it? A DHCP
-change means re-registering.
+**The TV is not found, or `sdb` cannot reach it.** Is the IP registered in
+Developer Mode the *current* IP of the computer (or phone) you install from, and
+did you power-cycle the set after changing it? A DHCP change means re-registering.
 
-**`Invalid certificate chain`.** You are using a Tizen-bundled certificate. Run
-`zsh tools/setup.sh` for a Samsung-issued one.
+**`Invalid certificate chain` (from source).** You are using a Tizen-bundled
+certificate. Run `zsh tools/setup.sh` for a Samsung-issued one.
+
+**The install says the TV already has this app signed with a different
+certificate.** It was installed the other way; see "Do not switch between the
+two" above.
 
 **A video will not open: 「视频流被拒绝（403）」.** Usually CDN throttling or a
 per-file refusal. The app rotates mirrors, escalates the token, switches codec
@@ -168,6 +209,8 @@ spike/        the rigs that established the platform facts
 tools/
   setup.sh            once: your TV, your certificate
   deploy.sh           check, sign, install, launch
+  release.sh          build the release package: from HEAD, no diagnostics address, no personal certificate
+  check.sh            the checks deploy and release share; any failure refuses to package
   samsung-cert.mjs    Samsung certificate issuance without a GUI
   devserver.mjs       run the client in a desktop browser (screenshots, UI work without deploying)
   collect.mjs         diagnostics collector on :8099
