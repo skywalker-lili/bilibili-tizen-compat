@@ -21,12 +21,19 @@ var SelfTest = (function () {
         } catch (e) {}
     }
 
+    /* A press is a keydown and then a keyup, as on the remote. Since PR #2, OK on
+     * a card acts on the keyup — holding it opens the action menu instead — so a
+     * keydown alone was a key held forever: 650ms later the menu opened over the
+     * grid, and every step after "按确认键开始播放" ran inside it (2026-10-18). */
     function key(code) {
-        var e = document.createEvent("Event");
-        e.initEvent("keydown", true, true);
-        e.keyCode = code;
-        /* preventDefault is called by the handler; a synthetic Event tolerates it. */
-        document.dispatchEvent(e);
+        var types = ["keydown", "keyup"];
+        for (var i = 0; i < types.length; i++) {
+            var e = document.createEvent("Event");
+            e.initEvent(types[i], true, true);
+            e.keyCode = code;
+            /* preventDefault is called by the handler; a synthetic Event tolerates it. */
+            document.dispatchEvent(e);
+        }
     }
 
     var KEY = { UP: 38, DOWN: 40, LEFT: 37, RIGHT: 39, ENTER: 13, RETURN: 10009 };
