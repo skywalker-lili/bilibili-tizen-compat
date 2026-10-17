@@ -204,4 +204,6 @@ zsh tools/deploy.sh --selftest
 
 ## 协议
 
-MIT。bilibili 是其所有者的商标，本项目与之无关联。
+MIT。bilibili 是其所有者的商标，本项目与之无关联。`app/vendor/` 里预编译的 Shaka
+Player 带着 Apache-2.0、MIT、BSD-3-Clause 的第三方代码，见
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。

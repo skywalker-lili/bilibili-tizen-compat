@@ -244,4 +244,7 @@ Install a normal build again when it is done.
 
 ## Licence
 
-MIT. bilibili is a trademark of its owner; this project is not affiliated.
+MIT. bilibili is a trademark of its owner; this project is not affiliated. The
+precompiled Shaka Player in `app/vendor/` carries third-party code under
+Apache-2.0, MIT and BSD-3-Clause; see
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
