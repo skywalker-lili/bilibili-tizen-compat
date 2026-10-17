@@ -10,8 +10,9 @@
 import fs from "fs";
 import path from "path";
 import vm from "vm";
+import { fileURLToPath } from "url";
 
-const APP = new URL("../app/js/", import.meta.url).pathname;
+const APP = fileURLToPath(new URL("../app/js/", import.meta.url));
 
 /* Load order matters: the app is a series of plain scripts sharing globals.
  *
@@ -20,7 +21,7 @@ const APP = new URL("../app/js/", import.meta.url).pathname;
  * which is precisely the gap this tool exists to close: a call to something
  * that does not exist parses fine and fails only on the sofa. Same lesson as
  * deploy.sh deriving the wgt name from the build instead of hardcoding it. */
-const INDEX = new URL("../app/index.html", import.meta.url).pathname;
+const INDEX = fileURLToPath(new URL("../app/index.html", import.meta.url));
 const ORDER = [...fs.readFileSync(INDEX, "utf8")
   .matchAll(/<script\s+src="js\/([^"]+)"><\/script>/g)].map((m) => m[1]);
 
@@ -108,7 +109,7 @@ const known = new Set();
 for (const f of ORDER) { scanFile(f, known); }
 
 /* Every id the app reaches for must exist in the markup or be built by it. */
-const html = fs.readFileSync(new URL("../app/index.html", import.meta.url).pathname, "utf8");
+const html = fs.readFileSync(INDEX, "utf8");
 const htmlIds = new Set([...html.matchAll(/id="([\w-]+)"/g)].map((m) => m[1]));
 const jsIds = new Set();
 for (const f of ORDER) {

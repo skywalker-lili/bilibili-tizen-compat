@@ -11,8 +11,9 @@
 import fs from "fs";
 import vm from "vm";
 import { XMLParser, XMLValidator } from "fast-xml-parser";
+import { fileURLToPath } from "url";
 
-const src = fs.readFileSync(new URL("../app/js/mpd.js", import.meta.url).pathname, "utf8");
+const src = fs.readFileSync(fileURLToPath(new URL("../app/js/mpd.js", import.meta.url)), "utf8");
 const sandbox = { String, Number, Array };
 vm.createContext(sandbox);
 vm.runInContext(src, sandbox);

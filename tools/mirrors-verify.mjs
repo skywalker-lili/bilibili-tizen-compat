@@ -13,8 +13,9 @@
  */
 import fs from "fs";
 import vm from "vm";
+import { fileURLToPath } from "url";
 
-const src = fs.readFileSync(new URL("../app/js/api.js", import.meta.url).pathname, "utf8");
+const src = fs.readFileSync(fileURLToPath(new URL("../app/js/api.js", import.meta.url)), "utf8");
 
 /* A fake transport: getJson opens a URL and reads status/responseText. The
  * canned payload plays the part of bilibili's answer. */

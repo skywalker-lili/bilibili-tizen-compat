@@ -25,16 +25,17 @@ PW_FILE="$HOME/.bilibili-tizen-cert-password"
 PW=$(cat "$PW_FILE")
 # Everything below describes one particular television on one particular LAN, so
 # none of it is hardcoded any more: `tools/setup.sh` writes ~/.bilibili-tizen.conf
-# once, and every value can still be overridden per-invocation from the
-# environment. The defaults are only what a first run guesses before setup has
-# been done — the aim is that somebody else's TV needs no edit to this file.
+# once. Device/network values can still be overridden per invocation from the
+# environment; the application ID comes from the package manifest so a renamed
+# app cannot be installed successfully and then launch an older package.
 CONF="${BILI_TIZEN_CONF:-$HOME/.bilibili-tizen.conf}"
 [ -f "$CONF" ] && source "$CONF"
 
 PROFILE="${BILI_PROFILE:-SamsungBili}"
 TV_IP="${BILI_TV_IP:-}"
 TARGET="${BILI_TV_TARGET:-}"
-APP_ID="${BILI_APP_ID:-BiliTvApp0.Bilibili}"
+APP_ID=$(sed -n 's/.*<tizen:application id="\([^"]*\)".*/\1/p' "$APP/config.xml" | head -n 1)
+[ -n "$APP_ID" ] || { echo "app/config.xml 中找不到应用 ID"; exit 1; }
 
 if [ -z "$TV_IP" ]; then
   echo "没有配置电视地址。先跑一次：zsh tools/setup.sh"

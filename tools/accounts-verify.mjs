@@ -13,9 +13,11 @@
  *   node tools/accounts-verify.mjs
  */
 import fs from "fs";
+import path from "path";
 import vm from "vm";
+import { fileURLToPath } from "url";
 
-const APP = new URL("../app/js/", import.meta.url).pathname;
+const APP = fileURLToPath(new URL("../app/js/", import.meta.url));
 
 let failed = 0;
 let checks = 0;
@@ -84,7 +86,7 @@ function boot(seed = {}, opts = {}) {
   vm.createContext(sandbox);
 
   for (const f of ["md5.js", "accounts.js", "auth.js", "resume.js"]) {
-    vm.runInContext(fs.readFileSync(APP + f, "utf8"), sandbox, { filename: f });
+    vm.runInContext(fs.readFileSync(path.join(APP, f), "utf8"), sandbox, { filename: f });
   }
   return { sandbox, storage, net, timers, fire: (n = 1) => {
     const fns = [...timers.values()];
