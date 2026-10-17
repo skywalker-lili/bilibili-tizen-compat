@@ -12,6 +12,9 @@
 > 三星这边一直是空的。这个项目补的是这个位置。
 >
 > **与 bilibili、三星均无关联。** 个人项目，MIT 协议。
+>
+> 兄弟项目：[douyin-tizen](https://github.com/titlog/douyin-tizen)（三星电视上刷抖音）、
+> [telegram-tizen](https://github.com/titlog/telegram-tizen)（三星电视上放 Telegram 群和频道里的视频）。
 
 |  |  |
 |---|---|

@@ -13,6 +13,9 @@ what you half-watched on the phone is under the cursor when the TV comes on.
 > The Samsung side was empty. This fills that gap.
 >
 > **Not affiliated with bilibili or Samsung.** Personal project, MIT.
+>
+> Sibling projects: [douyin-tizen](https://github.com/titlog/douyin-tizen) (Douyin on Samsung TVs) and
+> [telegram-tizen](https://github.com/titlog/telegram-tizen) (the videos in your Telegram groups and channels).
 
 |  |  |
 |---|---|
