@@ -4833,7 +4833,8 @@
                    " | avc1=" + can("avc1.640028") +
                    " | hev1=" + can("hev1.1.6.L120.90") +
                    " | hvc1=" + can("hvc1.1.6.L120.90") +
-                   " | av01=" + can("av01.0.08M.08"));
+                   " | av01=" + can("av01.0.08M.08") +
+                   " | 封面=" + API.thumbFormat);
         } catch (e) { report("engine", "probe failed: " + e.message); }
 
         /* A set with more than one person on it asks before showing anyone's

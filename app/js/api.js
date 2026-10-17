@@ -168,6 +168,26 @@ var API = (function () {
         xhr.send(body);
     }
 
+    /* WebP where it has been seen to render (Tizen 5.5, 9.0), JPEG below that.
+     * Issue #1 (2026-09-26): on a 2018 UA49NU7100, Tizen 4, many covers came
+     * out with blocky wrong-colour patches and oversaturation, while the same
+     * WebP covers are clean on a Q90T (Tizen 5.5, PR #2's screenshots) and on
+     * the CU7090. bilibili's WebP covers are VP8X with an sRGB ICC profile;
+     * its JPEGs carry no profile (2026-10-17, five covers each). So JPEG steps
+     * around both the old engine's WebP decoding and its colour management —
+     * which one was at fault was never isolated, there is no such set here.
+     * JPEG is 1.3–2.2× the bytes, which is why it is not the default. No
+     * Tizen version in the UA (a desktop browser, node) keeps WebP. */
+    var THUMB_FORMAT = (function () {
+        var ua = typeof navigator !== "undefined" ? navigator.userAgent || "" : "";
+        /* [ ] rather than a plain space: lint.mjs does not strip regex
+         * literals, and reads "Tizen (" as a call to something undefined. */
+        var m = /Tizen[ ](\d+)\.(\d+)/.exec(ua);
+        if (!m) { return "webp"; }
+        var major = +m[1], minor = +m[2];
+        return (major < 5 || (major === 5 && minor < 5)) ? "jpg" : "webp";
+    })();
+
     /* Thumbnails come back as http:// or protocol-relative, and some are huge.
      * bilibili's image service resizes on demand via the @wxh suffix. */
     function thumb(url, w, h) {
@@ -176,7 +196,7 @@ var API = (function () {
         if (u.indexOf("//") === 0) { u = "https:" + u; }
         /* The card's own size since the grid went to three columns (576×324);
          * the old 480×300 was the four-column card, upscaled and soft. */
-        return u + "@" + (w || 576) + "w_" + (h || 324) + "h_1c.webp";
+        return u + "@" + (w || 576) + "w_" + (h || 324) + "h_1c." + THUMB_FORMAT;
     }
 
     function stripEm(s) {
@@ -284,6 +304,9 @@ var API = (function () {
     }
 
     return {
+        /* Which cover format this set was given, for the boot line. */
+        thumbFormat: THUMB_FORMAT,
+
         /* The web home page's feed. Personalised once the session cookies are
          * in play, generic before that — same endpoint either way. */
         recommended: function (page, onOk, onFail) {
