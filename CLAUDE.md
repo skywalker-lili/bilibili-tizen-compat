@@ -86,7 +86,7 @@ AVPlay 的 DASH 实现是对的，它只是坚持清单必须走 HTTP 到达，�
 
 三条执行路径任选其一即可跑新代码。**关键是第四条**：能落盘就意味着更新可以存下来
 下次直接用，而不是像社区版 Twitch 那样每次启动都必须联网 —— 断网时电视照样开得起来。
-jsdelivr 最快（55ms），三个托管都可达。
+jsdelivr 最快（55ms），三个托管都可达。**⟶ 2026-10-18 做成了，见「自动更新」一节；`updater.js` 这个探测删了。**
 
 > **⚠️ 这五条全通，只因为 `config.xml` 里没有 `<tizen:allow-navigation>` 和任何 `<tizen:content-security-policy*>`。**
 > 三者出现任何一个，应用就从「WARP 模式」（只由 `<access>` 管，没有 CSP）切到「CSP 模式」，没写 CSP 时套默认策略
@@ -580,6 +580,9 @@ app/          客户端
   js/qr.js       二维码编码器，由 tools/qr-verify.mjs 验证
   js/nav.js      基于几何位置的 D-pad 焦点
   js/player.js   两条路：渐进式走 AVPlay，DASH 走 Shaka
+  js/boot.js     启动时跑哪份代码（安装包的，还是下载过、验过签名的新版本）；自更新的信任根，永远不随更新下发
+  js/update.js   查新版本、下载、验签名、存起来；本身随更新下发
+  js/danmaku.js  弹幕：取、解析、按轨道画
   js/resume.js   每个视频看到哪了 —— 按账号隔离，也按分 P 记录
   js/settings.js 跨会话保留的偏好（属于这台电视，不属于某个人）
   js/app.js      各屏幕与路由
@@ -599,6 +602,11 @@ tools/
   legacy-css-verify.mjs  app.css 里带 gap 的 flex 容器在 legacy-layout.css 里都有替身；卡发布
   compat-api-verify.mjs  收藏、关注、评论、点赞/投币/收藏的请求去向，以及没凭证不写；卡发布
   nav-verify.mjs      长按确认键开菜单、短按照常播放、方向键跨行；卡发布
+  update-verify.mjs   自更新：签名、篡改、旧版本、shell 太新、标坏，以及 boot.js 在每种本地状态下选对代码；卡发布
+  update-e2e.mjs      自更新在桌面浏览器里走一遍真的启动（临时钥匙，不碰 bilibili），不在 check.sh 里
+  update-release.mjs  打更新包、签名，写 update/manifest.json 和 update/bundle-<版本>.json
+  update-key.mjs      生成签名钥匙（只在换钥匙时用；--show 查对不对得上）
+  danmaku-verify.mjs  弹幕：解析、去重、轨道不重叠；--browser 在桌面浏览器里量帧耗时；卡发布（node 那部分）
   devserver.mjs       在开发机上跑 playurl/清单那套，不碰电视
   samsung-cert.mjs    无 GUI 的三星证书签发
   qr-verify.mjs       把 qr.js 过一遍真实解码器
@@ -1510,6 +1518,40 @@ XHR 认 `Content-Encoding` 自己解；devserver 转发时丢了这个头，那�
 - **桌面测过的**：真请求 81 条 461–513ms；3000 条随机宽度排轨道零重叠；30 秒 750 条、密度「多」同屏 60 条：帧间隔 p50 8.3ms、
   p95 ~10ms，没有超过 50ms 的长任务（Mac 上的数字）。**电视上的帧耗时还没量过** —— 判据是开弹幕之后 `卡住` / `丢帧` 有没有变多。
 - 自测：问推荐第一个视频的弹幕池（没人发弹幕就跳过），打开它，20 秒内画面上要有弹幕，退出后设置恢复。
+
+## 自动更新（2026-10-18）
+
+用户要求做（探测 08-03 就全通了，一直没做成产品）。**信任根是签名，传输不可信**：
+
+- **钥匙**：ECDSA P-256 + SHA-256。公钥（SPKI）写在 `app/js/boot.js` 的 `PUBKEY`，指纹 `dba4:4772:0818:d6d8:7370:21ac:3915:5b49`。
+  私钥在这台 Mac 的 `~/.bilibili-tizen-update-key.pem`（600，aes-256 加密），口令在 `~/.bilibili-tizen-update-password`（600），
+  **都在仓库外**。**丢了**：以后发更新就得让所有人重装一个换了公钥的包。**泄露了**：谁都能往每一台装着它的电视推代码 —— 而这个
+  应用拿着全家人的 bilibili 令牌。签名格式是 IEEE P1363（r||s），WebCrypto 要这种；node 签要 `dsaEncoding: 'ieee-p1363'`。
+- **更新包**：`tools/update-release.mjs` 从 `git archive HEAD` 取（`app/` 有未提交改动就拒绝），打成一个 JSON：body 的静态 DOM、
+  CSS、脚本和它们的顺序；`update/manifest.json` 写版本、`shell`、sha256、大小，并对 manifest 正文签名。**永远不带**：`config.js`
+  （deploy.sh 每次改写，里面是上报地址和 SELFTEST）、`boot.js`（信任根）、`vendor/`（Shaka，player.js 从包里注入）。约 780KB。
+- **从哪取**：manifest 先问 `raw.githubusercontent.com/titlog/bilibili-tizen/master/update/manifest.json`，不行再问 jsDelivr 的
+  `@master`；bundle 按 tag 取（jsDelivr `@v<版本>`，不可变、缓存友好），不行退 raw。只有开发构建（`REPORT_TO` 非空）能用
+  `bili.update.source` 把检查指到别处 —— 发布包只能查仓库。
+- **启动时（boot.js）**：index.html 里只剩 `config.js` 和 `boot.js` 两个脚本标签，**以后新加脚本要加进 boot.js 的 `SCRIPTS`，
+  不是 index.html**（`tools/lint.mjs` 从那里读顺序）。本地有已验过、版本**高于安装包**、`shell` 不超过这台的、没标坏过的更新包就用它：
+  换掉 body 的静态 DOM 和 CSS，**在页面解析期间**用 `document.write` 写 `<script src="blob:…">` —— app.js 靠 `window.onload` 启动，
+  解析结束后再插脚本就错过 onload，这是硬约束。**启动时不再验签**：更新包从这个应用自己的 localStorage 来，能写那里的人早就能跑代码了；
+  下载时验过才存。手动装了更新的安装包，旧的下载自动作废。
+- **坏了能退回**：用更新包启动前记 `booting`；app.js 在 onload 跑完、两秒内没有一个 js 错误、屏幕上有东西时调 `Boot.ok()` 清掉。
+  **不等首页 feed** —— 断网时首页出不来，那不是代码坏了。下次启动看到 `booting` 还挂着 → 那一版标坏、用安装包，以后也不再下载它。
+- **检查**（update.js，本身随更新下发）：开机 60 秒后、没在播放时，之后每 6 小时；manifest 签名、版本、shell、没标坏 → 下载、对 sha256 →
+  存 localStorage（存不下报一行跳过）→ 下次打开生效。日志 `update:` 每种结论分开说（签名不对 / sha256 不对 / 版本不更高 / 存不下）。
+  设置页「自动更新：开 / 关」（默认开）和「现在检查」，下面一行写装的是哪版、正在跑哪版、下好了哪版、上次检查的结果。
+- **规则**：改了 boot.js 对更新包的约定，`SHELL` 加一（旧电视会跳过那一版，要重装）。`config.xml` 的版本号和 boot.js 的
+  `PACKAGED_FALLBACK` 要一致（update-verify 卡着）。没有 `crypto.subtle` / TextEncoder 的引擎（可能是很老的电视）不更新，只在启动那行说。
+- **发布一版**：① 改 config.xml 版本号和 boot.js 的 `PACKAGED_FALLBACK`，提交；② `node tools/update-release.mjs`；③
+  `git add update && git commit && git tag v<版本> && git push origin master v<版本>`（tag 要一起推：manifest 从 master 取，bundle 从 tag 取）；
+  ④ 可选 `zsh tools/release.sh` 出同版本的 wgt。**已经装着的电视只有装了带这套代码的版本之后才会自己更新** —— 第一次还得侧载。
+- **测过的**：`update-verify` 36 条；`update-e2e` 在桌面浏览器里：发 9.0.0 → 下载 → 重新打开跑新代码（新脚本在 load 之前跑完，onload
+  照常启动，body 和 CSS 换了）；一个启动就抛错的 9.1.0 → 第二次启动退回安装包、之后不再下载；篡改的 bundle、篡改的 manifest、
+  更旧的版本各自被拒。**还没在电视上跑过**：Tizen 上 `document.write` 写 blob: 脚本的时机、`crypto.subtle` 在不在、localStorage
+  配额，都要看电视上 `update:` 那几行。
 
 **仍然缺失**，大致按缺失感强弱排序：全站以外的分区。（UP 主页 2026-09-16 做了，见上；画质、清历史 2026-10-18 做了。）渐进式那条路的重启不验 `deadline`（DASH 侧
 验）—— 要走到那一步得同时满足「这个稿件没有 DASH」加「暂停两小时后播放中出错」，

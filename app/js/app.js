@@ -83,8 +83,15 @@
         } catch (e) {}
     }
 
+    /* Counted for self-update's boot check (end of window.onload): a launch
+     * that threw on the way up does not get to call its code good. */
+    var jsErrors = 0;
     window.onerror = function (msg, src, line) {
-        report("js error", msg + " @" + String(src).split("/").pop() + ":" + line);
+        jsErrors++;
+        /* Boot.scriptName: an update's scripts run from blob: urls, and a uuid
+         * names no file. */
+        var file = typeof Boot !== "undefined" ? Boot.scriptName(src) : String(src).split("/").pop();
+        report("js error", msg + " @" + file + ":" + line);
         return false;
     };
     /* Quotes matter: several call sites interpolate into attributes, and search
@@ -2313,6 +2320,12 @@
             '<div class="section">观看记录</div>' +
             '<div class="actions"><div class="btn focusable" id="btn-clear-history">清空观看记录</div></div>' +
             '<div class="me-sub" style="margin-top:24px">只清这台电视上、当前账号的记录（「我的」和首页的「继续观看」）。bilibili 账号里的历史不动，手机上照样看得到。</div>' +
+            '<div class="section">自动更新</div>' +
+            '<div class="actions"><div class="btn focusable" id="btn-autoupdate"></div>' +
+            '<div class="btn focusable" id="btn-checkupdate">现在检查</div></div>' +
+            '<div class="me-sub" id="update-status" style="margin-top:24px"></div>' +
+            '<div class="me-sub" style="margin-top:12px">新版本从这个项目的 GitHub 仓库下载，带签名，验过才用，下次打开应用时生效；' +
+            '新版本启动不起来会自动退回装的这一版。</div>' +
             '<div class="section">浏览</div>' +
             '<div class="actions"><div class="btn focusable" id="btn-density"></div></div>' +
             '<div class="me-sub" style="margin-top:24px">离电视远就选 3 个，标题看得清；坐得近或屏幕小，4 个、5 个能一屏看到更多。</div></div>';
@@ -2342,6 +2355,35 @@
         dmBtn.onselect = function () {
             setDanmakuLevel(DM_LEVELS[(DM_LEVELS.indexOf(danmakuLevel()) + 1) % DM_LEVELS.length]);
             paintDm();
+        };
+
+        /* Self-update (update.js). Written out plainly: what is installed, what
+         * is running, what is waiting for the next launch, when it last looked. */
+        var upBtn = el("btn-autoupdate"), upStatus = el("update-status");
+        function paintUpdate() {
+            var st = Update.status();
+            upBtn.textContent = "自动更新：" + (st.enabled ? "开" : "关");
+            var parts = ["装的是 " + st.packaged];
+            if (st.running && st.running !== st.packaged) { parts.push("正在运行更新的 " + st.running); }
+            if (st.downloaded) { parts.push("已下载 " + st.downloaded + "，下次打开生效"); }
+            if (!st.supported) { parts.push("这台电视的浏览器内核不支持验签名，不会自动更新"); }
+            if (st.checking) { parts.push("正在检查…"); }
+            else if (st.lastCheck) {
+                parts.push("上次检查 " + new Date(st.lastCheck).toTimeString().slice(0, 5) +
+                           (st.lastResult ? "：" + st.lastResult : "") + (st.lastError ? "（" + st.lastError + "）" : ""));
+            }
+            upStatus.textContent = parts.join(" · ");
+        }
+        paintUpdate();
+        upBtn.onselect = function () {
+            Update.setEnabled(!Update.enabled());
+            paintUpdate();
+            report("settings", "自动更新=" + (Update.enabled() ? "开" : "关"));
+        };
+        el("btn-checkupdate").onselect = function () {
+            var view = viewToken;
+            Update.check(function () { if (stillViewing(view)) { paintUpdate(); } });
+            paintUpdate();
         };
 
         var quality = el("btn-quality");
@@ -5908,24 +5950,29 @@
          * report lines, and with REPORT_TO empty it was still loading a remote
          * script and touching three hosts on every boot for nobody. */
         if (!selftest) {
-            /* Announced on arrival, before anything can go wrong. A timer that
-             * never fires and a timer that fires and throws produce the same
-             * silence otherwise, and telling those apart is the whole reason
-             * this probe exists — an empty catch here would have been the very
-             * fault this codebase keeps paying for. */
-            setTimeout(function () {
-                if (playing) { report("update", "定时器到点，但正在播放，跳过"); return; }
-                /* Only when somebody is listening. The constant is no test of
-                 * that — deploy.sh bakes the dev machine's address into every
-                 * package — but a boot line answered is: the engine/account
-                 * lines went out seconds ago, and if none of them landed there
-                 * is no collector, and the probe's only output is report lines. */
-                if (!reportEverOk) { return; }
-                report("update", "定时器到点，开始探测");
-                try { Updater.probe(); }
-                catch (e) { report("update", "探测抛异常：" + (e && e.message)); }
-            }, 6000);
+            /* Self-update (update.js, 2026-10-18; the capability probe it
+             * replaces measured all five routes open on 2026-08-03). It reports
+             * which code this launch runs and why, then checks a minute later,
+             * never while something plays, and every six hours after that. */
+            try { Update.init({ report: report, busy: function () { return !!playing; } }); }
+            catch (e) { report("update", "Update.init 抛异常：" + (e && e.message)); }
         }
+
+        /* This launch's code is good: it got through onload and two seconds of
+         * a first screen without a single JS error. boot.js clears its
+         * `booting` mark on this; a launch that never says so marks the update
+         * it ran as bad and the next launch runs the package. Not tied to the
+         * home feed arriving — a network that is down keeps the feed away, and
+         * that is no reason to throw away a good version. Harmless on the
+         * package's own code. */
+        setTimeout(function () {
+            if (jsErrors) {
+                report("update", "启动后两秒内出过 " + jsErrors + " 次 js 错误，这次启动不算成功（跑的是更新的话，下次打开退回安装包）");
+                return;
+            }
+            if (!screenEl.innerHTML) { report("update", "启动两秒了屏幕上还什么都没有，这次启动不算成功"); return; }
+            try { Boot.ok(); } catch (e) {}
+        }, 2000);
 
         if (selftest) { SelfTest.run(); }
     };

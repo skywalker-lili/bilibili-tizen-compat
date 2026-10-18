@@ -190,21 +190,11 @@
      after the first screen (withShakaScript). It was 322ms of the 756ms to
      onload, parsed ahead of a screen that never uses it. -->
 
-<script src="js/compat.js"></script>
+<!-- Two tags only. boot.js writes the rest — the package's own scripts, or a
+     newer verified version self-update downloaded (its SCRIPTS list is the load
+     order now; add new files there, not here). config.js stays outside: deploy.sh
+     rewrites it, and an update must never carry it. -->
 <script src="js/config.js"></script>
-<script src="js/md5.js"></script>
-<script src="js/mpd.js"></script>
-<script src="js/qr.js"></script>
-<script src="js/accounts.js"></script>
-<script src="js/auth.js"></script>
-<script src="js/resume.js"></script>
-<script src="js/settings.js"></script>
-<script src="js/api.js"></script>
-<script src="js/nav.js"></script>
-<script src="js/player.js"></script>
-<script src="js/danmaku.js"></script>
-<script src="js/app.js"></script>
-<script src="js/updater.js"></script>
-<script src="js/selftest.js"></script>
+<script src="js/boot.js"></script>
 </body>
 </html>

@@ -53,8 +53,11 @@ ways:
 | Needs | A computer (Windows / macOS / Linux) **or an Android phone** with [Apps2Samsung](https://github.com/Apps2Samsung/Apps2Samsung) | macOS, Node, Python 3, Tizen Studio CLI |
 | Upgrade | Download the new `.wgt`, install it again | `git pull`, run `deploy.sh` again |
 
-The app does not update itself yet (all five self-update routes have been proven
-on the set, but it is not built), so upgrading is manual either way.
+**From the next release on, the app updates itself**: a minute after it opens,
+when nothing is playing, it checks this repository, downloads a newer version,
+verifies its signature and runs it from the next launch; a version that fails to
+start falls back to the one installed. It can be switched off in 设置. Until then
+(and to go back to an older version) upgrading is manual.
 
 **Both ways start here:** enable Developer Mode on the TV — on the Apps screen,
 type `12345` with the remote, switch it on, and set Host PC IP to the computer or

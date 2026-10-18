@@ -16,17 +16,26 @@ const APP = fileURLToPath(new URL("../app/js/", import.meta.url));
 
 /* Load order matters: the app is a series of plain scripts sharing globals.
  *
- * Read from index.html rather than listed here. The hand-kept list had silently
- * fallen two files behind — `selftest.js` and `updater.js` shipped unchecked,
- * which is precisely the gap this tool exists to close: a call to something
- * that does not exist parses fine and fails only on the sofa. Same lesson as
- * deploy.sh deriving the wgt name from the build instead of hardcoding it. */
+ * Read from where the app reads it rather than listed here. The hand-kept list
+ * had silently fallen two files behind — `selftest.js` and `updater.js` shipped
+ * unchecked, which is precisely the gap this tool exists to close: a call to
+ * something that does not exist parses fine and fails only on the sofa. Same
+ * lesson as deploy.sh deriving the wgt name from the build instead of
+ * hardcoding it. Since self-update (2026-10-18) index.html carries only
+ * config.js and boot.js, and boot.js's SCRIPTS is the order everything else
+ * loads in. */
 const INDEX = fileURLToPath(new URL("../app/index.html", import.meta.url));
-const ORDER = [...fs.readFileSync(INDEX, "utf8")
+const TAGS = [...fs.readFileSync(INDEX, "utf8")
   .matchAll(/<script\s+src="js\/([^"]+)"><\/script>/g)].map((m) => m[1]);
+const BOOT_LIST = /var SCRIPTS = \[([^\]]*)\]/.exec(fs.readFileSync(path.join(APP, "boot.js"), "utf8"));
+const ORDER = TAGS.concat(BOOT_LIST ? [...BOOT_LIST[1].matchAll(/"([^"]+)"/g)].map((m) => m[1]) : []);
 
-if (!ORDER.length) {
-  console.error("✗ index.html 里没找到任何 js/ 脚本标签 — lint 什么都没检查");
+if (TAGS.join(",") !== "config.js,boot.js") {
+  console.error("✗ index.html 的脚本标签应该正好是 config.js、boot.js（其余由 boot.js 按 SCRIPTS 写入），现在是：" + TAGS.join(", "));
+  process.exit(1);
+}
+if (ORDER.length <= 2) {
+  console.error("✗ boot.js 里读不到 SCRIPTS —— lint 什么都没检查");
   process.exit(1);
 }
 for (const f of ORDER) {
@@ -45,10 +54,8 @@ const HOST = [
   "isNaN", "isFinite", "encodeURIComponent", "decodeURIComponent", "escape",
   "unescape", "btoa", "atob", "Uint8Array", "Uint8ClampedArray", "ArrayBuffer",
   "DataView", "Promise", "Blob", "Function", "fetch", "shaka",
+  "TextEncoder", "TextDecoder",
   "tizen", "webapis",
-  /* danmaku.js: the dev server strips the pool's Content-Encoding, so there
-   * it decodes the deflate itself. */
-  "TextDecoder",
 ];
 
 let failed = false;

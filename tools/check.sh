@@ -32,6 +32,10 @@ node "$ROOT/tools/nav-verify.mjs" || { echo "  remote navigation regressed"; exi
 # Tizen 5.5 has no flex gap. A new gap without its fallback looks fine on any
 # set made since, and cramped on the ones this check exists for.
 node "$ROOT/tools/legacy-css-verify.mjs" || exit 1
+# Self-update can ship code to every installed set, so its trust root is checked
+# here: the public key is real, boot.js agrees with config.xml about the version,
+# and every way of tampering with an update is refused for its own reason.
+node "$ROOT/tools/update-verify.mjs" >/dev/null || { echo "  self-update verification failed (node tools/update-verify.mjs)"; exit 1; }
 # 弹幕: parsing, dedupe and lane allocation. A lane bug does not throw — it draws
 # comments on top of each other, or none at all.
 node "$ROOT/tools/danmaku-verify.mjs" >/dev/null || { echo "  danmaku parsing or lanes regressed"; exit 1; }
