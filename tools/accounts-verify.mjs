@@ -159,6 +159,18 @@ function firePoll(env) {
   eq("recent() is per account", Resume.recent(10).length, 1);
   eq("recent() shows the right video", Resume.recent(10)[0].bvid, "BVmum");
 
+  /* 清空观看记录 (2026-10-18) empties the active account only, and stamps when. */
+  Resume.clearAll();
+  eq("clearing empties this account's list", Resume.recent(10).length, 0);
+  ok("and remembers when", Resume.clearedAt() > 0, String(Resume.clearedAt()));
+  Accounts.switchTo(me.id);
+  eq("the other account's list survives a clear", Resume.positionMs("BVme", 1), 300000);
+  eq("and its clear stamp is its own", Resume.clearedAt(), 0);
+  Accounts.switchTo(mum.id);
+  Resume.record("BVmum", 1, 120000, 600000, { bvid: "BVmum", title: "妈妈看的" });
+  Resume.flush();
+  eq("watching again after a clear lands in the list", Resume.recent(10).length, 1);
+
   /* The credentials replayed on a request must be the active account's, and
    * must carry that account's own device fingerprint. */
   const header = Auth.cookieHeader();

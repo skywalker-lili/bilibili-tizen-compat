@@ -863,6 +863,10 @@
     function mergeHistory(local, server) {
         var byBvid = {}, out = [];
         var all = [];
+        /* Emptied on this set (设置 → 清空观看记录): the account's own history
+         * is left alone and hidden up to that moment instead. */
+        var cut = Resume.clearedAt();
+        if (cut) { server = server.filter(function (c) { return (c.at || 0) > cut; }); }
         /* Copies, because the merge writes to the cards it keeps and both
          * inputs outlive it — the server's list is cached for a minute and
          * handed to this twice, once for the home strip and once for 我的. */
@@ -2253,6 +2257,13 @@
             '<div class="btn focusable" id="btn-subtitles"></div></div>' +
             '<div class="me-sub" style="margin-top:24px">关闭后，视频或分 P 播完会停在下一条推荐页面，按确认键才会继续播放。</div>' +
             '<div class="me-sub" style="margin-top:12px">字幕只在视频提供字幕轨道时显示；设置会在下一次播放时生效。</div>' +
+            '<div class="section">画质</div>' +
+            '<div class="actions"><div class="btn focusable" id="btn-quality"></div></div>' +
+            '<div class="me-sub" style="margin-top:24px">最高用到哪一档，下一个视频生效。1080P 高码率和 4K 是大会员才有的；账号拿不到的档 bilibili 不给，' +
+            '会自动用能拿到的最高一档。网速跟不上时播放器自己会往下降。</div>' +
+            '<div class="section">观看记录</div>' +
+            '<div class="actions"><div class="btn focusable" id="btn-clear-history">清空观看记录</div></div>' +
+            '<div class="me-sub" style="margin-top:24px">只清这台电视上、当前账号的记录（「我的」和首页的「继续观看」）。bilibili 账号里的历史不动，手机上照样看得到。</div>' +
             '<div class="section">浏览</div>' +
             '<div class="actions"><div class="btn focusable" id="btn-density"></div></div>' +
             '<div class="me-sub" style="margin-top:24px">离电视远就选 3 个，标题看得清；坐得近或屏幕小，4 个、5 个能一屏看到更多。</div></div>';
@@ -2275,6 +2286,35 @@
             Settings.set("showSubtitles", !subtitlesEnabled());
             paintSubtitles();
             report("settings", "显示字幕=" + (subtitlesEnabled() ? "开" : "关"));
+        };
+        var quality = el("btn-quality");
+        function paintQuality() { quality.textContent = "画质上限：" + QN_LABELS[Settings.qnCap()]; }
+        paintQuality();
+        quality.onselect = function () {
+            var steps = Settings.qnSteps(), at = steps.indexOf(Settings.qnCap());
+            Settings.set("maxQn", steps[(at + 1) % steps.length]);
+            paintQuality();
+            report("settings", "画质上限=qn" + Settings.qnCap());
+        };
+        /* Two presses: it cannot be undone, and the button sits one row from
+         * where a viewer scrolling the page passes. */
+        var clearBtn = el("btn-clear-history"), clearArmed = 0;
+        clearBtn.onselect = function () {
+            var now = new Date().getTime();
+            if (now - clearArmed > 3000) {
+                clearArmed = now;
+                clearBtn.textContent = "再按一次确认清空";
+                return;
+            }
+            clearArmed = 0;
+            Resume.clearAll();
+            /* The home strip and 我的 are built from cached pages; drop them so
+             * the next visit is built from the emptied list. */
+            feedCache = {};
+            mineLibraryCache = {};
+            clearBtn.textContent = "已清空";
+            report("settings", "清空观看记录（账号 " + activeAccountId() + "），本地记录删了，账号历史遮到 " +
+                   new Date(Resume.clearedAt()).toTimeString().slice(0, 8));
         };
         var density = el("btn-density");
         function paintDensity() { density.textContent = "每行视频：" + gridColumns() + " 个"; }
@@ -2939,7 +2979,7 @@
 
     function warmCdn(e, dash) {
         if (!prefetchAllowed() || !dash) { return; }
-        var first = Mpd.peek(dash, PREFERRED_QN);
+        var first = Mpd.peek(dash, Settings.qnCap());
         var reps = [["视频", first.video], ["音频", first.audio]];
         var now = new Date().getTime();
         e.warm = [];
@@ -2988,7 +3028,7 @@
                 !Auth.isLoggedIn() || !Auth.accessKey()) { return; }
         var aid = e.aid, cid = e.cid;
         e.strong = prefetchSlot(function (ok, fail) {
-            API.playurlDashStrong(aid, cid, PREFERRED_QN, ok, fail, Player.badFilesFor(cid));
+            API.playurlDashStrong(aid, cid, Settings.qnCap(), ok, fail, Player.badFilesFor(cid));
         });
     }
 
@@ -3026,8 +3066,8 @@
          * unless the viewer stops it — a web-token 403 in its warm-up starts
          * the strong-token mint right there, inside the countdown. */
         var e = { at: now, aid: v.aid || 0, bvid: v.bvid, cid: v.cid, eager: !!eager };
-        e.dash = prefetchSlot(function (ok, fail) { API.playurlDash(bvid, cid, PREFERRED_QN, ok, fail); });
-        e.prog = prefetchSlot(function (ok, fail) { API.playurlProgressive(bvid, cid, PREFERRED_QN, ok, fail); });
+        e.dash = prefetchSlot(function (ok, fail) { API.playurlDash(bvid, cid, Settings.qnCap(), ok, fail); });
+        e.prog = prefetchSlot(function (ok, fail) { API.playurlProgressive(bvid, cid, Settings.qnCap(), ok, fail); });
         e.resume = prefetchSlot(function (ok, fail) { API.playerV2(bvid, cid, ok, fail); });
         prefetched[key] = e;
         /* A video whose lesson says the web token is refused would only 403
@@ -3565,6 +3605,9 @@
      * since the grid went three wide — these are rows counted in cards. */
     function panelFirst() { return gridColumns() * 2; }
     function panelPage() { return gridColumns() * 2; }
+
+    /* The settings page's names for the cap (Settings.qnSteps). */
+    var QN_LABELS = { 120: "4K（最高）", 112: "1080P 高码率", 80: "1080P", 64: "720P", 32: "480P" };
 
     var QUALITY_NAMES = {
         127: "8K", 120: "4K", 116: "1080P60", 112: "1080P+",
@@ -4223,7 +4266,7 @@
                        "/" + detail.pages.length;
         }
         report("player", detail.bvid + " " + String(detail.title || "").slice(0, 24) +
-               partTag + " — requesting qn=" + PREFERRED_QN);
+               partTag + " — requesting qn=" + Settings.qnCap());
 
         /* Both forms at once. Asking DASH first and progressive from inside its
          * callback put two full round trips to bilibili back to back before a
@@ -4436,7 +4479,7 @@
                    (early ? "用倒计时里就开始铸的强令牌" : "开播直接铸 app 端点强令牌") +
                    "（aid=" + hintAid + "）");
             (early ? function (ok, fail) { whenSettled(early, ok, fail); }
-                   : function (ok, fail) { mintStrong(hintAid, cid, PREFERRED_QN, ok, fail); })(function (sd) {
+                   : function (ok, fail) { mintStrong(hintAid, cid, Settings.qnCap(), ok, fail); })(function (sd) {
                 if (playing !== session) { report("player", "教训强令牌回来时会话已经没了，丢弃"); return; }
                 got.strong = sd;
                 decide();
@@ -4460,7 +4503,7 @@
             got.strong = undefined;
             got.strongWhy = "预热";
             var slotSt = pre.strong || prefetchSlot(function (ok, fail) {
-                mintStrong(pre.aid || detail.aid, cid, PREFERRED_QN, ok, fail);
+                mintStrong(pre.aid || detail.aid, cid, Settings.qnCap(), ok, fail);
             });
             report("player", "预热时 web 令牌已被拒（" + (pre.warmRefused || "403") + "），" +
                    (pre.strong ? "用按下前就开始铸的强令牌" : "开播直接铸 app 端点强令牌"));
@@ -4478,7 +4521,7 @@
         }
 
         ask(pre && pre.dash, function (ok, fail) {
-            API.playurlDash(detail.bvid, cid, PREFERRED_QN, ok, fail);
+            API.playurlDash(detail.bvid, cid, Settings.qnCap(), ok, fail);
         }, function (dash) {
             if (playing !== session) { return; }
             var best = Player.pickDashVideo(dash);
@@ -4495,7 +4538,7 @@
         });
 
         ask(pre && pre.prog, function (ok, fail) {
-            API.playurlProgressive(detail.bvid, cid, PREFERRED_QN, ok, fail);
+            API.playurlProgressive(detail.bvid, cid, Settings.qnCap(), ok, fail);
         }, function (r) {
             if (playing !== session) { return; }
             report("player", "progressive gave qn=" + r.quality +
@@ -4663,7 +4706,7 @@
             report("player", "dash 兜底：开播时的清单已过期，重取 playurl");
         }
 
-        API.playurlDash(d.bvid, cid, PREFERRED_QN, function (dash) {
+        API.playurlDash(d.bvid, cid, Settings.qnCap(), function (dash) {
             startDash(dash, "重新取到清单");
         }, function (w2) {
             report("player", "dash 兜底：playurl 失败（" + w2 + "）" +
@@ -5112,10 +5155,10 @@
                 var startExp = function (dashExp) {
                     if (playing !== sessExp) { report("player", "过期重取回来时会话已经没了，丢弃"); return; }
                     var repExp = Player.pickDashVideo(dashExp);
-                    playDash(dashExp, (repExp && repExp.id) || PREFERRED_QN);
+                    playDash(dashExp, (repExp && repExp.id) || Settings.qnCap());
                 };
                 var webExp = function () {
-                    API.playurlDash(sessExp.detail.bvid, sessExp.cid, PREFERRED_QN,
+                    API.playurlDash(sessExp.detail.bvid, sessExp.cid, Settings.qnCap(),
                         startExp, function (whyExp) {
                             if (playing !== sessExp) { report("player", "过期重取回来时会话已经没了，丢弃"); return; }
                             report("player", "过期重取 playurl 失败（" + whyExp + "）");
@@ -5124,7 +5167,7 @@
                 };
                 if (wantStrong) {
                     mintStrong(sessExp.detail.aid, sessExp.cid,
-                        PREFERRED_QN, startExp, function (whyStExp) {
+                        Settings.qnCap(), startExp, function (whyStExp) {
                             if (playing !== sessExp) { report("player", "过期重取回来时会话已经没了，丢弃"); return; }
                             report("player", "过期重取强令牌失败（" + whyStExp +
                                    "），改试 web 端点");
@@ -5195,7 +5238,7 @@
                         finalFallback("强令牌缺 aid");
                         return;
                     }
-                    mintStrong(aidST, sessST.cid, PREFERRED_QN,
+                    mintStrong(aidST, sessST.cid, Settings.qnCap(),
                         function (strongDash) {
                             if (playing !== sessST) { report("player", "强令牌回来时会话已经没了，丢弃"); return; }
                             playing.dashReady = strongDash;
@@ -5208,7 +5251,7 @@
                                    (strongDash.tierNote || (strongDash.video ? strongDash.video.length + " 档" : "0 档")) +
                                    (strongDash.strongTiming ? "，" + strongDash.strongTiming : "") +
                                    "，从 " + fmt(atMs) + " 重建");
-                            playDash(strongDash, (repST && repST.id) || PREFERRED_QN);
+                            playDash(strongDash, (repST && repST.id) || Settings.qnCap());
                         }, function (whyST) {
                             if (playing !== sessST) { report("player", "强令牌回来时会话已经没了，丢弃"); return; }
                             report("player", "app 端点强令牌也不行（" + whyST + "）");
@@ -5322,7 +5365,7 @@
                                " 用 DASH 原地重启");
                         var session3 = playing;
                         API.playurlDash(playing.detail.bvid, playing.cid,
-                                        PREFERRED_QN, function (dash3) {
+                                        Settings.qnCap(), function (dash3) {
                             if (playing !== session3) {
                                 report("player", "原地重启：新清单到了但会话已经没了，丢弃");
                                 return;
@@ -5446,7 +5489,7 @@
                        (backDash.strong ? "强令牌清单" : " web 端点") +
                        "压中低档，从 " + fmt(ffAt) + " 起");
                 var repL = Player.pickDashVideo(backDash);
-                playDash(backDash, (repL && repL.id) || PREFERRED_QN);
+                playDash(backDash, (repL && repL.id) || Settings.qnCap());
                 return;
             }
             /* Every route has been tried. If the probes came back 403 the

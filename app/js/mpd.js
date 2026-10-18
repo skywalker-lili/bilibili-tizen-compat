@@ -116,6 +116,7 @@ var Mpd = (function () {
     }
 
     var chosen = "";
+    var topBw = 0;       /* the highest video bandwidth in the last build, for the buffer budget in player.js */
 
     /* `anySegments`: judge the reps as if their segment ranges were known —
      * the strong-token path has to decide which files' headers to read first,
@@ -125,7 +126,15 @@ var Mpd = (function () {
         for (var i = 0; i < (all || []).length; i++) {
             var r = all[i];
             if (r && r.codecs && (r.segments || anySegments) &&
-                    (!maxId || r.id <= maxId)) { usable.push(r); }
+                    (!maxId || r.id <= maxId) &&
+                    /* No AV1 above 1080P (2026-10-18, when the cap went to 4K
+                     * for 大会员 accounts). av01 at 1080P is what turned the
+                     * picture green and wedged this SoC's decoder (08-06); 4K
+                     * av01 has never been tried here and is not going to be
+                     * tried on someone's evening. 4K HEVC is the known quantity:
+                     * a 3.9 GB 4K HEVC Main10 film played through MSE on this
+                     * very set (telegram-tizen, 2026-10-01). */
+                    !(family(r.codecs) === "av01" && r.id > 80)) { usable.push(r); }
         }
 
         /* H.264 is the baseline this has to beat. A family that cannot reach
@@ -177,6 +186,7 @@ var Mpd = (function () {
          * this stalling" and "what is it actually decoding" are the same
          * question often enough. */
         chosen: function () { return chosen; },
+        topBandwidth: function () { return topBw; },
 
         /* The two files a fresh start of this response will open first: the
          * top video of the family build() would settle on, and the top audio —
@@ -229,6 +239,7 @@ var Mpd = (function () {
             }).sort(function (a, b) { return (a.bandwidth || 0) - (b.bandwidth || 0); });
 
             if (!videos.length || !audios.length) { return ""; }
+            topBw = videos[0].bandwidth || 0;
 
             var vBody = "";
             for (var i = 0; i < videos.length; i++) {

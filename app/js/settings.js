@@ -11,7 +11,18 @@ var Settings = (function () {
         return data;
     }
 
+    /* 画质上限（设置页「画质」，2026-10-18 起；此前是 config.js 里写死的 PREFERRED_QN = 80）。
+     * 默认 4K：账号拿不到的档 bilibili 根本不给 —— 非大会员的 dash.video 只到 1080P（「4K 查过了」那节的表），
+     * 所以默认值只在大会员身上起作用，其他人和以前一模一样。8K / HDR / 杜比视界不在选项里：这台电视 4K、
+     * 那几档要别的 fnval 位和色彩处理，没验证过。 */
+    var QN_STEPS = [120, 112, 80, 64, 32];
+
     return {
+        qnSteps: function () { return QN_STEPS.slice(); },
+        qnCap: function () {
+            var q = Number(this.get("maxQn", 120));
+            return QN_STEPS.indexOf(q) >= 0 ? q : 120;
+        },
         get: function (k, fallback) {
             var v = load()[k];
             return v === undefined ? fallback : v;

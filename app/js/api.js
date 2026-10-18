@@ -310,6 +310,15 @@ var API = (function () {
         };
     }
 
+    /* fnval for a DASH request at this quality cap. 2064 = 16 (DASH) | 2048
+     * (AV1); a cap of 4K adds 128, the 4K bit, as the official web player
+     * does. Measured 2026-08-17 (「4K 查过了」): for a non-member the bit
+     * changes nothing — the same second, the same answer with and without it —
+     * so it costs ordinary accounts nothing. Whether a 大会员 account needs it
+     * to be handed the 120 tier has not been seen from here (nobody in this
+     * house has 大会员); it is sent because the reference client sends it. */
+    function fnvalFor(qn) { return 2064 | (qn >= 120 ? 128 : 0); }
+
     return {
         /* Which cover format this set was given, for the boot line. */
         thumbFormat: THUMB_FORMAT,
@@ -1115,6 +1124,8 @@ var API = (function () {
         },
 
         playurlDash: function (bvid, cid, qn, onOk, onFail) {
+            /* The 4K bit (128) joins the AV1 one when the quality setting reaches
+             * 4K — see fnvalFor. */
             /* 2064 = 16 (DASH) | 2048 (AV1). fnval gates which codec families
              * the response carries at all: with plain 16 the answer holds avc
              * and hev tracks only, and the av01-first preference in mpd.js was
@@ -1122,7 +1133,7 @@ var API = (function () {
              * web player's av01 default works because its fnval asks for it.
              * Only the AV1 bit is added; HDR/DoVi/8K stay unrequested. */
             var url = BASE + "/x/player/playurl?bvid=" + bvid + "&cid=" + cid +
-                      "&qn=" + (qn || 64) + "&fnval=2064&fnver=0&fourk=1";
+                      "&qn=" + (qn || 64) + "&fnval=" + fnvalFor(qn) + "&fnver=0&fourk=1";
             getJson(url, function (d) {
                 if (!d.dash) { onFail("no dash streams"); return; }
 
@@ -1310,7 +1321,7 @@ var API = (function () {
              * signTv adds appkey+ts+sign; the token identity is access_key. */
             var appUrl = "https://app.bilibili.com/x/playurl?" +
                 Auth.signTv({ access_key: Auth.accessKey(), aid: aid, cid: cid,
-                              qn: qn || 80, fnval: 2064, fnver: 0, fourk: 1,
+                              qn: qn || 80, fnval: fnvalFor(qn), fnver: 0, fourk: 1,
                               platform: "android", mobi_app: "android",
                               build: 7280300 });
             /* codecs the app endpoint omits: the web endpoint's low tiers
@@ -1363,7 +1374,7 @@ var API = (function () {
                     }
                     var video = dash.video || [], audio = dash.audio || [];
                     /* Tiers above the cap are never in the manifest (Mpd.build
-                     * caps at PREFERRED_QN), so their headers are not worth a
+                     * caps at Settings.qnCap()), so their headers are not worth a
                      * read: each one is ~1 s of a black screen at concurrency
                      * two. Free today (this account is offered ≤80) and a
                      * guard for a 大会员 account or a raised cap. */

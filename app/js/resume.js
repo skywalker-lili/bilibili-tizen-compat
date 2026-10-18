@@ -117,7 +117,30 @@ var Resume = (function () {
 
     function id(bvid, cid) { return bvid + ":" + cid; }
 
+    /* When this person last emptied their history on this set (设置 → 清空观看
+     * 记录, 2026-10-18). Per account, like the list it empties. */
+    var CLEARED_KEY = "bili.historyClearedAt.v1";
+
     return {
+        /* Empties this account's list on this set and remembers when. Only the
+         * local list is deleted: the account's server history is the same one
+         * the phone and the website read, and wiping that is not what a viewer
+         * tidying the television asked for. app.js hides server entries older
+         * than clearedAt() instead, so 继续观看 and 我的 come up empty until
+         * something new is watched. */
+        clearAll: function () {
+            var m = load();
+            for (var k in m) { if (m.hasOwnProperty(k)) { delete m[k]; } }
+            dirty = false;
+            writeTo(mapKey, m);
+            try { localStorage.setItem(Accounts.scope(CLEARED_KEY), String(new Date().getTime())); } catch (e) {}
+        },
+        clearedAt: function () {
+            var v = 0;
+            try { v = Number(localStorage.getItem(Accounts.scope(CLEARED_KEY)) || 0); } catch (e) {}
+            return v || 0;
+        },
+
         /* Called on every time update, so it only touches storage now and then. */
         record: function (bvid, cid, positionMs, durationMs, card) {
             if (!bvid || !positionMs) { return; }

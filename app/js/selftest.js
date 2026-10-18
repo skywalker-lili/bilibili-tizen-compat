@@ -100,7 +100,7 @@ var SelfTest = (function () {
         var v = (window.__stItems || [])[idx];
         if (!v || !v.bvid) { post("✗ 探测：拿不到 bvid"); return; }
 
-        API.playurlProgressive(v.bvid, v.cid, PREFERRED_QN, function (r) {
+        API.playurlProgressive(v.bvid, v.cid, Settings.qnCap(), function (r) {
             var host = String(r.url).split("/")[2];
             post("探测 qn=" + r.quality + " accept=" + (r.accept || []).join(",") +
                  " 镜像数=" + (r.urls || []).length + " 主机=" + host);
@@ -860,6 +860,30 @@ var SelfTest = (function () {
             }
             post("每行视频：" + start + " → " + seen.join(" → "));
             return Settings.get("gridColumns", 3) === start ? null : "转一圈没有回到原值";
+        }],
+        /* 2026-10-18: the quality cap and 清空观看记录. The clear button is only
+         * armed, never fired — a selftest must not empty someone's history. */
+        ["画质上限转一圈回到原值", 600, function () {
+            var btn = document.getElementById("btn-quality");
+            if (!btn) { return "设置页里没有画质按钮"; }
+            var start = Settings.qnCap(), seen = [];
+            for (var i = 0; i < Settings.qnSteps().length; i++) {
+                Nav.focus(btn);
+                key(KEY.ENTER);
+                seen.push(Settings.qnCap());
+                if (btn.textContent.indexOf("画质上限：") !== 0) { return "按钮上没写画质上限"; }
+            }
+            post("画质上限：" + start + " → " + seen.join(" → "));
+            return Settings.qnCap() === start ? null : "转一圈没有回到原值";
+        }],
+        ["清空观看记录要按两下（只按一下，不真清）", 300, function () {
+            var btn = document.getElementById("btn-clear-history");
+            if (!btn) { return "设置页里没有清空观看记录按钮"; }
+            var before = Resume.clearedAt();
+            Nav.focus(btn);
+            key(KEY.ENTER);
+            if (Resume.clearedAt() !== before) { return "按一下就清了"; }
+            return btn.textContent.indexOf("再按一次") === 0 ? null : "按一下之后没有提示再按一次";
         }],
         ["回到推荐", 300, function () {
             Nav.focus(document.querySelector('#tabs .tab[data-screen="rcmd"]'));

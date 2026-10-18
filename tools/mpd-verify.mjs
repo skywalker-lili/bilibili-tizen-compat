@@ -194,6 +194,30 @@ const shortHevc = {
 };
 Mpd.build(shortHevc, 80);
 eq("a shorter hevc ladder is refused", Mpd.chosen(), "avc1");
+
+/* The 4K cap (2026-10-18, 大会员): 4K HEVC is admitted, 4K AV1 never is —
+ * av01 green-screened this SoC at 1080P, and 4K av01 was never tried. */
+sandbox.MediaSource = { isTypeSupported: () => true };
+const fourK = {
+  duration: 100,
+  video: [
+    { id: 120, codecs: "hvc1.2.4.L153.90", bandwidth: 18000000, width: 3840, height: 2160, urls: [AMPY], segments: { init: "0-9", index: "10-99" } },
+    { id: 120, codecs: "av01.0.12M.10.0.110.09.16.09.0", bandwidth: 14000000, width: 3840, height: 2160, urls: [AMPY], segments: { init: "0-9", index: "10-99" } },
+    { id: 80, codecs: "hvc1.1.6.L120.90", bandwidth: 1500000, width: 1920, height: 1080, urls: [AMPY], segments: { init: "0-9", index: "10-99" } },
+    { id: 80, codecs: "av01.0.08M.08.0.110.01.01.01.0", bandwidth: 756000, width: 1920, height: 1080, urls: [AMPY], segments: { init: "0-9", index: "10-99" } },
+    { id: 80, codecs: "avc1.640032", bandwidth: 2997485, width: 1920, height: 1080, urls: [AMPY], segments: { init: "0-9", index: "10-99" } },
+  ],
+  audio: dash.audio,
+};
+const fk = new XMLParser(PARSE).parse(Mpd.build(fourK, 120));
+const fkReps = [].concat(fk.MPD.Period.AdaptationSet.find((s) => s["@contentType"] === "video").Representation);
+eq("4K cap: hvc1 leads", Mpd.chosen(), "hvc1");
+eq("4K cap: the 4K hevc tier is in", fkReps.some((r) => r["@codecs"].indexOf("hvc1.2") === 0), true);
+eq("4K cap: top bandwidth is reported for the buffer budget", Mpd.topBandwidth(), 18000000);
+Mpd.build(fourK, 80);
+eq("1080P cap: the 4K tier stays out", Mpd.topBandwidth(), 1500000);
+Mpd.build(fourK, 120, "av01");
+eq("pinned av01 under a 4K cap stops at 1080P", Mpd.topBandwidth(), 756000);
 sandbox.MediaSource = undefined;
 
 if (failed) { console.log(`\n${failed} of ${checks} checks failed`); process.exit(1); }

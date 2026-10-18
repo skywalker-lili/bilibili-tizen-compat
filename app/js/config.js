@@ -5,11 +5,6 @@
  * stream. */
 var USER_AGENT = "Mozilla/5.0 (SMART-TV; LINUX; Tizen 7.0) AppleWebKit/537.36 (KHTML, like Gecko) Version/7.0 TV Safari/537.36";
 
-/* 1080P 高清. The tiers above it are 大会员 only, so asking for them buys
- * nothing but restricted CDN nodes and retry cycles. Fixed rather than
- * adjustable: on a television nobody goes looking for a quality menu. */
-var PREFERRED_QN = 80;
-
 /* Dev only: the app posts errors here so a run can be read from the terminal
  * instead of off the screen. Empty disables it. */
 var REPORT_TO = "";

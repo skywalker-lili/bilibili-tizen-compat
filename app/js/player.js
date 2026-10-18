@@ -1250,7 +1250,7 @@ var Player = (function () {
     function shakaConfig() {
         return {
                 /* Adaptation on, capped by the manifest itself — Mpd.build only
-                 * writes tiers at or below PREFERRED_QN. This is what makes a
+                 * writes tiers at or below Settings.qnCap(). This is what makes a
                  * deep seek into a long upload survivable: the CDN has never
                  * cached the middle of a four gigabyte file, and dropping a tier
                  * beats waiting on bytes that have to come from the origin. */
@@ -1419,7 +1419,7 @@ var Player = (function () {
      * healthy on the CDN) and a silent skip and a missing feature read
      * identically from the sofa. */
     function tryAv01Manifest(dash, capId) {
-        var m = Mpd.build(dash, capId || PREFERRED_QN, "av01");
+        var m = Mpd.build(dash, capId || Settings.qnCap(), "av01");
         if (m) { return m; }
         var reps = 0, seg = 0, list = (dash && dash.video) || [];
         for (var i = 0; i < list.length; i++) {
@@ -2035,7 +2035,7 @@ var Player = (function () {
          * nothing better to escalate to and drops tiers normally. */
         if (offerStrongToken()) { return true; }
         var usableNow = withoutBadFiles(lastDash.dash);
-        var capNow = lastDash.capId || tierBelow(usableNow, PREFERRED_QN + 1);
+        var capNow = lastDash.capId || tierBelow(usableNow, Settings.qnCap() + 1);
         var below = tierBelow(usableNow, capNow);
         if (below) {
             log("解码失败（" + why + "），换编码也没走通，从 qn" + capNow +
@@ -2161,10 +2161,10 @@ var Player = (function () {
         }
         preferGoodHosts(dash);
         var usable = withoutBadFiles(dash);
-        var manifest = Mpd.build(usable, capId || PREFERRED_QN, prefer, lessonFamily);
+        var manifest = Mpd.build(usable, capId || Settings.qnCap(), prefer, lessonFamily);
         if (!manifest && !prefer) {
             /* The preferred family had nothing usable. H.264 is always there. */
-            manifest = Mpd.build(usable, capId || PREFERRED_QN, "avc1");
+            manifest = Mpd.build(usable, capId || Settings.qnCap(), "avc1");
         }
         if (!manifest && prefer && objectKeys(badFiles).length) {
             /* A pinned family emptied by the ban. The per-file rung pins the
@@ -2176,8 +2176,8 @@ var Player = (function () {
              * file the decoder froze on at 3s was excised, the pin emptied the
              * manifest, the list was ignored, the same file came back, and the
              * loop ran every twenty seconds with the viewer on a black screen. */
-            manifest = Mpd.build(usable, capId || PREFERRED_QN, null, lessonFamily) ||
-                       Mpd.build(usable, capId || PREFERRED_QN, "avc1");
+            manifest = Mpd.build(usable, capId || Settings.qnCap(), null, lessonFamily) ||
+                       Mpd.build(usable, capId || Settings.qnCap(), "avc1");
             if (manifest) {
                 log("指定的 " + prefer + " 剔掉坏文件后够不到基线，放开族的限制，改用 " + Mpd.chosen());
                 prefer = null;
@@ -2202,8 +2202,8 @@ var Player = (function () {
              * so the ban yields rather than the video. */
             log("坏文件名单把清单掏空了，这次忽略名单重建");
             badFiles = {};
-            manifest = Mpd.build(dash, capId || PREFERRED_QN, prefer, lessonFamily) ||
-                       Mpd.build(dash, capId || PREFERRED_QN, "avc1");
+            manifest = Mpd.build(dash, capId || Settings.qnCap(), prefer, lessonFamily) ||
+                       Mpd.build(dash, capId || Settings.qnCap(), "avc1");
         }
         if (!manifest) {
             emit("error", "拼不出播放清单（缺少分段索引）");
@@ -2211,6 +2211,17 @@ var Player = (function () {
         }
         var usedFamily = Mpd.chosen();
         if (usedFamily === "av01") { triedAv01 = true; }
+        /* The look-ahead, sized to the top tier. 72 s (the web player's figure)
+         * at 1080P is 15–35 MB; a 4K tier (大会员, cap at 4K — 2026-10-18) runs
+         * 15–25 Mbit/s, so 72 s would be 130–220 MB, more than this set's
+         * SourceBuffer holds (telegram-tizen measured the audio buffer alone
+         * refusing at ~8 MB). Above 10 Mbit/s the goal comes down to what fits
+         * in ~80 MB, never under 20 s, and the trail behind the playhead to 10 s. */
+        var topBw = Mpd.topBandwidth(), bufGoal = 72, bufBehind = 30;
+        if (topBw > 10000000) {
+            bufGoal = Math.max(20, Math.min(72, Math.floor(80 * 8 * 1000000 / topBw)));
+            bufBehind = 10;
+        }
         log("编码 " + usedFamily + (prefer ? "（指定）" : "") +
             (capId ? "，画质压到 qn" + capId : ""));
         lastDash = { dash: dash, startMs: startMs, family: usedFamily,
@@ -2219,6 +2230,10 @@ var Player = (function () {
         if (!player) {
             emit("error", "这台设备的浏览器内核不支持 DASH 播放");
             return;
+        }
+        player.configure({ streaming: { bufferingGoal: bufGoal, bufferBehind: bufBehind } });
+        if (bufGoal !== 72) {
+            log("最高一档 " + (topBw / 1000000).toFixed(1) + " Mbit/s，前方缓冲压到 " + bufGoal + " 秒、身后留 " + bufBehind + " 秒");
         }
 
         var v = el("html5-video");
@@ -2355,7 +2370,7 @@ var Player = (function () {
              * the exit tonight's 有声退出 came out of, already capped at 720P and
              * refused there, with 480P serving all along. */
             var usable2 = withoutBadFiles(dash);
-            var capNow2 = capId || tierBelow(usable2, PREFERRED_QN + 1);
+            var capNow2 = capId || tierBelow(usable2, Settings.qnCap() + 1);
             var below2 = tierBelow(usable2, capNow2);
             if (below2) {
                 log("加载连续被拒（" + describeShakaError(e) + "），从 qn" + capNow2 +
