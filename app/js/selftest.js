@@ -1222,8 +1222,262 @@ var SelfTest = (function () {
         }]
     ];
 
+    /* ---------------- 弹幕帧耗时（deploy.sh --dmperf, 2026-10-18） ----------------
+     * The viewer saw the danmaku shake while it scrolled. Measured the way
+     * douyin's --grid was: one run, one video, the candidate ways of drawing
+     * rotated window by window (the order shifted each round), so the network
+     * and the video's own busy and quiet stretches average out. Per window:
+     * requestAnimationFrame intervals — a frame the compositor could not
+     * produce shows as a long interval even with the main thread idle — the
+     * main thread's long tasks, which tell those two apart, and the video's
+     * own dropped frames. */
+    /* 10-18 first run: 原样 (opacity on the box + a blurred shadow) 12 frames
+     * short in 14 s at the median, opacity moved onto each comment 8, that plus
+     * an unblurred shadow 2, danmaku off 0 — the third is now app.css. Second
+     * run: the step per frame, whole (now) against the old 4.57 px. "old"
+     * keeps the 1.2.1 drawing whole for comparison with what is tried next. */
+    var DMV = [
+        { id: "a", name: "现在的画法（每帧 4 像素）" },
+        { id: "frac", name: "每帧 4.57 像素（1.2.1 的速度）", speed: 1920 / 7000 },
+        { id: "off", name: "弹幕关" }
+    ];
+    var DMV_CSS =
+        'html[data-dmv="old"] #danmaku { opacity: 0.85; }\n' +
+        'html[data-dmv="old"] #danmaku .dm { opacity: 1; text-shadow: 1px 1px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 0 0 4px rgba(0,0,0,0.6); }\n';
+    var DM_ROUNDS = 3, DM_SETTLE = 1500, DM_WINDOW = 14000;
+    /* A string, not a literal: tools/lint.mjs reads `matrix(` as a call. */
+    var MATRIX = new RegExp("matrix(3d)?\\(([^)]+)\\)");
+
+    function minutes(text) {
+        var p = String(text || "").split(":"), s = 0;
+        for (var i = 0; i < p.length; i++) { s = s * 60 + (parseInt(p[i], 10) || 0); }
+        return s / 60;
+    }
+    function quality(v) {
+        try {
+            var q = v.getVideoPlaybackQuality();
+            return { d: q.droppedVideoFrames || 0, t: q.totalVideoFrames || 0 };
+        } catch (e) { return { d: 0, t: 0 }; }
+    }
+    function pct(sorted, p) {
+        return sorted.length ? sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * p))] : 0;
+    }
+
+    /* One window: everything that happens on screen for `ms`, summarised. */
+    function measureWindow(ms, done) {
+        var iv = [], last = 0, stop = false, lt = { n: 0, ms: 0 }, obs = null;
+        try {
+            obs = new window.PerformanceObserver(function (list) {
+                var es = list.getEntries();
+                for (var i = 0; i < es.length; i++) { lt.n++; lt.ms += es[i].duration; }
+            });
+            obs.observe({ entryTypes: ["longtask"] });
+        } catch (e) { obs = null; lt = null; }
+        var box = document.getElementById("danmaku"), added = 0, liveSum = 0, liveN = 0;
+        var mo = new window.MutationObserver(function (recs) {
+            for (var i = 0; i < recs.length; i++) {
+                added += recs[i].addedNodes.length;
+                /* Nodes are pooled: a reused one starts a new comment. */
+                for (var j = 0; j < recs[i].addedNodes.length; j++) {
+                    recs[i].addedNodes[j].__stOld = false;
+                    recs[i].addedNodes[j].__stX = undefined;
+                }
+            }
+        });
+        mo.observe(box, { childList: true });
+        var sampler = setInterval(function () { liveSum += box.childNodes.length; liveN++; }, 500);
+        var v = document.getElementById("html5-video"), q0 = quality(v);
+        /* Where the moving comments are drawn on each frame, as the main
+         * thread samples the same animations: on a whole pixel or between two,
+         * and how far each moved since the frame before. */
+        var pos = { n: 0, between: 0, wobble: 0, steps: {} };
+        /* Only comments that entered during this window: the ones already
+         * on screen were started under the previous window's variant. */
+        for (var o = 0; o < box.childNodes.length; o++) { box.childNodes[o].__stOld = true; }
+        function sample() {
+            var kids = box.childNodes;
+            for (var i = kids.length - 1, seen = 0; i >= 0 && seen < 8; i--) {
+                if (kids[i].__stOld) { continue; }
+                seen++;
+                var m = MATRIX.exec(window.getComputedStyle(kids[i]).transform || "");
+                if (!m) { continue; }
+                var x = parseFloat(m[2].split(",")[m[1] ? 12 : 4]);
+                var was = kids[i].__stX;
+                kids[i].__stX = x;
+                if (was === undefined || was === x) { continue; }   /* new, or a fixed one */
+                pos.n++;
+                var frac = x - Math.floor(x), fwas = was - Math.floor(was), df = Math.abs(frac - fwas);
+                if (Math.min(frac, 1 - frac) > 0.05) { pos.between++; }
+                if (Math.min(df, 1 - df) > 0.05) { pos.wobble++; }   /* sharp one frame, soft the next */
+                var step = (Math.round((was - x) * 10) / 10).toString();
+                pos.steps[step] = (pos.steps[step] || 0) + 1;
+            }
+        }
+        function frame(t) {
+            if (stop) { return; }
+            if (last) { iv.push(t - last); }
+            last = t;
+            sample();
+            window.requestAnimationFrame(frame);
+        }
+        window.requestAnimationFrame(frame);
+        setTimeout(function () {
+            stop = true;
+            mo.disconnect();
+            clearInterval(sampler);
+            if (obs) { try { obs.disconnect(); } catch (e) {} }
+            var q1 = quality(v), s = iv.slice().sort(function (a, b) { return a - b; });
+            var base = pct(s, 0.5) || 16.7, missed = 0, over25 = 0, over50 = 0;
+            for (var i = 0; i < iv.length; i++) {
+                missed += Math.max(0, Math.round(iv[i] / base) - 1);
+                if (iv[i] > 25) { over25++; }
+                if (iv[i] > 50) { over50++; }
+            }
+            done({ frames: iv.length, p50: base, p95: pct(s, 0.95), max: s.length ? s[s.length - 1] : 0,
+                   missed: missed, over25: over25, over50: over50, lt: lt, added: added,
+                   live: liveN ? liveSum / liveN : 0, vDropped: q1.d - q0.d, vFrames: q1.t - q0.t, pos: pos });
+        }, ms);
+    }
+    function windowLine(r) {
+        return "帧 " + r.frames + " 中位 " + r.p50.toFixed(1) + "ms p95 " + r.p95.toFixed(1) +
+            " 最长 " + Math.round(r.max) + " 少画 " + r.missed + " 帧（>25ms " + r.over25 + " 次，>50ms " + r.over50 + " 次）" +
+            " 长任务 " + (r.lt ? r.lt.n + " 次 " + Math.round(r.lt.ms) + "ms" : "量不了") +
+            " 同屏 " + r.live.toFixed(0) + " 条 新出 " + r.added + " 条" + posLine(r.pos);
+    }
+    function posLine(p) {
+        if (!p || !p.n) { return ""; }
+        var top = Object.keys(p.steps).sort(function (a, b) { return p.steps[b] - p.steps[a]; }).slice(0, 4);
+        return " 位置在两像素之间 " + Math.round(100 * p.between / p.n) + "%、小数部分逐帧在变 " +
+            Math.round(100 * p.wobble / p.n) + "%（" + p.n + " 次）每帧走 " +
+            top.map(function (k) { return k + "px×" + p.steps[k]; }).join(" ");
+    }
+    function median(xs) {
+        var s = xs.slice().sort(function (a, b) { return a - b; });
+        return s.length ? s[Math.floor((s.length - 1) / 2)] : 0;
+    }
+
+    var dmp = {};
+    var dmperfSteps = [
+        ["首页加载出卡片", 500, function () {
+            return count("#screen .card") > 0 ? null : WAIT;
+        }, 20000, "20 秒了首页还没有卡片"],
+        ["打开排行", 300, function () {
+            var st = document.createElement("style");
+            st.textContent = DMV_CSS;
+            document.head.appendChild(st);
+            dmp.wasLevel = Settings.get("danmaku", "normal");
+            window.__stNoHistory = true;
+            window.__stItems = null;
+            window.__stLoadFeed("ranking");
+            post("屏幕 " + window.innerWidth + "x" + window.innerHeight + " dpr=" + (window.devicePixelRatio || 1) +
+                 " screen=" + screen.width + "x" + screen.height);
+            return null;
+        }],
+        ["排行出来了", 500, function () {
+            return window.__stItems && window.__stItems.length && count("#feed-grid .card") ? null : WAIT;
+        }, 15000, "15 秒了排行还没出来"],
+        /* The densest early stretch among the first four that run long enough
+         * for the rounds: four pool requests, once per run. Desktop dry runs of
+         * this (six each) got this IP a 412 from bilibili for half an hour on
+         * 10-18 — and the television shares the IP. */
+        ["挑弹幕最多的视频", 200, function () {
+            if (!dmp.asked) {
+                dmp.asked = true;
+                dmp.cands = [];
+                var items = window.__stItems;
+                for (var i = 0; i < items.length && dmp.cands.length < 4; i++) {
+                    if (items[i].cid && minutes(items[i].duration) >= 6) { dmp.cands.push({ i: i, v: items[i], n: -1 }); }
+                }
+                if (!dmp.cands.length) { return "排行前面没有 6 分钟以上、带 cid 的视频"; }
+                dmp.cands.forEach(function (c) {
+                    Danmaku.load(c.v.cid, function (list) {
+                        c.n = list.filter(function (d) { return d.t < 300000; }).length;
+                    }, function () { c.n = 0; });
+                });
+            }
+            var pending = dmp.cands.filter(function (c) { return c.n < 0; }).length;
+            if (pending) { return WAIT; }
+            dmp.cands.sort(function (a, b) { return b.n - a.n; });
+            dmp.pick = dmp.cands[0];
+            post("候选 " + dmp.cands.map(function (c) { return c.v.bvid + "=" + c.n; }).join(" ") +
+                 "（前 5 分钟的弹幕数）");
+            return dmp.pick.n ? null : "候选的弹幕池全是空的";
+        }, 15000, "弹幕池 15 秒没问完"],
+        ["开始播放", 200, function () {
+            if (!dmp.pick) { return "没有挑到视频"; }
+            Settings.set("danmaku", "normal");
+            var card = document.querySelector('#feed-grid .card[data-i="' + dmp.pick.i + '"]');
+            if (!card) { return "网格里找不到第 " + dmp.pick.i + " 张卡片"; }
+            Nav.focus(card);
+            key(KEY.ENTER);
+            post("放 " + dmp.pick.v.bvid + "「" + String(dmp.pick.v.title || "").slice(0, 24) + "」" + dmp.pick.v.duration);
+            return null;
+        }],
+        ["出画面、弹幕到了", 1000, function () {
+            if (visible("shell") || visible("player-loading")) { return WAIT; }
+            return visible("danmaku") && count("#danmaku .dm") ? null : WAIT;
+        }, 25000, "25 秒了还没在放、或者弹幕没出来"],
+        ["轮换量帧", 3000, function () {
+            if (dmp.done) { return null; }
+            if (dmp.started) { return WAIT; }
+            dmp.started = true;
+            var v = document.getElementById("html5-video");
+            post("视频 " + (v ? v.videoWidth + "x" + v.videoHeight : "?") + "，每种 " + (DM_WINDOW / 1000) +
+                 " 秒、" + DM_ROUNDS + " 轮，弹幕「标准」");
+            var plan = [];
+            for (var r = 0; r < DM_ROUNDS; r++) {
+                for (var k = 0; k < DMV.length; k++) { plan.push({ round: r + 1, dv: DMV[(k + r) % DMV.length] }); }
+            }
+            dmp.results = {};
+            dmp.speed0 = Danmaku.test.speed();
+            var n = 0;
+            function nextWindow() {
+                if (n >= plan.length || visible("shell")) { dmp.done = true; return; }
+                var w = plan[n++];
+                if (w.dv.id === "off") { window.__stDanmaku("off"); }
+                else {
+                    if (Settings.get("danmaku", "normal") !== "normal") { window.__stDanmaku("normal"); }
+                    document.documentElement.setAttribute("data-dmv", w.dv.id);
+                }
+                Danmaku.test.speed(w.dv.speed || dmp.speed0);
+                setTimeout(function () {
+                    measureWindow(DM_WINDOW, function (res) {
+                        (dmp.results[w.dv.id] = dmp.results[w.dv.id] || []).push(res);
+                        post("第 " + w.round + " 轮 " + w.dv.id + "（" + w.dv.name + "）：" + windowLine(res));
+                        nextWindow();
+                    });
+                }, DM_SETTLE);
+            }
+            nextWindow();
+            return WAIT;
+        }, 8 * 60000, "轮换 8 分钟没跑完"],
+        ["汇总", 200, function () {
+            DMV.forEach(function (d) {
+                var rs = dmp.results[d.id] || [];
+                if (!rs.length) { return; }
+                function m(f) { return median(rs.map(f)); }
+                post("汇总 " + d.id + "（" + d.name + "，" + rs.length + " 次的中位）：少画 " + m(function (r) { return r.missed; }) +
+                     " 帧/" + (DM_WINDOW / 1000) + "秒，最长帧 " + Math.round(m(function (r) { return r.max; })) + "ms，>25ms " +
+                     m(function (r) { return r.over25; }) + " 次，长任务 " + Math.round(m(function (r) { return r.lt ? r.lt.ms : 0; })) +
+                     "ms，同屏 " + m(function (r) { return r.live; }).toFixed(0) + " 条，位置在两像素之间 " +
+                     m(function (r) { return r.pos && r.pos.n ? Math.round(100 * r.pos.between / r.pos.n) : 0; }) + "%、逐帧在变 " +
+                     m(function (r) { return r.pos && r.pos.n ? Math.round(100 * r.pos.wobble / r.pos.n) : 0; }) + "%");
+            });
+            return null;
+        }],
+        ["收尾：退出播放、弹幕设置恢复", 300, function () {
+            document.documentElement.removeAttribute("data-dmv");
+            if (dmp.speed0) { Danmaku.test.speed(dmp.speed0); }
+            if (!visible("shell")) { key(KEY.RETURN); }
+            window.__stDanmaku(dmp.wasLevel || "normal");
+            setTimeout(function () { window.__stNoHistory = false; }, 2000);
+            return null;
+        }]
+    ];
+
     function run() {
         var i = 0, failures = 0;
+        if (SELFTEST === "dmperf") { steps = dmperfSteps; }
         post("开始");
         function next() {
             if (i >= steps.length) {

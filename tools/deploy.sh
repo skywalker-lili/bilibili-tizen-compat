@@ -11,6 +11,9 @@ APP="$ROOT/app"
 # control. Never leave it on in a build meant for watching.
 SELFTEST=false
 [ "$1" = "--selftest" ] && SELFTEST=true
+# --dmperf: the danmaku frame-time run instead (selftest.js, 2026-10-18) — the
+# ways of drawing rotated on one dense video, rAF intervals per window.
+[ "$1" = "--dmperf" ] && SELFTEST='"dmperf"'
 
 export PATH="$HOME/tizen-studio/tools:$HOME/tizen-studio/tools/ide/bin:$PATH"
 
@@ -67,7 +70,7 @@ restore_config() {
 import os, re
 p = os.path.join(os.environ["APP"], "js", "config.js")
 src = open(p).read()
-src = re.sub(r'var SELFTEST = [a-z]+;', 'var SELFTEST = false;', src)
+src = re.sub(r'var SELFTEST = (?:[a-z]+|"[a-z]+");', 'var SELFTEST = false;', src)
 src = re.sub(r'var REPORT_TO = "[^"]*";', 'var REPORT_TO = "";', src, count=1)
 open(p, "w").write(src)
 PY
@@ -87,7 +90,7 @@ p = os.path.join(os.environ["APP"], "js", "config.js")
 src = open(p).read()
 src = re.sub(r'var REPORT_TO = "[^"]*";',
              'var REPORT_TO = "http://%s:8099/report";' % os.environ["HOST_IP"], src, count=1)
-src = re.sub(r'var SELFTEST = [a-z]+;',
+src = re.sub(r'var SELFTEST = (?:[a-z]+|"[a-z]+");',
              'var SELFTEST = %s;' % os.environ.get("SELFTEST", "false"), src)
 open(p, "w").write(src)
 print("  report -> %s, selftest=%s" % (os.environ["HOST_IP"], os.environ.get("SELFTEST")))
@@ -176,7 +179,7 @@ echo "== done =="
 # Said last, where it cannot be scrolled past. A selftest build is not something
 # to leave on a television somebody is about to use: it starts playing by itself
 # and works the remote for a minute every time the app opens.
-if [ "$SELFTEST" = "true" ]; then
+if [ "$SELFTEST" != "false" ]; then
   echo
   echo "!! 电视上现在装的是自测构建：每次打开都会自己跑一遍整套流程。"
   echo "!! 看电视之前先装回正常构建： zsh tools/deploy.sh"

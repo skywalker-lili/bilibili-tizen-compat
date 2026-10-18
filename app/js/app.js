@@ -1672,6 +1672,11 @@
     window.__stNextupTotal = function () { return nextupGrid.total(); };
     window.__stPanelTotal = function () { return panelGrid.total(); };
 
+    /* For the danmaku frame-time run (deploy.sh --dmperf): open a list that
+     * has dense comments, and switch danmaku off and on between windows. */
+    window.__stLoadFeed = function (kind) { loadFeed(kind); };
+    window.__stDanmaku = function (level) { setDanmakuLevel(level); };
+
     function watchForWake() {
         /* Nothing is reported when the set goes away: the POST would be dialling
          * into a suspending network stack, and five of those are what puts the
@@ -5140,6 +5145,9 @@
 
     function reportProgress(secs, force, durSecs) {
         if (!playing || !Auth.isLoggedIn()) { return; }
+        /* The danmaku frame-time run plays a stranger's video for minutes;
+         * that is not something this account watched. */
+        if (window.__stNoHistory) { return; }
         if (!Auth.csrf() && !Auth.accessKey()) {
             /* Accounts restored through the web fallback have neither an access
              * token nor a readable CSRF token, so they cannot write. Said once,
@@ -5249,12 +5257,14 @@
                         break;
                     }
                 }
-                Resume.record(d0.bvid, playing.cid, data.position, data.duration, {
-                    bvid: d0.bvid, aid: d0.aid, title: d0.title, pic: d0.pic,
-                    author: d0.author, duration: d0.duration, play: d0.play,
-                    publishedAt: d0.publishedAt || 0,
-                    cid: playing.cid, page: pg, part: ptitle
-                });
+                if (!window.__stNoHistory) {
+                    Resume.record(d0.bvid, playing.cid, data.position, data.duration, {
+                        bvid: d0.bvid, aid: d0.aid, title: d0.title, pic: d0.pic,
+                        author: d0.author, duration: d0.duration, play: d0.play,
+                        publishedAt: d0.publishedAt || 0,
+                        cid: playing.cid, page: pg, part: ptitle
+                    });
+                }
             }
             lastKnownPosition = data.position;
             lastKnownDuration = data.duration || lastKnownDuration;
