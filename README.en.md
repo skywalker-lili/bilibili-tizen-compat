@@ -20,7 +20,7 @@ what you half-watched on the phone is under the cursor when the TV comes on.
 |  |  |
 |---|---|
 | ![Home](docs/screenshots/01-home.jpg) | ![Playback](docs/screenshots/03-player-scrub.jpg) |
-| Three big cards a row, readable from the sofa; signed in, the top row is 「continue watching」 and the cursor starts on it | Scrubbing with thumbnail previews; up to 1080p H.265 when signed in |
+| Three big cards a row, readable from the sofa; signed in, the top row is 「continue watching」 and the cursor starts on it | Scrubbing with thumbnail previews; up to 1080p H.265 when signed in, 4K with a 大会员 (premium) account |
 | ![Panel](docs/screenshots/04-panel.jpg) | ![Comments](docs/screenshots/05-comments.jpg) |
 | Press down while playing for the description, speed, parts and related videos — **the video keeps running**; like / coin / favourite and comments are here too | Comments and replies beside the video, which keeps playing |
 | ![Settings](docs/screenshots/06-settings.jpg) | ![Search](docs/screenshots/02-search.jpg) |
@@ -44,20 +44,30 @@ and firmware version** — that is how this table grows.
 
 Samsung's store does not accept third-party clients for other people's services
 (it pulled the unofficial Twitch app in 2019 for exactly that), so this is
-sideloaded — **once**; after that the app opens from the TV like any other. Two
-ways:
+sideloaded — **once**; after that the app opens from the TV like any other, and
+installs new versions itself (from 1.2.0 on). Two ways:
 
 | | Release package (recommended) | From source |
 |---|---|---|
 | For | Watching bilibili on the TV | Changing the code, reading diagnostics |
 | Needs | A computer (Windows / macOS / Linux) **or an Android phone** with [Apps2Samsung](https://github.com/Apps2Samsung/Apps2Samsung) | macOS, Node, Python 3, Tizen Studio CLI |
-| Upgrade | Download the new `.wgt`, install it again | `git pull`, run `deploy.sh` again |
+| Upgrade | Automatic from 1.2.0 on; older versions: download the new `.wgt`, install it again | Automatic from 1.2.0 on too; or `git pull`, run `deploy.sh` again |
 
 **From 1.2.0 on, the app updates itself**: a minute after it opens, when
-nothing is playing, it checks this repository, downloads a newer version,
-verifies its signature and runs it from the next launch; a version that fails to
-start falls back to the one installed. It can be switched off in 设置. Versions
-before 1.2.0 (and going back to an older version) upgrade by hand.
+nothing is playing, it checks this repository, then every 6 hours; it downloads a
+newer version, verifies its signature and runs it from the next launch; a version
+that fails to start falls back to the one installed.
+
+- **"The next launch" means really quitting and reopening it**: press Back on the
+  推荐 (recommended) page to quit the app, then open it again from the TV's home
+  screen. Pressing Home to switch to another app, or turning the TV off and on,
+  usually just suspends the app, and it comes back on the same version.
+- The 设置 (settings) tab can switch self-update off and check now; the line
+  below says which version is installed, which is running and which is
+  downloaded.
+- Built from source and changed the code? Switch self-update off in 设置, or the
+  next higher version in this repository replaces your code on the next launch.
+- Versions before 1.2.0 (and going back to an older version) upgrade by hand.
 
 **Both ways start here:** enable Developer Mode on the TV — on the Apps screen,
 type `12345` with the remote, switch it on, and set Host PC IP to the computer or
