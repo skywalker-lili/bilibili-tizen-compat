@@ -3263,6 +3263,19 @@
             }
         }
 
+        /* The next episode of the 合集 before anything the recommender thinks
+         * of: the uploader numbered them for a reason (2026-10-18). Only once
+         * the parts above have run out — an episode can itself have parts. */
+        if (d.season) {
+            var at = seasonIndex(d.season, d.bvid);
+            if (at >= 0 && at + 1 < d.season.episodes.length) {
+                var ep = d.season.episodes[at + 1];
+                cb({ detail: seasonEpisodeDetail(ep), cid: ep.cid,
+                     title: "合集第 " + (at + 2) + " 集  " + ep.title });
+                return;
+            }
+        }
+
         function fromList(list) {
             for (var i = 0; i < (list || []).length; i++) {
                 if (playedInChain[list[i].bvid]) { continue; }
@@ -3689,6 +3702,56 @@
         }
     }
 
+    /* 合集 (2026-10-18). The same chips as the parts, one per episode, every
+     * one of them (the parts row's reasoning: a series long enough to need a
+     * list is exactly the one a cap would cut). Choosing one plays that video;
+     * the uploader is the same throughout a season, so the card carries over
+     * who made it and the rest arrives with the episode's own view(). */
+    function seasonEpisodeDetail(ep) {
+        var d = playing && playing.detail;
+        return { bvid: ep.bvid, aid: ep.aid, cid: ep.cid, title: ep.title, pic: ep.pic,
+                 duration: ep.duration, author: d ? d.author : "", mid: d ? d.mid : 0,
+                 face: d ? d.face : "" };
+    }
+    function seasonIndex(season, bvid) {
+        for (var i = 0; i < season.episodes.length; i++) {
+            if (season.episodes[i].bvid === bvid) { return i; }
+        }
+        return -1;
+    }
+    function paintSeason() {
+        var s = playing && playing.detail && playing.detail.season;
+        var group = el("opt-season-group");
+        if (!s) { group.className = "opt-group hidden"; el("opt-season").innerHTML = ""; return; }
+        group.className = "opt-group";
+        var at = seasonIndex(s, playing.detail.bvid);
+        el("opt-season-label").textContent = "合集 · " + s.title +
+            (at >= 0 ? "（第 " + (at + 1) + " / " + s.episodes.length + " 集）" : "（" + s.episodes.length + " 集）");
+        var html = "";
+        for (var i = 0; i < s.episodes.length; i++) {
+            var ep = s.episodes[i];
+            html += '<div class="opt focusable' + (i === at ? " current" : "") + '" data-i="' + i + '">' +
+                    '<span class="opt-p">' + (i + 1) + "</span>" +
+                    '<span class="opt-name">' + esc(ep.title) + "</span>" +
+                    (ep.duration ? '<span class="opt-dur">' + esc(ep.duration) + "</span>" : "") + "</div>";
+        }
+        el("opt-season").innerHTML = html;
+        var chips = document.querySelectorAll("#opt-season .opt");
+        for (var k = 0; k < chips.length; k++) {
+            (function (node) {
+                node.onselect = function () {
+                    var ep = s.episodes[Number(node.getAttribute("data-i"))];
+                    if (!ep || !playing) { return; }
+                    if (ep.bvid === playing.detail.bvid) { closeOptions(); return; }
+                    report("season", "合集「" + s.title + "」选第 " + (Number(node.getAttribute("data-i")) + 1) + " 集 " + ep.bvid);
+                    var next = seasonEpisodeDetail(ep);
+                    closeOptions();
+                    play(next, ep.cid);
+                };
+            })(chips[k]);
+        }
+    }
+
     /* 播放速度 (2026-09-28). A row of chips like the parts, the current one
      * marked; choosing one keeps the panel open, since the viewer may want to
      * try the next one up. Sticky for the app run (Player.setRate). */
@@ -3755,6 +3818,7 @@
         el("panel-comments").onselect = openComments;
 
         paintParts();
+        paintSeason();
         paintSpeed();
 
         /* Related videos live in the panel now, so "what else" never costs the
@@ -4741,6 +4805,7 @@
          * closed and reopened it. Painted in place, not by reopening. */
         if (optionsOpen) {
             paintParts();
+            paintSeason();
             el("panel-desc").textContent = (full.desc || "").slice(0, 400);
             var meta = el("panel-meta").querySelector(".panel-meta-rest");
             if (meta) {

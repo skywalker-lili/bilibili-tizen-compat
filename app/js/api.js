@@ -310,6 +310,28 @@ var API = (function () {
         };
     }
 
+    /* A 合集 (ugc_season), flattened: the uploader's series this video sits in,
+     * every episode across every section, in the order the site lists them.
+     * view() carries the whole list (2026-10-18, checked on a two-episode
+     * season: sections[].episodes[] with bvid, aid, cid, title, arc.pic,
+     * arc.duration, page). One episode is not a series worth a row. */
+    function seasonOf(s) {
+        if (!s || !s.sections) { return null; }
+        var eps = [];
+        for (var i = 0; i < s.sections.length; i++) {
+            var list = s.sections[i].episodes || [];
+            for (var j = 0; j < list.length; j++) {
+                var e = list[j], arc = e.arc || {};
+                if (!e.bvid || !e.cid) { continue; }
+                eps.push({ bvid: e.bvid, aid: e.aid || arc.aid || 0, cid: e.cid,
+                           title: e.title || arc.title || "",
+                           pic: thumb(arc.pic),
+                           duration: duration(arc.duration || (e.page && e.page.duration)) });
+            }
+        }
+        return eps.length > 1 ? { id: s.id, title: s.title || "", episodes: eps } : null;
+    }
+
     /* fnval for a DASH request at this quality cap. 2064 = 16 (DASH) | 2048
      * (AV1); a cap of 4K adds 128, the 4K bit, as the official web player
      * does. Measured 2026-08-17 (「4K 查过了」): for a non-member the bit
@@ -1046,6 +1068,7 @@ var API = (function () {
                     duration: duration(d.duration),
                     play: count((d.stat || {}).view),
                     publishedAt: Number(d.pubdate || 0) || 0,
+                    season: seasonOf(d.ugc_season),
                     pages: (d.pages || []).map(function (p) {
                         /* Per-part length, formatted here like every other
                          * duration in this file. It is seconds on a page and
