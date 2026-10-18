@@ -1,0 +1,4 @@
+{
+ "manifest": "{\"version\":\"1.2.0\",\"shell\":1,\"sha256\":\"2167438b844dba2b1680cee3a68e740aab3ff17b420a5c0a9d29a5b211ba730c\",\"size\":812596,\"date\":\"2026-10-18T14:12:02.869Z\",\"urls\":[\"https://cdn.jsdelivr.net/gh/titlog/bilibili-tizen@v1.2.0/update/bundle-1.2.0.json\",\"https://raw.githubusercontent.com/titlog/bilibili-tizen/v1.2.0/update/bundle-1.2.0.json\"]}",
+ "sig": "dgw8pHKpMu2mL8j6otUGcQbUjs3xzPvZI5xcns9C+Es//xy9u3JroWepe47eyLoo/+bhX5nzY/EHVSLn4y8KyQ=="
+}
