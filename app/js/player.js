@@ -998,6 +998,14 @@ var Player = (function () {
          * there is only ever one session. */
         player.addEventListener("error", function (e) {
             var err = e && e.detail;
+            /* 直播 has none of the on-demand machinery below — no manifest of
+             * ours, no files to drop. A recoverable error is Shaka retrying;
+             * a critical one goes to app.js, which fetches a fresh address. */
+            if (mode === "live") {
+                if (err && err.severity === 2) { emit("error", "直播：shaka " + describeShakaError(err)); }
+                else { log("直播：shaka 可恢复的错误 " + describeShakaError(err)); }
+                return;
+            }
             /* A network error on a manifest past its deadline is expiry, not
              * refusal — a film longer than two hours, or a long pause. Read as
              * refusal it blacklisted both hosts and wrote a six-hour "web
@@ -2440,6 +2448,73 @@ var Player = (function () {
         return out;
     }
 
+    /* 直播 (2026-10-18): an HLS media playlist from bilibili's live CDN, fMP4
+     * segments of a second each (measured from here: playlist, init and
+     * segments all answer 200 with no Referer). None of the on-demand
+     * machinery applies — there is no manifest of ours, no file to blacklist,
+     * no position worth keeping — so this is its own short path: Shaka loads
+     * the playlist and stays near the live edge, and anything it gives up on
+     * goes to app.js, which asks for a fresh address (they are signed and
+     * expire) and starts again. */
+    var liveBound = false;
+    function bindLiveElement() {
+        if (liveBound) { return; }
+        liveBound = true;
+        var v = el("html5-video");
+        v.addEventListener("playing", function () {
+            if (mode !== "live") { return; }
+            mark("playing");
+            emit("playing", { duration: 0 });
+        });
+        v.addEventListener("waiting", function () { if (mode === "live") { emit("buffering", true); } });
+        v.addEventListener("canplay", function () { if (mode === "live") { emit("buffering", false); } });
+        v.addEventListener("error", function () {
+            if (mode !== "live") { return; }
+            emit("error", "直播：媒体元素出错 code=" + (v.error ? v.error.code : 0));
+        });
+    }
+
+    function playLive(url) {
+        reset();
+        mode = "live";
+        var gen = ++mseGeneration;
+        withShakaScript(function (ok) {
+            if (gen !== mseGeneration) { return; }
+            if (!ok) { emit("error", "播放器脚本加载失败"); return; }
+            var player = ensureShaka();
+            if (!player) { emit("error", "这台设备的浏览器内核不支持这种播放"); return; }
+            /* A live window is a few seconds wide; the on-demand 72 s goal
+             * means nothing here. playDashWithShaka sets its own on every load. */
+            player.configure({ streaming: { bufferingGoal: 10, bufferBehind: 10 } });
+            bindLiveElement();
+            var v = el("html5-video");
+            v.className = "";
+            v.autoplay = !userPaused;
+            mark("manifest");
+            shakaOp = shakaOp.then(function () {
+                if (gen !== mseGeneration) { return null; }
+                resetSegTraffic();
+                return player.load(url, null, "application/x-mpegurl");
+            }).then(function () {
+                if (gen !== mseGeneration) { return; }
+                mark("loaded");
+                var t = currentVideoTrack(player);
+                if (t) {
+                    log("直播画面 " + t.width + "x" + t.height + " " + (t.videoCodec || "") +
+                        (t.audioCodec ? " / " + t.audioCodec : ""));
+                }
+                if (userPaused) { return; }
+                v.play()["catch"](function (e) {
+                    if (gen !== mseGeneration || /interrupted|aborted/i.test(e.message || "")) { return; }
+                    emit("error", "直播：play() " + e.message);
+                });
+            })["catch"](function (e) {
+                if (gen !== mseGeneration || (e && e.code === 7000)) { return; }
+                emit("error", "直播：加载失败 " + describeShakaError(e));
+            });
+        });
+    }
+
     function describeShakaError(e) {
         if (!e) { return "(no error object)"; }
         var out = "code=" + e.code + " category=" + e.category +
@@ -2609,6 +2684,7 @@ var Player = (function () {
         },
 
         playProgressive: function (url, startMs) { reset(); playAvplay(url, startMs); },
+        playLive: playLive,
         playDash: function (dash, startMs) {
             reset();
             /* Half a second goes missing between `playurl` and `manifest` and
@@ -2623,7 +2699,7 @@ var Player = (function () {
         pause: function () {
             userPaused = true;
             if (mode === "avplay") { try { webapis.avplay.pause(); } catch (e) {} }
-            else if (mode === "mse") { el("html5-video").pause(); }
+            else if (mode === "mse" || mode === "live") { el("html5-video").pause(); }
         },
         resume: function () {
             userPaused = false;
@@ -2631,7 +2707,7 @@ var Player = (function () {
             watchdogPos = -1;
             watchdogAt = new Date().getTime();
             if (mode === "avplay") { try { webapis.avplay.play(); } catch (e) {} }
-            else if (mode === "mse") { el("html5-video").play(); }
+            else if (mode === "mse" || mode === "live") { el("html5-video").play(); }
         },
         /* What the viewer pressed, as opposed to what the element reports — the
          * element is paused for the whole of a load, and code that hides chrome

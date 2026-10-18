@@ -146,13 +146,22 @@ zsh tools/deploy.sh     # check, sign, install, launch — about 15 seconds
 
 ## What it does, and what it deliberately does not
 
-**Does**: recommendations / popular / rankings / food / dance / dynamic feed /
+**Does**: recommendations / live / popular / rankings / zones / dynamic feed /
 watch-later / search with the TV's own Chinese IME, multi-part uploads, resume
 (remembers which part, picks up from the phone), autoplay next, scrub previews,
 parts and related videos over a running video, uploader pages (press the
 uploader's name in the panel, or 右 on the end-of-video screen, for everything
 they have posted; 返回 goes back to the tab you came from). About **2.5–3.5 s**
 from OK to a picture, 1080p H.265.
+
+**Live** (直播 in the top bar): the streamers you follow who are live come first,
+then everything live on the site by popularity; inside a room, up and down change
+room the way a TV changes channel. Signed out it is 720p, and there are no live
+danmaku yet. **Your own top bar**: in 设置, add or remove 直播, 动态, 我的, 稍后, 热门, 排行
+and any of the 30 zones, and put them in your own order (推荐 stays first, 搜索
+and 设置 last); the bar slides sideways with the focus when it does not fit. Long
+collections and multi-part uploads list their episodes in one sliding row in the
+playback panel.
 
 Also: danmaku (off / sparse / standard / dense, in 设置 or the playback panel);
 collections (合集 — a row of episodes in the panel, and the next episode plays

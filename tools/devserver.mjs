@@ -41,6 +41,7 @@ const HOSTS = {
   "/__api/": "api.bilibili.com",
   "/__passport/": "passport.bilibili.com",
   "/__search/": "s.search.bilibili.com",
+  "/__live/": "api.live.bilibili.com",
 };
 
 /* ---------------- borrow the desktop browser's session ---------------- */

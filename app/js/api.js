@@ -9,6 +9,8 @@ var API = (function () {
     "use strict";
 
     var BASE = "https://api.bilibili.com";
+    /* 直播 lives on its own host (2026-10-18). */
+    var LIVE = "https://api.live.bilibili.com";
     var strongState = null;
     /* Until when API.view asks its wbi twin first — see view(). */
     var viewGatedUntil = 0;
@@ -67,18 +69,21 @@ var API = (function () {
         }
     }
 
-    /* The route that actually arrives. Confined to api.bilibili.com: the token
-     * is a credential and the suggestion host has no business holding one. */
+    /* The route that actually arrives. Confined to bilibili's own API hosts —
+     * api.bilibili.com and, for 直播, api.live.bilibili.com: the token is a
+     * credential and the suggestion host has no business holding one. */
     function withSession(url) {
         if (typeof Auth === "undefined" || !Auth.isLoggedIn()) { return url; }
-        if (url.indexOf(BASE) !== 0) { return url; }
+        if (url.indexOf(BASE) !== 0 && url.indexOf(LIVE) !== 0) { return url; }
         var key = Auth.accessKey();
         if (!key) { return url; }   /* web-fallback account — the jar is all it has */
         return url + (url.indexOf("?") < 0 ? "?" : "&") +
                Auth.signTv({ access_key: key });
     }
 
-    function getJson(url, onOk, onFail) {
+    /* `anon`: no account on this one — public lists, where a token would only
+     * be one more thing for the endpoint to object to. */
+    function getJson(url, onOk, onFail, anon) {
         var xhr = new XMLHttpRequest();
         var settled = false;
         /* A dropped request reaches readyState 4 with status 0 AND fires
@@ -86,9 +91,9 @@ var API = (function () {
          * twice — and callers that retry on failure then retry twice. */
         function fail(why) { if (!settled) { settled = true; onFail(why); } }
         function ok(data) { if (!settled) { settled = true; onOk(data); } }
-        xhr.open("GET", withSession(url), true);
+        xhr.open("GET", anon ? url : withSession(url), true);
 
-        applySession(xhr);
+        if (!anon) { applySession(xhr); }
 
         xhr.timeout = 20000;
         xhr.onreadystatechange = function () {
@@ -277,6 +282,26 @@ var API = (function () {
         return withPlain;
     }
 
+    /* A live room as a card. The lists name the same things differently: the
+     * area list says user_cover / area_v2_name / online, the following list
+     * room_cover / area_name_v2 / text_small. 人气 (`online`) was replaced on the
+     * site by 「N人看过」 (`watched_show`), which is what is shown when given. */
+    function liveItem(x, followed) {
+        var w = x.watched_show || {};
+        return {
+            live: true,
+            roomid: x.roomid || x.room_id || 0,
+            uid: x.uid || 0,
+            title: stripEm(x.title || ""),
+            pic: thumb(x.user_cover || x.room_cover || x.cover || x.keyframe || x.system_cover || ""),
+            author: x.uname || "",
+            face: x.face || "",
+            area: x.area_v2_name || x.area_name_v2 || x.areaName || x.area_name || "",
+            online: w.text_large || x.text_small || (x.online ? count(Number(x.online)) + " 人气" : ""),
+            followed: !!followed
+        };
+    }
+
     function normalise(v) {
         return {
             bvid: v.bvid,
@@ -371,6 +396,76 @@ var API = (function () {
          * no WBI signature at any rid, which is why the zone tabs use the
          * ranking rather than 分区最新 — the newest uploads in a partition are
          * mostly not worth a television screen anyway. */
+        /* ---- 直播 (2026-10-18) ----
+         * Every live room on the site by how many are watching, thirty to a
+         * page. The old area endpoint: unsigned and anonymous (measured from
+         * here on 10-18; the newer web lists want a WBI signature). */
+        liveRooms: function (page, onOk, onFail) {
+            getJson(LIVE + "/room/v1/Area/getListByAreaID?areaId=0&sort=online&pageSize=30&page=" + (page || 1),
+                function (d) {
+                    var list = (d && d.list) || d || [];
+                    onOk(list.map(function (x) { return liveItem(x, false); }));
+                }, onFail, true);
+        },
+
+        /* Who this account follows that is live now. A web endpoint, so the
+         * account rides on access_key the same way as everywhere else; whether
+         * this one honours it is answered by the log (app.js reports the raw
+         * fields once per run). onOk(items, raw). */
+        liveFollowing: function (onOk, onFail) {
+            getJson(LIVE + "/xlive/web-ucenter/user/following?page=1&page_size=30&ignoreRecord=1&hit_ab=true",
+                function (d) {
+                    var raw = (d && d.list) || [];
+                    onOk(raw.filter(function (x) { return Number(x.live_status) === 1; })
+                            .map(function (x) { return liveItem(x, true); }), raw);
+                }, onFail);
+        },
+
+        /* Where to fetch a room's picture: HLS with fMP4 segments only — the
+         * MPEG-TS variant would need a transmuxer, and FLV needs flv.js.
+         * Measured anonymous on 10-18: 原画 asked for, 超清 (250) given, the same
+         * qn on avc and hevc; equal tiers go to avc. Asked with the account
+         * first (a signed-in viewer may be given more), then without it if the
+         * signed request is refused. onOk({urls, qn, qnName, codec, accept, signed}). */
+        livePlay: function (roomId, onOk, onFail) {
+            var url = LIVE + "/xlive/web-room/v2/index/getRoomPlayInfo?room_id=" + encodeURIComponent(roomId) +
+                      "&protocol=1&format=2&codec=0,1&qn=10000&platform=web&ptype=8&dolby=5&panorama=1";
+            var signedIn = typeof Auth !== "undefined" && Auth.isLoggedIn();
+            function pick(d, signed) {
+                if (!d || Number(d.live_status) !== 1) { onFail("没在直播（live_status=" + (d && d.live_status) + "）"); return; }
+                if (d.encrypted && !d.pwd_verified) { onFail("加了密码的直播间"); return; }
+                var pu = (d.playurl_info && d.playurl_info.playurl) || {};
+                var names = {};
+                (pu.g_qn_desc || []).forEach(function (q) { names[q.qn] = q.desc; });
+                var best = null;
+                (pu.stream || []).forEach(function (s) {
+                    if (s.protocol_name !== "http_hls") { return; }
+                    (s.format || []).forEach(function (f) {
+                        if (f.format_name !== "fmp4") { return; }
+                        (f.codec || []).forEach(function (c) {
+                            var qn = Number(c.current_qn) || 0;
+                            if (!best || qn > best.qn || (qn === best.qn && c.codec_name === "avc")) {
+                                best = { qn: qn, codec: c.codec_name, base: c.base_url,
+                                         hosts: c.url_info || [], accept: c.accept_qn || [] };
+                            }
+                        });
+                    });
+                });
+                if (!best || !best.hosts.length) { onFail("没有 HLS-fMP4 的流"); return; }
+                onOk({
+                    urls: best.hosts.map(function (u) { return u.host + best.base + (u.extra || ""); }),
+                    qn: best.qn, qnName: names[best.qn] || ("qn" + best.qn), codec: best.codec,
+                    accept: best.accept.map(function (q) { return names[q] || String(q); }),
+                    signed: signed
+                });
+            }
+            getJson(url, function (d) { pick(d, signedIn); }, function (why) {
+                if (!signedIn) { onFail(why); return; }
+                getJson(url, function (d) { pick(d, false); },
+                        function (why2) { onFail(why + "；不带账号再问也不行：" + why2); }, true);
+            });
+        },
+
         ranking: function (rid, onOk, onFail) {
             getJson(BASE + "/x/web-interface/ranking/v2?type=all&rid=" + (rid || 0), function (d) {
                 onOk((d.list || []).map(normalise));

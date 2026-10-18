@@ -37,6 +37,12 @@ body {
  * fighting the account chip for the last 150 pixels of a 1920 panel. Measured
  * again at 26/20/10: 1174px, and the chip has room. */
 #tabs { display: flex; gap: 10px; flex: 1; }
+/* 2026-10-18: 直播 and the zones chosen in 设置 made the row wider than the
+ * bar. It now scrolls sideways under the focus (nav.js, "hscroll") instead of
+ * squeezing: min-width 0 lets the flex box be narrower than its tabs, and the
+ * tabs keep their size. */
+#tabs { min-width: 0; overflow: hidden; }
+#tabs .tab { flex-shrink: 0; white-space: nowrap; }
 
 .tab {
     font-size: 26px;
@@ -143,6 +149,10 @@ body {
     text-overflow: ellipsis;
 }
 .card-views { flex: 0 0 auto; }
+/* 直播 cards: a red badge where the duration goes, and 关注 for the people
+ * this account follows. */
+.dur.live-badge { background: #e5484d; }
+.card-follow { flex: 0 0 auto; color: #ff6699; }
 .card-info-date { flex: 0 0 auto; margin-left: auto; font-size: 22px; }
 .card-info .card-part { flex: 0 0 auto; margin-right: 0; }
 
@@ -272,6 +282,29 @@ body.density-5 .card-info-date { display: block; width: 100%; margin: 2px 0 0; f
 #player-track { flex: 1; height: 8px; background: rgba(255,255,255,0.22); border-radius: 4px; }
 #player-fill { height: 8px; width: 0; background: #ff6699; border-radius: 4px; }
 #player-hint { margin-top: 20px; font-size: 22px; color: #8b959e; }
+
+/* 直播 banner: the same bottom gradient as #playerui, none of its bar. */
+#live-ui {
+    position: absolute; left: 0; bottom: 0;
+    width: 1920px; padding: 60px 64px 48px;
+    background: linear-gradient(to top, rgba(0,0,0,0.92), rgba(0,0,0,0));
+}
+#live-top { display: flex; align-items: center; gap: 18px; margin-bottom: 12px; }
+#live-badge {
+    font-size: 22px; font-weight: 700; color: #fff; background: #e5484d;
+    padding: 4px 14px; border-radius: 6px;
+}
+#live-meta { font-size: 24px; color: #cbd3da; }
+#live-title { font-size: 36px; }
+#live-hint { margin-top: 20px; font-size: 22px; color: #8b959e; }
+
+/* 设置 → 顶栏: the panel's chips. 推荐 / 搜索 / 设置 are shown where they sit
+ * but cannot be focused; the one picked up to move wears arrows. */
+#bar-chips .opt, #spare-chips .opt { font-size: 26px; padding: 12px 26px; }
+#bar-chips .opt.fixed { color: #6b7680; background: rgba(255,255,255,0.05); }
+#bar-chips .opt.picked { background: #ff6699; color: #fff; }
+#bar-chips .opt.picked::before { content: "◀ "; }
+#bar-chips .opt.picked::after { content: " ▶"; }
 
 /* ---------------- toast ---------------- */
 
@@ -637,6 +670,11 @@ body.density-5 .library-item { width: 344px; }
 .opt-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .opt-dur { color: #8b959e; font-size: 24px; flex-shrink: 0; margin-left: auto; }
 .opt.current { background: rgba(255,102,153,0.24); color: #fff; }
+/* 分P and 合集 as one row that slides sideways under the focus (nav.js
+ * "hscroll"), 2026-10-18. Wrapped, a season of a hundred-odd episodes was
+ * twenty-odd lines, and getting from the related videos back up to the
+ * uploader took that many presses of 上 — the selftest ran out at 24. */
+.opt-row.hscroll { flex-wrap: nowrap; overflow: hidden; }
 .opt.current .opt-p, .opt.current .opt-dur { color: rgba(255,255,255,0.8); }
 .opt.focused { border-color: #ff6699; }
 

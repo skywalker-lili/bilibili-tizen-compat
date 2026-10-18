@@ -824,10 +824,17 @@ var SelfTest = (function () {
              * ring opens on the current one — 10-18 that was the 23rd of a long
              * season, four presses stayed inside the row, and the 确认 meant
              * for the chip played episode 24. */
-            for (var i = 0; i < 24; i++) {
+            /* ⟶ 10-18 23:27: 24 was not enough either — 「导演·2025」 runs past a
+             * hundred episodes, the row wraps into twenty-odd lines, and the
+             * 确认 meant for the chip played episode 24. Pressed until the chip
+             * has the ring (each press checks first, so it cannot overshoot and
+             * close the panel), and the count is logged: that many presses is a
+             * cost the viewer pays too. */
+            for (var i = 0; i < 300; i++) {
                 if (document.querySelector("#panel-up.focused")) { break; }
                 key(KEY.UP);
             }
+            if (i > 6) { post("走到 UP 主芯片按了 " + i + " 次上键（选集那一排很长）"); }
             if (!visible("options")) { return "上键把面板关了，没有停在芯片上"; }
             return document.querySelector("#panel-up.focused") ? null : "焦点没有走到 UP 主芯片";
         }],
@@ -1219,6 +1226,89 @@ var SelfTest = (function () {
             key(KEY.RETURN);
             Settings.set("danmaku", probe.dmWas);
             return visible("danmaku") ? "退出播放之后弹幕层还在" : null;
+        }],
+
+        /* 顶栏 (2026-10-18): the bar is the viewer's — added to from 设置,
+         * reordered by picking a chip up and moving it, taken off with 下. One
+         * of each, ending where it began, so the viewer's bar is what it was. */
+        ["顶栏：设置里加一个、挪一格、拿掉", 400, function () {
+            if (!visible("shell")) { return "不在首页（上一步没退出播放）"; }
+            function bar() {
+                return Array.prototype.map.call(document.querySelectorAll("#tabs .user-tab"),
+                    function (t) { return t.getAttribute("data-screen"); }).join(",");
+            }
+            Nav.focus(document.querySelector('#tabs .tab[data-screen="settings"]'));
+            key(KEY.ENTER);
+            var was = bar(), spare = document.querySelector("#spare-chips .opt");
+            if (!spare) { return "「可以加到顶栏的」那一排是空的"; }
+            var k = spare.getAttribute("data-spare");
+            Nav.focus(spare); key(KEY.ENTER);
+            var added = bar() === (was ? was + "," : "") + k;
+            Nav.focus(document.querySelector('#bar-chips .opt[data-tab="' + k + '"]'));
+            key(KEY.ENTER);
+            var picked = !!document.querySelector('#bar-chips .opt.picked[data-tab="' + k + '"]');
+            key(KEY.LEFT);
+            var order = bar().split(","), moved = order.length > 1 ? order[order.length - 2] === k : true;
+            key(KEY.DOWN);
+            var back = bar() === was;
+            post("顶栏试的是 " + k + "：加上 " + (added ? "对" : "不对") + "，拿起 " + (picked ? "对" : "不对") +
+                 "，左移 " + (moved ? "对" : "不对") + "，拿掉后 " + (back ? "和原来一样" : "是 " + bar()));
+            return added && picked && moved && back ? null : "顶栏没有跟着设置变";
+        }],
+        ["顶栏：最右和最左的页签都滑得进画面", 300, function () {
+            var bar = document.getElementById("tabs").getBoundingClientRect();
+            function inView(sel) {
+                var t = document.querySelector(sel);
+                Nav.focus(t);
+                var r = t.getBoundingClientRect();
+                return r.left >= bar.left - 1 && r.right <= bar.right + 1;
+            }
+            var right = inView('#tabs .tab[data-screen="settings"]'), left = inView('#tabs .tab[data-screen="rcmd"]');
+            return right && left ? null : ("焦点在页签上却看不见：" + (right ? "" : "设置 ") + (left ? "" : "推荐"));
+        }],
+
+        /* 直播 (2026-10-18): the tab lists rooms, the first plays, 下 changes
+         * room, 返回 lands on the card of the room last watched. */
+        ["直播：页签里有直播间", 500, function () {
+            if (!probe.liveTab) {
+                probe.liveTab = true;
+                Nav.focus(document.querySelector('#tabs .tab[data-screen="live"]'));
+                key(KEY.ENTER);
+                return WAIT;
+            }
+            return count("#feed-grid .card .live-badge") ? null : WAIT;
+        }, 15000, "15 秒了直播页签一张直播卡片都没有"],
+        ["直播：打开第一个，出画面", 300, function () {
+            if (!probe.liveOpen) {
+                probe.liveOpen = true;
+                Nav.focus(document.querySelector('#feed-grid .card[data-i="0"]'));
+                key(KEY.ENTER);
+                return WAIT;
+            }
+            var v = document.getElementById("html5-video");
+            if (visible("shell")) { return "退回了网格（直播间打不开，看 live: 那几行）"; }
+            return (!visible("player-loading") && v && v.currentTime > 1 && !v.paused) ? null : WAIT;
+        }, 20000, "20 秒没出画面"],
+        ["直播：下键换一个直播间，出画面", 300, function () {
+            var v = document.getElementById("html5-video");
+            if (!probe.liveNext) {
+                probe.liveNext = true;
+                probe.liveWas = document.getElementById("live-meta").textContent;
+                key(KEY.DOWN);
+                return WAIT;
+            }
+            if (visible("shell")) { return "退回了网格"; }
+            var moved = document.getElementById("live-meta").textContent !== probe.liveWas;
+            return (moved && !visible("player-loading") && v && v.currentTime > 1 && !v.paused) ? null : WAIT;
+        }, 20000, "换台 20 秒没出画面"],
+        ["直播：返回，焦点落在最后看的那个直播间", 600, function () {
+            key(KEY.RETURN);
+            var f = document.querySelector("#feed-grid .card.focused");
+            var at = f && f.getAttribute("data-i");
+            /* Back on 推荐, the way the run is expected to end. */
+            Nav.focus(document.querySelector('#tabs .tab[data-screen="rcmd"]'));
+            key(KEY.ENTER);
+            return visible("shell") && at === "1" ? null : ("回到网格后焦点在 " + at + "，应该是 1");
         }]
     ];
 

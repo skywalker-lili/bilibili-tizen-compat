@@ -32,7 +32,8 @@
 .legacy-flex-gap .action-row,
 .legacy-flex-gap .library-head,
 .legacy-flex-gap .library-grid,
-.legacy-flex-gap .library-item { gap: 0; }
+.legacy-flex-gap .library-item,
+.legacy-flex-gap #live-top { gap: 0; }
 
 .legacy-flex-gap #tabs > :not(.hidden) ~ :not(.hidden) { margin-left: 10px; }
 .legacy-flex-gap #account > :not(.hidden) ~ :not(.hidden) { margin-left: 14px; }
@@ -43,6 +44,7 @@
 .legacy-flex-gap .login > * + * { margin-left: 72px; }
 .legacy-flex-gap .nextup-row > * + * { margin-left: 48px; }
 .legacy-flex-gap #pause-glyph > * + * { margin-left: 18px; }
+.legacy-flex-gap #live-top > * + * { margin-left: 18px; }
 .legacy-flex-gap #panel-meta > * + * { margin-left: 22px; }
 .legacy-flex-gap .up-head > * + * { margin-left: 24px; }
 .legacy-flex-gap .opt > .opt-name { margin-left: 16px; }

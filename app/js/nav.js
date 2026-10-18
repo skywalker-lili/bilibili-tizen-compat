@@ -49,6 +49,7 @@ var Nav = (function () {
         current = el;
         if (el.className.indexOf("focused") < 0) { el.className += " focused"; }
         scrollIntoView(el);
+        scrollSideways(el);
         if (handlers.focus) { handlers.focus(el); }
     }
 
@@ -62,7 +63,10 @@ var Nav = (function () {
     function scrollIntoView(el) {
         var scroller = el;
         while (scroller && scroller !== document.body) {
-            var marked = scroller.className && scroller.className.indexOf("scroll") >= 0;
+            /* The word, not the substring: "hscroll" rows (sideways, inside the
+             * panel) contain it, and stopping at one of those left the panel
+             * itself never scrolling (2026-10-18). */
+            var marked = scroller.className && (" " + scroller.className + " ").indexOf(" scroll ") >= 0;
             var overflows = scroller.scrollHeight > scroller.clientHeight + 4;
             if (marked || overflows) { break; }
             scroller = scroller.parentNode;
@@ -72,6 +76,20 @@ var Nav = (function () {
         var sr = scroller.getBoundingClientRect();
         var target = er.top - sr.top + scroller.scrollTop - (sr.height / 2) + (er.height / 2);
         scroller.scrollTop = Math.max(0, target);
+    }
+
+    /* A row wider than its box — the top bar's tabs, once 直播 and the chosen
+     * zones outgrew 1920 (2026-10-18). Marked "hscroll"; the focused item is
+     * kept clear of either edge by a margin, so the next one along shows a
+     * little and the row reads as continuing. Elements past the edge are still
+     * laid out where they would be, so the geometric search above reaches them
+     * as the next item to the right, and focusing one brings it in. */
+    function scrollSideways(el) {
+        var box = el.parentNode;
+        if (!box || !box.className || box.className.indexOf("hscroll") < 0) { return; }
+        var er = el.getBoundingClientRect(), br = box.getBoundingClientRect(), pad = 80;
+        if (er.left < br.left + pad) { box.scrollLeft = Math.max(0, box.scrollLeft - (br.left + pad - er.left)); }
+        else if (er.right > br.right - pad) { box.scrollLeft += er.right - (br.right - pad); }
     }
 
     function move(dx, dy) {
@@ -197,6 +215,9 @@ var Nav = (function () {
              * tab kept its ring while a card gained one. */
             setFocus(el || focusables()[0]);
         },
+        /* Brings an element of an hscroll row into view without focusing it —
+         * the highlighted tab, when focus is down in the grid. */
+        reveal: function (el) { if (el) { scrollSideways(el); } },
         onBack: function (fn) { handlers.back = fn; },
         onFocus: function (fn) { handlers.focus = fn; },
         onKey: function (fn) { handlers.key = fn; },

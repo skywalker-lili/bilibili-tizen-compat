@@ -123,6 +123,24 @@
         Nav.reset("#btn-retry");
     }
 
+    function bindTab(tab) {
+        tab.onselect = function () {
+            var s = tab.getAttribute("data-screen");
+            Auth.cancelLogin();
+            if (s === "search") { renderSearch(); }
+            else if (s === "mine") {
+                mineView = { kind: "history", id: 0, title: "" };
+                renderMine();
+            }
+            else if (s === "settings") { renderSettings(); }
+            /* Pressing the tab you are already on reloads it; coming
+             * back to a tab restores where you were, which is what a
+             * television expects — refetching and jumping to the first
+             * card loses your place every time you glance elsewhere. */
+            else { loadFeed(s, state.screen !== s); }
+        };
+    }
+
     function markTab() {
         var tabs = document.querySelectorAll("#tabs .tab");
         var focused = Nav.current();
@@ -131,8 +149,13 @@
             /* Rebuilding className used to strip "focused" from the tab the user
              * was standing on, so the ring vanished for as long as the feed took
              * to load. */
-            tabs[i].className = "tab focusable" + (on ? " active" : "") +
+            var screenOf = tabs[i].getAttribute("data-screen");
+            tabs[i].className = "tab focusable" + (TAB_NAMES[screenOf] ? " user-tab" : "") +
+                                (on ? " active" : "") +
                                 (tabs[i] === focused ? " focused" : "");
+            /* The bar scrolls sideways now: with the focus down in the grid,
+             * the highlighted tab still has to be in sight. */
+            if (on && !(focused && focused.parentNode === tabs[i].parentNode)) { Nav.reveal(tabs[i]); }
         }
         paintAccount();
     }
@@ -340,6 +363,21 @@
     }
 
     function cardHtml(v, i) {
+        /* 直播: a red badge where the length goes, who and what, how many. */
+        if (v.live) {
+            return '<div class="card focusable" data-i="' + i + '">' +
+                   '<div class="thumb"><img src="' + esc(v.pic) + '" alt="">' +
+                   '<span class="dur live-badge">直播</span></div>' +
+                   '<div class="card-title">' + esc(v.title) + '</div>' +
+                   '<div class="card-info"><div class="card-byline">' +
+                   (v.followed ? '<span class="card-follow">关注</span>' : "") +
+                   '<span class="card-author">' + esc(v.author) + '</span>' +
+                   (v.area ? '<span class="card-views" data-short="">· ' + esc(v.area) + '</span>' : "") +
+                   '</div>' +
+                   (v.online ? '<span class="card-info-date" data-compact="' + esc(v.online) + '">' +
+                       esc(v.online) + '</span>' : "") +
+                   '</div></div>';
+        }
         /* Server-side history carries its own progress; everything else asks
          * the local record. */
         var seen = (typeof v.seen === "number") ? v.seen : Resume.fraction(v.bvid);
@@ -374,6 +412,8 @@
     }
 
     function bindCardAction(card, video, folderId) {
+        /* Like / coin / favourite are for videos; a live room has none of them. */
+        if (video && video.live) { return; }
         card.onlongselect = function () { openActionMenu(video, folderId || 0); };
     }
 
@@ -672,6 +712,7 @@
      * the second visit used to lose it. */
     function emptyTextFor(kind) {
         if (isUp(kind)) { return "这位 UP 主还没有投稿"; }
+        if (kind === "live") { return "现在没有能看的直播"; }
         return kind === "toview"
             ? "稍后再看是空的 —— 在手机或网页上点「稍后再看」，加进去的视频就会出现在这里"
             : undefined;
@@ -1096,12 +1137,164 @@
      * search and ranking endpoints will not tell you, and guessing by name
      * finds nothing. */
     /* 人工智能 (1011) and 科技数码 (1012) were tabs until 2026-08-15 and were
-     * taken out of the bar because nobody in this room watches them. The ids
-     * stay written down: they cost nothing here, and there is no public list of
-     * partition ids to look them up in again — each one has to be read off the
-     * website's own requests. Adding a tab back is one line in index.html plus
-     * one entry here. */
-    var ZONES = { food: 1020, dance: 1004 };
+     * taken out of the bar because nobody in this room watches them.
+     *
+     * ⟶ 2026-10-18 the viewer asked to choose (「自选分区页签」), so every zone
+     * is here: the 30 public main zones of the current layout, in the site's
+     * own order. bilibili still publishes no list; this one is the community's
+     * (pskdje/bilibili-API-collect, docs/video/video_zone_v2.md). It agrees with
+     * every id above, and 1008 (游戏) answered ranking with shooters and RPGs
+     * when checked. Which ones are tabs, and where, is 设置 → 顶栏 (below); the
+     * bar scrolls sideways when they do not fit. The kind is the zone's own
+     * slug, which is what food and dance already were. */
+    var ZONE_LIST = [
+        ["douga", "动画", 1005], ["game", "游戏", 1008], ["kichiku", "鬼畜", 1007],
+        ["music", "音乐", 1003], ["dance", "舞蹈", 1004], ["cinephile", "影视", 1001],
+        ["ent", "娱乐", 1002], ["knowledge", "知识", 1010], ["tech", "科技数码", 1012],
+        ["information", "资讯", 1009], ["food", "美食", 1020], ["shortplay", "小剧场", 1021],
+        ["car", "汽车", 1013], ["fashion", "时尚美妆", 1014], ["sports", "体育运动", 1018],
+        ["animal", "动物", 1024], ["vlog", "vlog", 1029], ["painting", "绘画", 1006],
+        ["ai", "人工智能", 1011], ["home", "家装房产", 1015], ["outdoors", "户外潮流", 1016],
+        ["gym", "健身", 1017], ["handmake", "手工", 1019], ["travel", "旅游出行", 1022],
+        ["rural", "三农", 1023], ["parenting", "亲子", 1025], ["health", "健康", 1026],
+        ["emotion", "情感", 1027], ["life_joy", "生活兴趣", 1030], ["life_experience", "生活经验", 1031]
+    ];
+    var ZONES = {};
+    for (var zi = 0; zi < ZONE_LIST.length; zi++) { ZONES[ZONE_LIST[zi][0]] = ZONE_LIST[zi][2]; }
+
+    /* The whole top bar is the viewer's (2026-10-18: 「直播 动态 排行 稍后 热门
+     * 我的都可以设置，只是第一个默认推荐就好了，其次顺序也可以允许用户调整」).
+     * 推荐 is first and 搜索 / 设置 are last, fixed — 设置 is the way back to
+     * this choice, and 推荐 is what the set opens on. Between them, whatever is
+     * in `tabs`, in its order: the built-in pages and the zones alike. The
+     * default is the bar as it was when this was asked for, which the viewer
+     * named as the default for the release. */
+    var CORE_TABS = [["live", "直播"], ["dynamic", "动态"], ["mine", "我的"],
+                     ["toview", "稍后"], ["popular", "热门"], ["ranking", "排行"]];
+    var TAB_NAMES = {};
+    for (var ti = 0; ti < CORE_TABS.length; ti++) { TAB_NAMES[CORE_TABS[ti][0]] = CORE_TABS[ti][1]; }
+    for (var tz = 0; tz < ZONE_LIST.length; tz++) { TAB_NAMES[ZONE_LIST[tz][0]] = ZONE_LIST[tz][1]; }
+    var DEFAULT_TABS = ["live", "dynamic", "mine", "toview", "popular", "ranking", "food", "dance"];
+    function chosenTabs() {
+        var v = Settings.get("tabs", null);
+        if (!v || typeof v.length !== "number") { v = DEFAULT_TABS; }
+        var out = [];
+        for (var i = 0; i < v.length; i++) {
+            if (TAB_NAMES[v[i]] && out.indexOf(v[i]) < 0) { out.push(v[i]); }
+        }
+        return out;
+    }
+    /* Everything that can be a tab and is not one now: the pages first, then
+     * the zones in the site's order. */
+    function spareTabs() {
+        var on = chosenTabs(), out = [], i;
+        for (i = 0; i < CORE_TABS.length; i++) { if (on.indexOf(CORE_TABS[i][0]) < 0) { out.push(CORE_TABS[i][0]); } }
+        for (i = 0; i < ZONE_LIST.length; i++) { if (on.indexOf(ZONE_LIST[i][0]) < 0) { out.push(ZONE_LIST[i][0]); } }
+        return out;
+    }
+    function tabNames(list) {
+        return list.length ? list.map(function (k) { return TAB_NAMES[k]; }).join("、") : "无";
+    }
+    /* The chosen tabs, between 推荐 and 搜索. Rebuilt from scratch: the bar is
+     * small, and a change in 设置 should look the same as a fresh start. */
+    function renderUserTabs() {
+        var bar = el("tabs"), before = document.querySelector('#tabs .tab[data-screen="search"]');
+        var old = document.querySelectorAll("#tabs .user-tab");
+        for (var i = 0; i < old.length; i++) { bar.removeChild(old[i]); }
+        var list = chosenTabs();
+        for (var j = 0; j < list.length; j++) {
+            var t = document.createElement("div");
+            t.className = "tab focusable user-tab";
+            t.setAttribute("data-screen", list[j]);
+            t.textContent = TAB_NAMES[list[j]];
+            bar.insertBefore(t, before);
+            bindTab(t);
+        }
+        markTab();
+    }
+
+    /* 设置 → 顶栏. Two rows of chips: the bar as it stands, in order, with the
+     * fixed three shown but not focusable; and everything that could be on it.
+     * 确认 on a spare adds it at the end. 确认 on one in the bar picks it up:
+     * 左 / 右 move it (the bar above moves with it), 下 takes it off the bar,
+     * 确认 / 上 / 返回 put it down. While one is picked up the keys are this
+     * row's (barPickKey, ahead of everything in Nav.onKey). */
+    var barPick = null;
+    function paintBarChips(focus) {
+        var list = chosenTabs(), spare = spareTabs(), html = '<div class="opt fixed">推荐</div>', i;
+        for (i = 0; i < list.length; i++) {
+            html += '<div class="opt focusable' + (barPick === list[i] ? " picked" : "") +
+                    '" data-tab="' + list[i] + '">' + esc(TAB_NAMES[list[i]]) + '</div>';
+        }
+        html += '<div class="opt fixed">搜索</div><div class="opt fixed">设置</div>';
+        el("bar-chips").innerHTML = html;
+        html = "";
+        for (i = 0; i < spare.length; i++) {
+            html += '<div class="opt focusable" data-spare="' + spare[i] + '">' + esc(TAB_NAMES[spare[i]]) + '</div>';
+        }
+        el("spare-chips").innerHTML = html || '<div class="me-sub">全都在顶栏上了</div>';
+        var chips = document.querySelectorAll("#bar-chips .opt.focusable");
+        for (i = 0; i < chips.length; i++) {
+            (function (chip) {
+                chip.onselect = function () {
+                    barPick = chip.getAttribute("data-tab");
+                    paintBarChips({ bar: barPick });
+                };
+            })(chips[i]);
+        }
+        chips = document.querySelectorAll("#spare-chips .opt");
+        for (i = 0; i < chips.length; i++) {
+            (function (chip, at) {
+                chip.onselect = function () {
+                    var k = chip.getAttribute("data-spare"), now = chosenTabs();
+                    now.push(k);
+                    Settings.set("tabs", now);
+                    renderUserTabs();
+                    /* Stay in this row, on whatever took its place: adding
+                     * three in a row should be three presses of 确认. */
+                    var rest = spareTabs();
+                    paintBarChips(rest.length ? { spare: rest[Math.min(at, rest.length - 1)] } : { bar: k });
+                    report("settings", "顶栏加上 " + TAB_NAMES[k] + "：" + tabNames(chosenTabs()));
+                };
+            })(chips[i], i);
+        }
+        if (focus) {
+            var target = focus.bar ? document.querySelector('#bar-chips .opt[data-tab="' + focus.bar + '"]')
+                                   : document.querySelector('#spare-chips .opt[data-spare="' + focus.spare + '"]');
+            if (target) { Nav.focus(target); }
+        }
+    }
+    function barPickKey(k) {
+        var list = chosenTabs(), at = list.indexOf(barPick), picked = barPick;
+        if (at < 0) { barPick = null; paintBarChips(); return true; }
+        if (k === Nav.KEY.LEFT || k === Nav.KEY.RIGHT) {
+            var to = at + (k === Nav.KEY.RIGHT ? 1 : -1);
+            if (to >= 0 && to < list.length) {
+                list.splice(at, 1);
+                list.splice(to, 0, picked);
+                Settings.set("tabs", list);
+                renderUserTabs();
+            }
+            paintBarChips({ bar: picked });
+            return true;
+        }
+        if (k === Nav.KEY.DOWN) {
+            list.splice(at, 1);
+            Settings.set("tabs", list);
+            renderUserTabs();
+            barPick = null;
+            paintBarChips(list.length ? { bar: list[Math.min(at, list.length - 1)] } : { spare: picked });
+            report("settings", "顶栏去掉 " + TAB_NAMES[picked] + "：" + tabNames(list));
+            return true;
+        }
+        if (k === Nav.KEY.ENTER || k === Nav.KEY.UP || k === Nav.KEY.RETURN) {
+            barPick = null;
+            paintBarChips({ bar: picked });
+            report("settings", "顶栏：" + tabNames(list));
+            return true;
+        }
+        return k !== Nav.KEY.EXIT;
+    }
 
     /* Nobody in this repository has seen a 稍后再看 response, and CLAUDE.md says
      * in as many words not to assume it has history's shape. So the first list
@@ -1130,12 +1323,50 @@
                " 标题=" + String(v.title || "").slice(0, 20));
     }
 
+    /* 直播 (2026-10-18). The first page puts the people this account follows
+     * who are live now in front (marked 关注), then the whole site by how many
+     * are watching; later pages are more of the latter. A following list that
+     * fails is logged and left out — the tab still has the rest to show. The
+     * first answer of a run is described in the log, field names and all: the
+     * following endpoint is a web one, and whether it honours access_key the
+     * way the others do is only known from the set. */
+    var liveFollowTold = false;
+    function fetchLive(page, onOk, onFail) {
+        function withHot(followed) {
+            API.liveRooms(page, function (rooms) {
+                var seen = {}, out = [], all = (followed || []).concat(rooms);
+                for (var i = 0; i < all.length; i++) {
+                    if (all[i].roomid && !seen[all[i].roomid]) { seen[all[i].roomid] = 1; out.push(all[i]); }
+                }
+                onOk(out, { more: rooms.length >= 30 });
+            }, function (why) {
+                if (followed && followed.length) { onOk(followed, { more: false }); return; }
+                onFail(why);
+            });
+        }
+        if (page !== 1 || !Auth.isLoggedIn()) { withHot(null); return; }
+        API.liveFollowing(function (items, raw) {
+            if (!liveFollowTold) {
+                liveFollowTold = true;
+                var keys = [], f = raw[0] || {};
+                for (var k in f) { if (f.hasOwnProperty(k)) { keys.push(k); } }
+                report("live", "关注的直播：列表 " + raw.length + " 个，正在播 " + items.length + " 个" +
+                       (keys.length ? " | 第一条的字段：" + keys.join(",") : ""));
+            }
+            withHot(items);
+        }, function (why) {
+            report("live", "关注的直播取不到：" + why);
+            withHot(null);
+        });
+    }
+
     /* ranking answers with its full 100 in one go and has no second page. */
     function fetchPage(kind, page, onOk, onFail) {
         if (isUp(kind)) {
             var uc = feedCache[kind];
             return API.space(upMid(kind), (page > 1 && uc) ? (uc.cursor || "") : "", onOk, onFail);
         }
+        if (kind === "live") { return fetchLive(page, onOk, onFail); }
         if (kind === "ranking") { return page === 1 ? API.ranking(0, onOk, onFail) : onOk([]); }
         if (ZONES[kind]) { return page === 1 ? API.ranking(ZONES[kind], onOk, onFail) : onOk([]); }
         if (kind === "rcmd") { return API.recommended(page, onOk, onFail); }
@@ -1171,7 +1402,7 @@
         /* pendingNext: the end-of-video chooser paints cards with a `data-i` of
          * their own, and focus landing on one of those must not be read as the
          * viewer reaching the end of the feed behind it. */
-        if (loadingMore || playing || optionsOpen || pendingNext) { return; }
+        if (loadingMore || playing || liveRoom || optionsOpen || pendingNext) { return; }
         var cache = feedCache[state.screen];
         if (!cache || cache.exhausted) { return; }
         if (!focused || !focused.getAttribute || focused.getAttribute("data-i") === null) { return; }
@@ -1193,11 +1424,14 @@
 
             /* rcmd can repeat items across batches; dropping duplicates keeps
              * the grid from filling with the same handful of videos. */
+            /* Keyed by room for 直播: a live room has no bvid, and keyed on bvid
+             * every one of them read as a duplicate of the first. */
             var seen = {};
-            for (var i = 0; i < c.items.length; i++) { seen[c.items[i].bvid] = 1; }
+            for (var i = 0; i < c.items.length; i++) { seen[itemKey(c.items[i])] = 1; }
             var fresh = [];
             for (var j = 0; j < more.length; j++) {
-                if (more[j].bvid && !seen[more[j].bvid]) { fresh.push(more[j]); seen[more[j].bvid] = 1; }
+                var key = itemKey(more[j]);
+                if (key && !seen[key]) { fresh.push(more[j]); seen[key] = 1; }
             }
 
             c.page = next;
@@ -1210,6 +1444,8 @@
             if (c) { c.exhausted = true; }
         });
     }
+
+    function itemKey(v) { return v.live ? (v.roomid ? "live:" + v.roomid : "") : (v.bvid || ""); }
 
     function appendCards(items, offset) {
         var grid = el("feed-grid") || screenEl.querySelector(".grid");
@@ -1611,6 +1847,16 @@
         if (playing || pendingNext) {
             pendingWake = true;
             report("lifecycle", "正在播放，先不动它 —— 退出播放时再补上重刷");
+            return;
+        }
+        /* A live room comes back to a stream that has moved on without it:
+         * start again at what is live now. The feed refresh is owed, as above. */
+        if (liveRoom) {
+            pendingWake = true;
+            report("lifecycle", "正在看直播，重新连到现在的画面 —— 退出时再补上重刷");
+            liveRoom.tries = 0;
+            Player.stop();
+            startLiveRoom("");
             return;
         }
         /* The two screens that are asking the viewer a question: somebody may be
@@ -2372,7 +2618,14 @@
             '新版本启动不起来会自动退回装的这一版。</div>' +
             '<div class="section">浏览</div>' +
             '<div class="actions"><div class="btn focusable" id="btn-density"></div></div>' +
-            '<div class="me-sub" style="margin-top:24px">离电视远就选 3 个，标题看得清；坐得近或屏幕小，4 个、5 个能一屏看到更多。</div></div>';
+            '<div class="me-sub" style="margin-top:24px">离电视远就选 3 个，标题看得清；坐得近或屏幕小，4 个、5 个能一屏看到更多。</div>' +
+            '<div class="section">顶栏</div>' +
+            '<div class="opt-row" id="bar-chips"></div>' +
+            '<div class="me-sub" style="margin-top:24px">按确认拿起一个页签：左右键挪位置，下键把它从顶栏拿掉，再按一次确认放下。' +
+            '推荐固定在最前，搜索和设置固定在最后；顶栏放不下时，左右移动会带着它滑。</div>' +
+            '<div class="section">可以加到顶栏的</div>' +
+            '<div class="opt-row" id="spare-chips"></div>' +
+            '<div class="me-sub" style="margin-top:24px">按确认加到顶栏最后（搜索前面）。</div></div>';
         var button = el("btn-autoplay");
         function paint() {
             button.textContent = "自动播放下一个：" + (autoNextEnabled() ? "开" : "关");
@@ -2429,6 +2682,9 @@
             Update.check(function () { if (stillViewing(view)) { paintUpdate(); } });
             paintUpdate();
         };
+
+        barPick = null;
+        paintBarChips();
 
         var quality = el("btn-quality");
         function paintQuality() { quality.textContent = "画质上限：" + QN_LABELS[Settings.qnCap()]; }
@@ -3277,6 +3533,7 @@
 
     function playVideo(v, fromPanel) {
         if (!fromPanel) { rememberPosition(); }
+        if (v.live) { openLive(v); return; }
 
         /* A card from bilibili's own history carries where the phone got to.
          * Picking it up is the whole point of showing that section: the phone
@@ -3309,14 +3566,244 @@
         }
 
         var token = newView();
-        toast("正在打开…");
+        showOpening(v);
         API.view(v.bvid, function (d) {
             if (!stillViewing(token)) { return; }
+            opening = false;
             play(d, resumeCid(d));
         }, function (why) {
             if (!stillViewing(token)) { return; }
+            cancelOpening();
             toast("打开失败：" + why);
         });
+    }
+
+    /* A card without a cid (搜索, 动态, UP 主页, 收藏夹…) has to ask view() for
+     * one before anything can play. That round trip used to show a toast,
+     * 「正在打开…」, which then sat under the picture for its full four seconds
+     * once the video was up (the viewer, 10-18: 「点开一个视频，不要在下方显示
+     * 正在打开」). Now the player's own loading screen comes up at once with the
+     * card's title — the same thing a card that carries its cid shows — so the
+     * press still visibly does something. Until view() answers, keys are held
+     * back from the grid behind it and 返回 goes back to that grid. */
+    var opening = false;
+    function showOpening(v) {
+        opening = true;
+        el("shell").className = "hidden";
+        el("loading-title").textContent = v.title || "";
+        el("loading-status").textContent = "";
+        el("player-loading").className = "";
+    }
+    function cancelOpening() {
+        if (!opening) { return; }
+        opening = false;
+        newView();   /* a late view() answer must not start the video anyway */
+        el("player-loading").className = "hidden";
+        el("shell").className = "";
+    }
+
+    /* ---------------- 直播 (2026-10-18) ----------------
+     *
+     * A room is opened from a card on the 直播 tab and owns the screen until
+     * 返回. Kept apart from `playing` on purpose: everything keyed on that —
+     * resume points, history reports, the scrub, the banner's hide logic, the
+     * panel, danmaku, subtitles, the recovery ladders — belongs to a video
+     * with a length, and none of it means anything at the live edge.
+     *
+     * 上 / 下 change room, through the list the card came from, the way a
+     * television changes channel. A stream that fails is reconnected with a
+     * fresh address (they are signed and expire), the other CDN host first;
+     * three failures without a good minute in between and the room is left.
+     * No live danmaku yet: that is a WebSocket of its own, left for later. */
+    var liveRoom = null;
+    var liveUiTimer = null;
+    var LIVE_HINT = "确认键 暂停/播放 · 上下键 换直播间 · 返回键 退出";
+    var LIVE_PAUSE_LIMIT = 20000;   /* a live window is seconds wide; longer than this, start at the edge again */
+
+    function openLive(v) {
+        var cache = feedCache[state.screen];
+        var list = (cache && cache.items) || [v];
+        var index = list.indexOf(v);
+        if (index < 0) { list = [v]; index = 0; }
+        liveRoom = { list: list, index: index, tries: 0, token: 0, item: null,
+                     urls: null, qnName: "", pausedAt: 0, timed: false, failing: false, okTimer: null };
+        startLiveRoom("");
+    }
+
+    function startLiveRoom(why) {
+        var room = liveRoom;
+        if (!room) { return; }
+        var v = room.list[room.index];
+        var token = ++room.token;
+        room.item = v;
+        room.qnName = "";
+        room.timed = false;
+        room.failing = false;
+        el("shell").className = "hidden";
+        el("pause-glyph").className = "hidden";
+        el("loading-title").textContent = v.title || v.author || "";
+        el("loading-status").textContent = why || "";
+        el("player-loading").className = "";
+        showLiveUi();
+        Player.startTiming();
+        API.livePlay(v.roomid, function (p) {
+            if (liveRoom !== room || token !== room.token) { return; }
+            room.urls = p.urls;
+            room.qnName = p.qnName;
+            var url = p.urls[room.tries % p.urls.length];
+            report("live", "开 " + v.roomid + "（" + v.author + "）" + p.qnName + " " + p.codec +
+                   (p.signed ? "，带账号" : "，不带账号") + "，可选 " + p.accept.join("/") +
+                   "，主机 " + (url.split("/")[2] || "?") + (why ? "（" + why + "）" : ""));
+            paintLiveUi();
+            Player.playLive(url);
+        }, function (whyNot) {
+            if (liveRoom !== room || token !== room.token) { return; }
+            report("live", "房间 " + v.roomid + " 取不到流：" + whyNot);
+            stopLive();
+            toast("这个直播间现在放不了：" + whyNot);
+        });
+    }
+
+    function onLiveEvent(kind, data) {
+        var room = liveRoom;
+        if (kind === "playing") {
+            el("player-loading").className = "hidden";
+            el("loading-status").textContent = "";
+            if (!room.timed) {
+                room.timed = true;
+                report("live", "到画面 " + Player.timings());
+                showLiveUi();
+            }
+            /* A good minute buys the reconnect budget back. */
+            if (room.okTimer) { clearTimeout(room.okTimer); }
+            room.okTimer = setTimeout(function () { if (liveRoom === room) { room.tries = 0; } }, 60000);
+        } else if (kind === "buffering") {
+            el("live-hint").textContent = data ? "缓冲中…" : LIVE_HINT;
+            if (data) { showLiveUi(); }
+        } else if (kind === "error") {
+            if (room.failing) { return; }   /* one failure, one reconnect */
+            room.failing = true;
+            report("live", data);
+            if (room.okTimer) { clearTimeout(room.okTimer); room.okTimer = null; }
+            if (++room.tries > 3) {
+                stopLive();
+                toast("直播断了，重新连了三次也没接上");
+                return;
+            }
+            Player.stop();
+            setTimeout(function () {
+                if (liveRoom === room) { startLiveRoom("信号不稳，正在重新连接…"); }
+            }, 1000);
+        }
+    }
+
+    function liveKey(k) {
+        switch (k) {
+            case Nav.KEY.ENTER:
+            case Nav.KEY.PLAY_PAUSE:
+                setLivePaused(!Player.userPaused()); return true;
+            case Nav.KEY.PLAY:
+                if (Player.userPaused()) { setLivePaused(false); } return true;
+            case Nav.KEY.PAUSE:
+                if (!Player.userPaused()) { setLivePaused(true); } return true;
+            case Nav.KEY.UP:
+            case Nav.KEY.DOWN:
+                switchLive(k === Nav.KEY.DOWN ? 1 : -1); return true;
+            case Nav.KEY.RETURN:
+                stopLive(); return true;
+            case Nav.KEY.EXIT:
+                return false;
+            default:
+                showLiveUi(); return true;
+        }
+    }
+
+    function setLivePaused(on) {
+        var room = liveRoom;
+        if (on) {
+            Player.pause();
+            room.pausedAt = new Date().getTime();
+            el("pause-glyph").className = "";
+            showLiveUi();
+            return;
+        }
+        el("pause-glyph").className = "hidden";
+        /* What was live when the pause began has scrolled out of the window;
+         * there is nothing to carry on from, so start again at the edge. */
+        if (room.pausedAt && new Date().getTime() - room.pausedAt > LIVE_PAUSE_LIMIT) {
+            room.pausedAt = 0;
+            report("live", "暂停超过 " + LIVE_PAUSE_LIMIT / 1000 + " 秒，从现在的画面重新开");
+            Player.stop();
+            startLiveRoom("");
+            return;
+        }
+        room.pausedAt = 0;
+        Player.resume();
+        showLiveUi();
+    }
+
+    function switchLive(step) {
+        var room = liveRoom, next = room.index + step;
+        if (next < 0 || next >= room.list.length) {
+            toast(step < 0 ? "已经是第一个直播间了" : "已经是这一页的最后一个直播间了");
+            showLiveUi();
+            return;
+        }
+        room.index = next;
+        room.tries = 0;
+        room.pausedAt = 0;
+        if (room.okTimer) { clearTimeout(room.okTimer); room.okTimer = null; }
+        Player.stop();
+        startLiveRoom("");
+    }
+
+    function stopLive() {
+        var room = liveRoom;
+        if (!room) { return; }
+        if (room.okTimer) { clearTimeout(room.okTimer); }
+        liveRoom = null;
+        Player.stop();
+        hideLiveUi();
+        el("pause-glyph").className = "hidden";
+        el("player-loading").className = "hidden";
+        el("shell").className = "";
+        /* Back on the card of the room last watched, which after 上 / 下 is
+         * not the one that was opened. */
+        var cache = feedCache[state.screen];
+        if (cache && cache.items === room.list) { cache.index = room.index; }
+        report("live", "退出直播间 " + (room.item ? room.item.roomid : ""));
+        if (payOwedWake()) { return; }
+        showScreen(state.screen, true);
+    }
+
+    function paintLiveUi() {
+        var v = liveRoom && liveRoom.item;
+        if (!v) { return; }
+        var meta = [];
+        if (v.author) { meta.push(v.author); }
+        if (v.area) { meta.push(v.area); }
+        if (v.online) { meta.push(v.online); }
+        if (liveRoom.qnName) { meta.push(liveRoom.qnName); }
+        el("live-title").textContent = v.title || "";
+        el("live-meta").textContent = meta.join(" · ");
+        el("live-hint").textContent = LIVE_HINT;
+    }
+    function showLiveUi() {
+        if (!liveRoom) { return; }
+        paintLiveUi();
+        el("live-ui").className = "";
+        if (liveUiTimer) { clearTimeout(liveUiTimer); }
+        liveUiTimer = setTimeout(liveUiTick, 4000);
+    }
+    function liveUiTick() {
+        liveUiTimer = null;
+        /* Stays up while paused: the banner is what says so. */
+        if (liveRoom && Player.userPaused()) { liveUiTimer = setTimeout(liveUiTick, 1000); return; }
+        el("live-ui").className = "hidden";
+    }
+    function hideLiveUi() {
+        if (liveUiTimer) { clearTimeout(liveUiTimer); liveUiTimer = null; }
+        el("live-ui").className = "hidden";
     }
 
     function startProgressive(r) {
@@ -3806,10 +4293,11 @@
              * request, nothing to pace. All it bought was P41 and beyond being
              * unreachable from the only screen that lists them, silently, on
              * exactly the uploads that need the list most (collections and
-             * courses run to hundreds). The row wraps, nav.js walks a ragged
-             * grid without being told its width, and Nav.reset scrolls the panel
-             * to `.opt.current`, so a long list lands on the part being watched
-             * rather than at P1. */
+             * courses run to hundreds). One row since 2026-10-18, sliding
+             * sideways under the focus (index.html: "hscroll") — wrapped, a long
+             * list was dozens of lines to climb past on the way up the panel —
+             * and Nav.reset puts the focus on `.opt.current`, so the row opens
+             * on the part being watched rather than at P1. */
             for (var p = 0; p < d.pages.length; p++) {
                 /* The name, not just the number. It has been in hand all along —
                  * `view()` maps `part`, and the resume toast and the player's own
@@ -5243,6 +5731,11 @@
     }
 
     Player.on(function (kind, data) {
+        if (liveRoom) {
+            if (kind === "log") { report("live", data); }
+            else { onLiveEvent(kind, data); }
+            return;
+        }
         if (kind === "time") {
             if (playing) {
                 paintSubtitleAt(data.position);
@@ -5778,6 +6271,12 @@
 
     Nav.onKey(function (k) {
         autoplaysSinceKey = 0;
+        if (opening) {
+            if (k === Nav.KEY.RETURN) { cancelOpening(); return true; }
+            return k !== Nav.KEY.EXIT;
+        }
+        if (liveRoom) { return liveKey(k); }
+        if (barPick) { return barPickKey(k); }
         if (actionView) {
             if (k === Nav.KEY.RETURN) { closeActionMenu(); return true; }
             return false;
@@ -5862,6 +6361,8 @@
     });
 
     Nav.onBack(function () {
+        if (opening) { cancelOpening(); return; }
+        if (liveRoom) { stopLive(); return; }
         if (imeOpen) { closeIme(false); return; }
         if (actionView) { closeActionMenu(); return; }
         if (commentsView) { leaveCommentReplies(); return; }
@@ -5910,25 +6411,8 @@
             if (optionsOpen) { panelGrid.follow(elm, panelPage()); }
         });
         var tabs = document.querySelectorAll("#tabs .tab");
-        for (var i = 0; i < tabs.length; i++) {
-            (function (tab) {
-                tab.onselect = function () {
-                    var s = tab.getAttribute("data-screen");
-                    Auth.cancelLogin();
-                    if (s === "search") { renderSearch(); }
-                    else if (s === "mine") {
-                        mineView = { kind: "history", id: 0, title: "" };
-                        renderMine();
-                    }
-                    else if (s === "settings") { renderSettings(); }
-                    /* Pressing the tab you are already on reloads it; coming
-                     * back to a tab restores where you were, which is what a
-                     * television expects — refetching and jumping to the first
-                     * card loses your place every time you glance elsewhere. */
-                    else { loadFeed(s, state.screen !== s); }
-                };
-            })(tabs[i]);
-        }
+        for (var i = 0; i < tabs.length; i++) { bindTab(tabs[i]); }
+        renderUserTabs();
 
         el("account").onselect = function () {
             Auth.cancelLogin();
