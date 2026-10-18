@@ -696,11 +696,17 @@ body.density-5 .library-item { width: 344px; }
 /* 弹幕 (danmaku.js, 2026-10-18). The top ~70% of the picture — the bottom is
  * the subtitles' and the progress bar's. No z-index: document order puts it
  * under the subtitles and the player chrome. Plain text-shadow for the outline;
- * CSS filters were measured expensive on this set (douyin-tizen). */
+ * CSS filters were measured expensive on this set (douyin-tizen).
+ *
+ * The opacity sits on each comment, not on the box, and the outline has no
+ * blur (deploy.sh --dmperf on the set, 10-18): opacity on the 1920×756 box
+ * draws the whole box off screen every frame, and a blurred shadow is slow to
+ * raster each time a comment enters. Together they cost 12 frames in 14 s at
+ * the median (73 at worst) — the shake the viewer saw — against 2 without. */
 #danmaku { position: absolute; left: 0; top: 0; width: 1920px; height: 756px;
-    overflow: hidden; pointer-events: none; opacity: 0.85; }
+    overflow: hidden; pointer-events: none; }
 #danmaku .dm { position: absolute; left: 0; top: 0; white-space: nowrap;
-    font-weight: 600; line-height: 1.24; will-change: transform;
-    text-shadow: 1px 1px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 0 0 4px rgba(0,0,0,0.6); }
+    font-weight: 600; line-height: 1.24; will-change: transform; opacity: 0.85;
+    text-shadow: 1px 1px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000; }
 .comments-open #danmaku { display: none; }
 

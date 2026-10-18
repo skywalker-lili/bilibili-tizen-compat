@@ -23,7 +23,15 @@ var Danmaku = (function () {
     var BASE = "https://api.bilibili.com";
 
     var WIDTH = 1920;           /* the canvas this app is laid out on */
-    var SPEED = WIDTH / 7000;   /* px per media-ms: a short comment crosses in ~7.5 s */
+    /* px per media-ms: four whole pixels per frame at 60 Hz (the set's rate;
+     * rAF 16.7 ms there), and 3 / 5 / 6 / 8 at 0.75x / 1.25x / 1.5x / 2x. At a
+     * fractional step (it was 1920/7000, 4.57 px a frame) a comment lands between
+     * pixels on most frames and the compositor draws it filtered — the text goes
+     * soft and sharp from frame to frame, which reads as a stutter in the
+     * scroll (10-18, the viewer: 「从右往左飘的时候还是能看出一点点卡顿感」).
+     * Keyframes start and end on whole pixels for the same reason. A short
+     * comment crosses in ~8.5 s. */
+    var SPEED = 0.24;
     var GAP = 48;               /* px between the tail of one comment and the next in a lane */
     var FIXED_MS = 4000;        /* top / bottom comments stay this long */
     var FONT = 44;              /* px for bilibili's standard size 25, read from across a room */
@@ -256,6 +264,20 @@ var Danmaku = (function () {
             if (pool.length < 80) { pool.push(node); }
         }
 
+        /* Start on the frame grid. Left to the engine, the start time falls
+         * between frames and every position after it carries the same
+         * fraction: whole-pixel steps, but between two pixels for the whole
+         * crossing. The timeline's current time is a frame's (between frames
+         * Chromium rounds it onto the frame interval), so starting there puts
+         * every later frame on a whole pixel — the desktop run measured 86%
+         * of positions between pixels without this. */
+        function alignStart(anim) {
+            try {
+                var t = document.timeline ? document.timeline.currentTime : null;
+                if (typeof t === "number") { anim.startTime = t; }
+            } catch (e) {}
+        }
+
         function spawn(item, now) {
             var lanesNow = area();
             var w = measure(item), row, frames, duration;
@@ -285,7 +307,7 @@ var Danmaku = (function () {
             var entry = { node: node, anim: null };
             var anim = node.animate(frames, { duration: duration, easing: "linear", fill: "forwards" });
             anim.playbackRate = speed;
-            if (paused) { anim.pause(); }
+            if (paused) { anim.pause(); } else { alignStart(anim); }
             anim.onfinish = function () { release(entry); };
             entry.anim = anim;
             live.push(entry);
@@ -376,6 +398,8 @@ var Danmaku = (function () {
         load: load,
         renderer: renderer,
         /* Pure pieces, exposed for tools/danmaku-verify.mjs. */
-        test: { parse: parse, Lanes: Lanes, SPEED: SPEED, GAP: GAP, FIXED_MS: FIXED_MS, WIDTH: WIDTH }
+        test: { parse: parse, Lanes: Lanes, SPEED: SPEED, GAP: GAP, FIXED_MS: FIXED_MS, WIDTH: WIDTH,
+                /* deploy.sh --dmperf compares speeds within one run. */
+                speed: function (v) { if (v > 0) { SPEED = v; } return SPEED; } }
     };
 })();
