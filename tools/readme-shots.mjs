@@ -10,8 +10,7 @@
  * caught a remark not fit for a public README), so PICK names the card to play
  * by a piece of its title. Also as of 10-18: the scrub thumbnail comes out as a
  * black box on the desktop (the README's scrub shot is gone; the danmaku one
- * replaced it), and the panel shows danmaku drifting behind its rows, so the
- * README keeps the older panel shot.
+ * replaced it).
  *
  * Runs tools/devserver.mjs --no-auth: logged out, so no account shows. It does
  * reach bilibili — a feed, a video or two, their danmaku pools and thumbnails,

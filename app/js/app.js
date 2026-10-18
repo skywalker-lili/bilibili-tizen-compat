@@ -3966,6 +3966,7 @@
         cancelScrub();
         optionsOpen = true;
         el("playerui").className = "hidden";
+        document.body.className += " options-open";
         el("options").className = "scroll";
         el("options").scrollTop = 0;
 
@@ -4041,6 +4042,7 @@
     function closeOptions() {
         if (!optionsOpen) { return; }
         optionsOpen = false;
+        document.body.className = document.body.className.replace(/\s*options-open/g, "");
         el("options").className = "hidden scroll";
         /* The thumbnails go with the screen: openOptions repaints from the list
          * every time anyway (that is how a late `related` response reaches an

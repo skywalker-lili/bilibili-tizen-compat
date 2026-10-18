@@ -110,6 +110,18 @@ check(r2.bad === 0 && r2.dropped > 0, "3 条轨道挤不下就丢：放了 " + r
 const fl = new T.Lanes(4);
 const tops = [fl.fixed(0, true, 300), fl.fixed(10, true, 300), fl.fixed(20, true, 300), fl.fixed(30, true, 300), fl.fixed(40, true, 300), fl.fixed(T.FIXED_MS + 1, true, 300)];
 check(tops.join(",") === "0,1,2,3,-1,0", "顶部：一行一条、满了丢、" + T.FIXED_MS + "ms 后空出来（" + tops.join(",") + "）");
+/* The play panel takes the bottom rows away and gives them back: new comments
+ * only go to the rows in view, and a row that comes back still remembers the
+ * comment crossing it. */
+const rz = new T.Lanes(6);
+for (let i = 0; i < 6; i++) rz.scroll(0, 400);          /* every row busy until ~1750ms */
+rz.resize(3);
+const whileOpen = [rz.scroll(5000, 400), rz.scroll(5000, 400), rz.scroll(5000, 400), rz.scroll(5000, 400)];
+rz.scroll(5000, 400);
+const busyRow5 = (rz.resize(6), rz.scroll(100, 400));    /* back to six, early: rows 3–5 still busy from t=0 */
+const freeLater = rz.scroll(5000, 400);
+check(whileOpen.join(",") === "0,1,2,-1" && busyRow5 === -1 && freeLater === 3,
+  "面板打开时只用上面的轨道（" + whileOpen.join(",") + "），关上后下面的轨道还记得没飘完的（" + busyRow5 + "，之后 " + freeLater + "）");
 const fb = new T.Lanes(4);
 const bottoms = [fb.fixed(0, false, 300), fb.fixed(1, false, 300)];
 check(bottoms.join(",") === "3,2", "底部从下往上（" + bottoms.join(",") + "）");

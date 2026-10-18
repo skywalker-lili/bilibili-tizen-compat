@@ -178,6 +178,16 @@ var Danmaku = (function () {
             this.free.push(-Infinity); this.lastStart.push(-Infinity); this.lastW.push(0); this.fixedUntil.push(-Infinity);
         }
     };
+    /* The rows on screen changed: the play panel covers the bottom of the
+     * area while it is open. Shrinking keeps the bookkeeping of the rows it
+     * hides, so when the panel closes and they come back, the comments still
+     * crossing them are not run over by new ones. */
+    Lanes.prototype.resize = function (count) {
+        while (this.free.length < count) {
+            this.free.push(-Infinity); this.lastStart.push(-Infinity); this.lastW.push(0); this.fixedUntil.push(-Infinity);
+        }
+        this.count = count;
+    };
     /* → the lane (row index from the top), or -1 when nothing fits: dropped. */
     Lanes.prototype.scroll = function (now, width) {
         for (var i = 0; i < this.count; i++) {
@@ -217,7 +227,9 @@ var Danmaku = (function () {
         function area() {
             var h = box.clientHeight || Math.round(1080 * 0.7);
             var n = Math.max(1, Math.floor(h / lineH));
-            if (!lanes || n !== laneCount) { laneCount = n; lanes = new Lanes(n); }
+            if (!lanes) { lanes = new Lanes(n); }
+            else if (n !== laneCount) { lanes.resize(n); }
+            laneCount = n;
             return lanes;
         }
 

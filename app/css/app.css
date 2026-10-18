@@ -709,4 +709,9 @@ body.density-5 .library-item { width: 344px; }
     font-weight: 600; line-height: 1.24; will-change: transform; opacity: 0.85;
     text-shadow: 1px 1px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000; }
 .comments-open #danmaku { display: none; }
+/* The play panel starts at 46% (496px). Without this the comments drifted on
+ * behind its rows and over the speed chips (seen in the 10-18 README shots).
+ * The renderer reads the height and only sends new comments down the rows
+ * still in view; the ones crossing a hidden row are clipped until it closes. */
+.options-open #danmaku { height: 496px; }
 
