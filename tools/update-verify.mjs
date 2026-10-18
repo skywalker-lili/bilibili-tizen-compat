@@ -8,7 +8,9 @@
  *      exactly as the television runs them, against a throwaway key: a good
  *      update passes, and every way of tampering is refused with its own reason;
  *   3. boot.js's launch decision, against a fake page: which code runs, and that
- *      a bundle which never reached the home screen is dropped next launch.
+ *      a bundle which never reached the home screen is dropped next launch;
+ *   4. when the next check runs — a failed one retries in minutes, not hours —
+ *      both the arithmetic and update.js's own timers, on a fake clock.
  *
  *   node tools/update-verify.mjs */
 import crypto from "crypto";
@@ -53,9 +55,9 @@ function storage(init) {
   };
 }
 
-function loadUpdate() {
-  const ctx = { console, TextEncoder, TextDecoder, atob, btoa, Uint8Array, Promise, JSON, Math, Date, String, parseInt,
-                localStorage: storage(), Settings: { get: (k, d) => d, set() {} } };
+function loadUpdate(extra) {
+  const ctx = Object.assign({ console, TextEncoder, TextDecoder, atob, btoa, Uint8Array, Promise, JSON, Math, Date, String, parseInt,
+                localStorage: storage(), Settings: { get: (k, d) => d, set() {} } }, extra || {});
   ctx.window = ctx;
   ctx.crypto = crypto.webcrypto;
   vm.createContext(ctx);
@@ -175,6 +177,60 @@ ok(r.Boot.info().running === boot.packagedFallback && !s.getItem("bili.update.me
 s = storage({ "bili.update.meta": meta("9.0.0"), "bili.update.bundle": bundleText, "bili.update.bad": JSON.stringify({ "9.0.0": 1 }) });
 r = launch(s);
 ok(r.Boot.info().running === boot.packagedFallback, "标坏过的版本 → 用安装包");
+
+/* ---------------- 4. when the next check runs ---------------- */
+console.log("下一次什么时候查（失败之后早点再查）");
+const MIN = 60000, R = T.RETRY, E = T.EVERY, t0 = Date.UTC(2026, 9, 18, 8);
+ok(T.waitAfter(null, t0) === 0, "没查过 → 现在就查");
+ok(T.waitAfter({ at: t0 - 60 * MIN, error: false }, t0) === E - 60 * MIN, "一小时前查完了 → 再等 5 小时");
+ok(T.waitAfter({ at: t0 - 10 * MIN, error: true, fails: 1 }, t0) === R - 10 * MIN, "十分钟前失败一次 → 再等 5 分钟");
+ok(T.waitAfter({ at: t0 - 55 * MIN, error: true, fails: 1 }, t0) === 0, "10-18 那种：55 分钟前 404 过一次，这次开机照查（以前要等满 6 小时）");
+const gaps = [1, 2, 3, 4, 5, 6, 9].map((n) => T.waitAfter({ at: t0, error: true, fails: n }, t0) / MIN);
+ok(gaps.join() === "15,30,60,120,240,360,360", "连着失败的间隔 " + gaps.join(" / ") + " 分钟，封顶 6 小时");
+ok(T.waitAfter({ at: t0, error: true }, t0) === R, "1.2.0 写的失败记录（没有 fails）当成失败一次");
+ok(T.waitAfter({ at: t0 + 30 * 24 * 60 * MIN, error: false }, t0) === E, "记录在将来（时钟往回调了）→ 最多等一个间隔");
+const r1 = T.record(null, "x", true, t0), r2 = T.record(r1, "x", true, t0), r3 = T.record(r2, "x", false, t0);
+ok(r1.fails === 1 && r2.fails === 2 && r3.fails === 0, "失败计数 1、2，成了一次清零");
+
+/* The same through update.js's own timers: offline twice, then a manifest
+ * with nothing newer. The clock only moves when a timer fires. */
+let clock = t0;
+const timers = [], reports = [];
+let answer = () => null;
+function FakeXhr() {
+  let url = "";
+  this.open = (m, u) => { url = u; };
+  this.send = () => Promise.resolve().then(() => {
+    const a = answer(url);
+    if (!a) { this.onerror(); return; }
+    this.status = a.status; this.response = a.body; this.onload();
+  });
+}
+const S = loadUpdate({ Date: function () { return { getTime: () => clock }; },
+  setTimeout: (fn, ms) => { timers.push({ fn, ms }); return timers.length; }, clearTimeout() {}, XMLHttpRequest: FakeXhr });
+S.Update.init({ report: (k, t) => reports.push(t), busy: () => false });
+const fire = async () => {
+  const t = timers[timers.length - 1];
+  clock += t.ms;
+  t.fn();
+  await new Promise((r) => setTimeout(r, 150));
+  return timers[timers.length - 1].ms;
+};
+const lastReport = () => reports[reports.length - 1] || "";
+ok(timers.length === 1 && timers[0].ms === 60000, "开机一分钟后查");
+let next = await fire();
+ok(next === R && /15 分钟后再查/.test(lastReport()), "断网 → " + Math.round(next / MIN) + " 分钟后再查：「" + lastReport() + "」");
+next = await fire();
+ok(next === 2 * R, "又断网 → " + Math.round(next / MIN) + " 分钟后");
+S.Boot.PUBKEY = testPub;
+/* Already downloaded (this harness runs no launch, so there is no running
+ * version to be "not newer" than). */
+S.localStorage.setItem("bili.update.meta", JSON.stringify({ version: "9.0.0", shell: 1 }));
+const same = JSON.stringify({ version: "9.0.0", shell: 1, sha256: "0".repeat(64), size: 1, date: "", urls: ["https://example.invalid/b.json"] });
+answer = () => ({ status: 200, body: Uint8Array.from(manifestBytes(same, sign(test.privateKey, same))).buffer });
+next = await fire();
+ok(next === E && /^不用下载：.*已经下载好了/.test(lastReport()), "联网了、没有要下的 → " + Math.round(next / MIN / 60) + " 小时后再查：「" + lastReport() + "」");
+ok(JSON.parse(S.localStorage.getItem("bili.update.last")).fails === 0, "记录里的失败计数清零");
 
 console.log(failed ? `✗ ${failed} 处不对` : "✓ 自更新全部通过");
 process.exit(failed ? 1 : 0);

@@ -12,7 +12,7 @@
  * video or an open screen is a class of bug this app does not need. Checked a
  * minute after boot (boot-time fetches lose races to the player — measured
  * here, see CLAUDE.md), never while something is playing, at most every six
- * hours.
+ * hours — sooner after a check that failed (waitAfter).
  *
  * This file is part of every bundle, so the checking logic itself can be fixed
  * by an update; boot.js and the key cannot. tools/update-verify.mjs runs the
@@ -27,6 +27,7 @@ var Update = (function () {
     var FIRST_DELAY = 60000;
     var EVERY = 6 * 3600 * 1000;
     var BUSY_RETRY = 10 * 60000;
+    var RETRY = 15 * 60000;              /* after a failed check; doubles per failure in a row */
     var TIMEOUT = 20000;
     var SETTING = "autoUpdate";          /* Settings key; on unless switched off */
     var K_LAST = "bili.update.last";     /* {at, result} of the last finished check */
@@ -181,11 +182,35 @@ var Update = (function () {
         return true;
     }
 
+    /* The record a finished check leaves: what it found, and how many checks
+     * in a row have now failed. */
+    function record(prev, result, isError, t) {
+        var fails = isError ? (prev && prev.error ? (prev.fails || 1) + 1 : 1) : 0;
+        return { at: t, result: result, error: !!isError, fails: fails };
+    }
+
+    /* How long until the next check is due, from the last one's record. One
+     * that finished waits six hours; one that failed 15 minutes, doubling per
+     * failure in a row, up to the same six. Every failure used to wait the full
+     * six: a set switched on before its Wi-Fi is up fails the one-minute check
+     * and then skips every launch for the rest of the evening — 2026-10-18 the
+     * living-room set did exactly that after a 404 (the manifest was not pushed
+     * yet), and the release an hour later reached it only by hand. Never more
+     * than one interval out: a record from the future is a clock that moved
+     * back, not a reason to wait longer. */
+    function waitAfter(last, t) {
+        if (!last || !last.at) { return 0; }
+        var gap = last.error ? Math.min(EVERY, RETRY * Math.pow(2, Math.max(0, (last.fails || 1) - 1))) : EVERY;
+        return Math.max(0, Math.min(gap, last.at + gap - t));
+    }
+
     function finish(result, isError, done) {
         checking = false;
         lastError = isError ? result : "";
-        put(K_LAST, JSON.stringify({ at: now(), result: result, error: !!isError }));
-        report("update", result);
+        var rec = record(parse(get(K_LAST)), result, isError, now());
+        put(K_LAST, JSON.stringify(rec));
+        report("update", result + (isError && enabled()
+            ? "；" + Math.round(waitAfter(rec, rec.at) / 60000) + " 分钟后再查（连着第 " + rec.fails + " 次没成）" : ""));
         if (done) { done(result); }
     }
 
@@ -236,12 +261,15 @@ var Update = (function () {
         clearTimeout(timer);
         timer = setTimeout(tick, Math.max(1000, ms));
     }
+    /* The next check follows from the last record — EVERY when it cannot be
+     * read back, so a storage that refuses writes cannot spin this. */
+    function rearm() { if (enabled()) { schedule(waitAfter(parse(get(K_LAST)), now()) || EVERY); } }
     function tick() {
         if (!enabled()) { return; }
         if (busy()) { schedule(BUSY_RETRY); return; }
-        var last = parse(get(K_LAST));
-        if (last && last.at && now() - last.at < EVERY) { schedule(EVERY - (now() - last.at)); return; }
-        check(false, function () { schedule(EVERY); });
+        var wait = waitAfter(parse(get(K_LAST)), now());
+        if (wait > 0) { schedule(wait); return; }
+        check(false, rearm);
     }
 
     return {
@@ -258,7 +286,9 @@ var Update = (function () {
                    (sub ? "" : "，但引擎没有 crypto.subtle，不能更新"));
             if (enabled()) { schedule(opts.firstDelay || FIRST_DELAY); }
         },
-        check: function (done) { check(true, done); },
+        /* The settings page's 「现在检查」. The automatic one is re-timed from
+         * its result too, so 「N 分钟后再查」 in the log stays true. */
+        check: function (done) { check(true, function (r) { rearm(); if (done) { done(r); } }); },
         enabled: enabled,
         setEnabled: function (on) {
             try { Settings.set(SETTING, !!on); } catch (e) {}
@@ -274,6 +304,7 @@ var Update = (function () {
                 note: info.note
             };
         },
-        _test: { verifySignature: verifySignature, sha256Hex: sha256Hex, judge: judge, readManifest: readManifest, readBundle: readBundle }
+        _test: { verifySignature: verifySignature, sha256Hex: sha256Hex, judge: judge, readManifest: readManifest, readBundle: readBundle,
+                 record: record, waitAfter: waitAfter, RETRY: RETRY, EVERY: EVERY }
     };
 })();
