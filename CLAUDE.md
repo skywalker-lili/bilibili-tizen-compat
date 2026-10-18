@@ -605,6 +605,7 @@ tools/
   update-verify.mjs   自更新：签名、篡改、旧版本、shell 太新、标坏，以及 boot.js 在每种本地状态下选对代码；卡发布
   update-e2e.mjs      自更新在桌面浏览器里走一遍真的启动（临时钥匙，不碰 bilibili），不在 check.sh 里
   update-release.mjs  打更新包、签名，写 update/manifest.json 和 update/bundle-<版本>.json
+  readme-shots.mjs    README 的弹幕画面、面板、拖动、设置页截图（桌面浏览器、未登录、会连哔哩哔哩，跑一次就好），先出到 dist/ 挑
   update-key.mjs      生成签名钥匙（只在换钥匙时用；--show 查对不对得上）
   danmaku-verify.mjs  弹幕：解析、去重、轨道不重叠；--browser 在桌面浏览器里量帧耗时；卡发布（node 那部分）
                       （电视上的帧耗时用 deploy.sh --dmperf 量，见「弹幕」）

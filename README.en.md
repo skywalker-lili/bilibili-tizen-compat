@@ -19,12 +19,12 @@ what you half-watched on the phone is under the cursor when the TV comes on.
 
 |  |  |
 |---|---|
-| ![Home](docs/screenshots/01-home.jpg) | ![Playback](docs/screenshots/03-player-scrub.jpg) |
-| Three big cards a row, readable from the sofa; signed in, the top row is 「continue watching」 and the cursor starts on it | Scrubbing with thumbnail previews; up to 1080p H.265 when signed in, 4K with a 大会员 (premium) account |
+| ![Home](docs/screenshots/01-home.jpg) | ![Playback](docs/screenshots/03-player-danmaku.jpg) |
+| Three big cards a row, readable from the sofa; signed in, the top row is 「continue watching」 and the cursor starts on it | Danmaku drift right to left without overlapping, and pause and change speed with the video; scrubbing with thumbnail previews; up to 1080p H.265 when signed in, 4K with a 大会员 (premium) account |
 | ![Panel](docs/screenshots/04-panel.jpg) | ![Comments](docs/screenshots/05-comments.jpg) |
 | Press down while playing for the description, speed, parts and related videos — **the video keeps running**; like / coin / favourite and comments are here too | Comments and replies beside the video, which keeps playing |
 | ![Settings](docs/screenshots/06-settings.jpg) | ![Search](docs/screenshots/02-search.jpg) |
-| Settings: autoplay, subtitles, and cards per row to suit the TV and the sofa | Search, with the TV's own Chinese IME one button away |
+| Settings: autoplay, subtitles, danmaku, quality cap, clearing watch history, self-update, and cards per row to suit the TV and the sofa | Search, with the TV's own Chinese IME one button away |
 
 ## Will it run on my TV
 
