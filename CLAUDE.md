@@ -1568,8 +1568,12 @@ XHR 认 `Content-Encoding` 自己解；devserver 转发时丢了这个头，那�
   ④ 可选 `zsh tools/release.sh` 出同版本的 wgt。**已经装着的电视只有装了带这套代码的版本之后才会自己更新** —— 第一次还得侧载。
 - **测过的**：`update-verify` 36 条；`update-e2e` 在桌面浏览器里：发 9.0.0 → 下载 → 重新打开跑新代码（新脚本在 load 之前跑完，onload
   照常启动，body 和 CSS 换了）；一个启动就抛错的 9.1.0 → 第二次启动退回安装包、之后不再下载；篡改的 bundle、篡改的 manifest、
-  更旧的版本各自被拒。**还没在电视上跑过**：Tizen 上 `document.write` 写 blob: 脚本的时机、`crypto.subtle` 在不在、localStorage
-  配额，都要看电视上 `update:` 那几行。
+  更旧的版本各自被拒。
+- **电视上（10-18，发 1.2.0 时）**：装一个标成 1.1.0 的开发构建，开机一分钟后 `已下载 1.2.0，下次打开生效（794KB 来自 cdn.jsdelivr.net，792ms）`
+  （bundle 按顺序先问 jsDelivr 的 tag；验签、sha256、localStorage 存 794KB 都过）；`sdb shell 0 kill BiliTvApp0` 再
+  `tizen run` → `这次跑的是更新 1.2.0（安装包 1.1.0）`，再杀再开还是 1.2.0（`Boot.ok()` 清掉了 booting）；最后装正式的 1.2.0 →
+  `下载过的 1.2.0 不比安装包 1.2.0 新，删掉了`。**上一次检查失败也要等满 6 小时才再查**（15:18 那次 manifest 还没推上去、404，之后
+  开机都不查）—— 测的时候得清 `bili.update.last`。
 
 **仍然缺失**，大致按缺失感强弱排序：全站以外的分区。（UP 主页 2026-09-16 做了，见上；画质、清历史 2026-10-18 做了。）渐进式那条路的重启不验 `deadline`（DASH 侧
 验）—— 要走到那一步得同时满足「这个稿件没有 DASH」加「暂停两小时后播放中出错」，
