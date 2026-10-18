@@ -1651,6 +1651,21 @@
         return true;
     };
 
+    /* A rescue's teardown window, on demand: the same Player.stop() and the
+     * same rebuild from playing.startMs the strong-token path runs, with its
+     * seconds of sidx reads stood in for by a wait. A 403 cannot be ordered
+     * up, and a drag pressed inside that window used to be lost (10-18). */
+    window.__stRebuild = function (gapMs) {
+        if (!playing || playing.route !== "dash" || !playing.dashReady) { return false; }
+        var sess = playing;
+        playing.startMs = Player.hasPosition() ? Player.position() : lastKnownPosition;
+        Player.stop();
+        setTimeout(function () {
+            if (playing === sess) { playDash(sess.dashReady, sess.quality); }
+        }, gapMs);
+        return true;
+    };
+
     /* How many cards the end-of-video grid has to give in total, so the
      * selftest can tell "the grid refused to grow" from "this video only had
      * one row's worth of related videos" — the DOM alone cannot. */
@@ -2265,7 +2280,31 @@
             }
         }
         session.subtitleStarted = true;
-        if (!choice) { return; }
+        if (!choice) {
+            /* Tracks listed, none with an address: player/v2 does this now and
+             * then, and the same request seconds later has them — 10-18 the
+             * selftest's probe and the app's own request for one video
+             * disagreed twice in an evening, once each way, and the miss was
+             * silent. One more ask. */
+            if (tracks.length && !session.subtitleRetried) {
+                session.subtitleRetried = true;
+                report("subtitle", "字幕轨 " + tracks.length + " 条都没给地址，两秒后再问一次");
+                setTimeout(function () {
+                    if (playing !== session || !session.detail) { return; }
+                    API.playerV2(session.detail.bvid, session.cid, function (r) {
+                        if (playing !== session) { return; }
+                        session.subtitleTracks = r.subtitles || [];
+                        session.subtitleStarted = false;
+                        startSubtitles();
+                    }, function (why) {
+                        if (playing === session) { report("subtitle", "再问字幕轨失败：" + why); }
+                    });
+                }, 2000);
+            } else if (tracks.length) {
+                report("subtitle", "再问一次还是没有地址，这次没有字幕");
+            }
+            return;
+        }
         API.subtitle(choice.url, function (cues) {
             if (playing !== session) { return; }
             session.subtitleCues = cues;
@@ -3401,11 +3440,16 @@
      * every television player, and it keeps a single button doing one thing. */
     var scrub = null;          /* {target, step, commitTimer} */
 
+    /* The player forgets the length the moment it is torn down, and a 403
+     * rescue tears it down for seconds before the rebuild — keys pressed in
+     * between still deserve a bar to scrub along. */
+    function knownDurationMs() { return Player.durationMs() || lastKnownDuration; }
+
     function scrubStep() {
         /* 10s, then 30s, then a minute, then a thirtieth of the video: on a long
          * upload the last tier is what makes crossing it bearable. */
         var n = scrub.presses;
-        var dur = Player.durationMs() || 0;
+        var dur = knownDurationMs();
         if (n < 4) { return 10000; }
         if (n < 8) { return 30000; }
         if (n < 14) { return 60000; }
@@ -3488,7 +3532,7 @@
 
     function enterScrub() {
         if (scrub) { return; }
-        if (!Player.durationMs()) { return; }
+        if (!knownDurationMs()) { return; }
         scrub = { target: lastKnownPosition, presses: 0, timer: null };
         el("playerui").className = "scrubbing";
         el("player-scrub").className = "";
@@ -3507,7 +3551,7 @@
             return;
         }
         scrub.presses++;
-        var dur = Player.durationMs() || 0;
+        var dur = knownDurationMs();
         scrub.target = Math.max(0, Math.min(dur ? dur - 2000 : Infinity,
                                             scrub.target + dir * scrubStep()));
         paintScrub();
@@ -3518,7 +3562,7 @@
     }
 
     function paintScrub() {
-        var dur = Player.durationMs() || 1;
+        var dur = knownDurationMs() || 1;
         var pct = Math.min(100, (scrub.target / dur) * 100);
         el("player-fill").style.width = pct + "%";
         el("player-scrub").style.left = "calc(" + pct + "% - 3px)";
@@ -3540,6 +3584,18 @@
         if (!scrub) { return; }
         var target = scrub.target;
         cancelScrub();
+        /* Between Player.stop() and the rebuilt manifest (a 403 rescue, an
+         * expiry refetch) there is no element to seek, and the rebuild starts
+         * from playing.startMs — so that is where the jump goes. Sent to the
+         * player instead it was dropped: the TV selftest of 2026-10-18 pressed
+         * a 3:30 jump one second into a strong-token rescue, and the picture
+         * came back at 0:46, where the rescue had begun. */
+        if (playing && !Player.mode()) {
+            playing.startMs = target;
+            lastKnownPosition = target;
+            report("player", "拖动落在重建当中，重建改从 " + fmt(target) + " 起");
+            return;
+        }
         Player.seekTo(target);
     }
 
@@ -5446,7 +5502,7 @@
                             report("player", "app 端点强令牌就绪，" +
                                    (strongDash.tierNote || (strongDash.video ? strongDash.video.length + " 档" : "0 档")) +
                                    (strongDash.strongTiming ? "，" + strongDash.strongTiming : "") +
-                                   "，从 " + fmt(atMs) + " 重建");
+                                   "，从 " + fmt(playing.startMs || 0) + " 重建");
                             playDash(strongDash, (repST && repST.id) || Settings.qnCap());
                         }, function (whyST) {
                             if (playing !== sessST) { report("player", "强令牌回来时会话已经没了，丢弃"); return; }

@@ -562,6 +562,10 @@ var Player = (function () {
     }
 
     var respBeforeLoad = 0;
+    /* Shaka owns the element from load() until it resolves, and seeks to its
+     * own start time on the way — a seek made in that window was overwritten
+     * by it. Kept here and applied once the load is done. */
+    var loadPending = false, pendingSeekMs = -1;
     var listIgnored = 0;   /* per video: times the bad-file list was ignored to build at all */
     /* Playback speed, kept across videos for this app run: a lecture series at
      * 1.5x should not need setting on every episode. Not across restarts —
@@ -815,6 +819,8 @@ var Player = (function () {
     function reset() {
         mseGeneration++;
         avGeneration++;
+        loadPending = false;
+        pendingSeekMs = -1;
         listIgnored = 0;
 
         /* Only when AVPlay was actually used. `obj` is created by
@@ -2112,6 +2118,8 @@ var Player = (function () {
         if (!isRetry && dash && !dash.strong && !dash.strongTried) { strongEmitted = false; }
         mode = "mse";
         var gen = ++mseGeneration;
+        loadPending = true;
+        pendingSeekMs = -1;
         var retriedLoad = !!isRetry;
 
         var scope = scopeOf(dash);
@@ -2269,6 +2277,14 @@ var Player = (function () {
             try { URL.revokeObjectURL(url); } catch (e) {}
             if (gen !== mseGeneration) { return; }
             mark("loaded");
+            loadPending = false;
+            if (pendingSeekMs >= 0) {
+                var ps = pendingSeekMs;
+                pendingSeekMs = -1;
+                log("加载期间按的跳转，现在补上：→ " + Math.round(ps / 1000) + "s");
+                noteAppSeek(ps);
+                try { v.currentTime = ps / 1000; } catch (e) {}
+            }
             if (!duration) {
                 try { duration = (v.duration || 0) * 1000; } catch (e) {}
             }
@@ -2657,6 +2673,7 @@ var Player = (function () {
             if (duration) { target = Math.min(target, duration - 2000); }
             noteAppSeek(target);
             if (mode === "avplay") { try { webapis.avplay.seekTo(target); } catch (e) {} }
+            else if (mode === "mse" && loadPending) { pendingSeekMs = target; }
             else if (mode === "mse") { el("html5-video").currentTime = target / 1000; }
             lastTime = target;
             haveTime = true;
@@ -2668,6 +2685,7 @@ var Player = (function () {
             if (duration) { target = Math.min(target, duration - 2000); }
             noteAppSeek(target);
             if (mode === "avplay") { try { webapis.avplay.seekTo(target); } catch (e) {} }
+            else if (mode === "mse" && loadPending) { pendingSeekMs = target; }
             else if (mode === "mse") { el("html5-video").currentTime = target / 1000; }
             lastTime = target;
             haveTime = true;

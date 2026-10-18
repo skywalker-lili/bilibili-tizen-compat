@@ -189,6 +189,12 @@ var SelfTest = (function () {
         return null;
     }
 
+    /* A step may answer WAIT — not there yet — and is asked again every half
+     * second, for up to step[3] ms after its first check; then it fails with
+     * step[4] (a string, or a function for a message that needs the moment).
+     * For the waits whose length is the network's, not the app's. */
+    var WAIT = {};
+
     var steps = [
         ["首页加载出卡片", 3500, function () {
             return count("#screen .card") > 0 ? null : "网格里没有任何卡片";
@@ -438,6 +444,36 @@ var SelfTest = (function () {
                 : "跳到 " + window.__stSeekTo + "s 后十五秒内进度没前进（现在 " + t +
                   "s）——要么那里取不到字节，要么救援还没跑完，去日志看这段时间有没有 403/强令牌";
         }],
+        /* The far drag above, pressed while the player is torn down for a
+         * rebuild — where the TV selftest of 2026-10-18 happened to press it,
+         * one second into a strong-token rescue, and the picture came back at
+         * the rescue's 0:46. The rebuild is staged (__stRebuild) because a 403
+         * cannot be ordered up. */
+        ["重建当中按的拖动", 600, function () {
+            window.__stRb = 0;
+            if (typeof window.__stRebuild !== "function") { return "没有 __stRebuild 这个入口"; }
+            var dur = secs(document.getElementById("player-dur").textContent);
+            var now = secs(document.getElementById("player-pos").textContent);
+            /* The jump is 210s and the landing check wants 150 of it; the
+             * first TV run (283s into a 568s video) skipped on the far drag's
+             * 300/345, which guard a stricter check than this one. */
+            var dir = dur - now >= 240 ? 1 : now >= 230 ? -1 : 0;
+            if (!dir) { post("重建拖动：位置 " + now + "s/" + dur + "s 两头都不够远，跳过"); return null; }
+            if (!window.__stRebuild(2500)) { post("重建拖动：不是 DASH，跳过"); return null; }
+            window.__stRb = dir;
+            window.__stRbFrom = now;
+            for (var i = 0; i < 8; i++) { key(dir > 0 ? KEY.RIGHT : KEY.LEFT); }
+            return null;
+        }],
+        ["重建之后落在拖动的地方", 2000, function () {
+            if (!window.__stRb) { return null; }
+            var t = secs(document.getElementById("player-pos").textContent);
+            var moved = (t - window.__stRbFrom) * window.__stRb;
+            return moved > 150 && Player.mode() ? null : WAIT;
+        }, 15000, function () {
+            return "等了 15 秒，位置 " + document.getElementById("player-pos").textContent +
+                   "，拖动前在 " + window.__stRbFrom + "s（播放器 " + (Player.mode() || "没起来") + "）";
+        }],
         ["确认键暂停", 600, function () {
             key(KEY.ENTER);
             return null;
@@ -469,19 +505,16 @@ var SelfTest = (function () {
             if (typeof window.__stNearEnd !== "function") { return "没有 __stNearEnd 这个入口"; }
             return window.__stNearEnd() ? null : "拿不到时长，跳不过去";
         }],
-        ["播完后出现「即将播放」界面", 6000, function () {
-            if (!visible("nextup")) {
-                window.__stNextLate = true;
-                post("即将播放界面还没出现，再等一轮");
-                return null;
-            }
-            return checkChooser();
-        }],
-        ["（慢的话再等一轮）", 3500, function () {
-            if (!window.__stNextLate) { return null; }
-            if (!visible("nextup")) { return "视频播完了但没有出现即将播放界面"; }
-            return checkChooser();
-        }],
+        /* Polled rather than waited for. How long the end takes to arrive is
+         * the CDN's business: 2026-10-18 the last four seconds of a three-hour
+         * upload took 13.5s to come back (a cold range at the far end of the
+         * file, ABR down to 360p on the way) — past both fixed waits this used
+         * to have, and the four steps after them went red about a screen that
+         * showed up a second later. The press that stops the countdown is still
+         * made in the same call that finds the screen. */
+        ["播完后出现「即将播放」界面", 3000, function () {
+            return visible("nextup") ? checkChooser() : WAIT;
+        }, 25000, "视频播完了但没有出现即将播放界面"],
         ["下键之后焦点在相关推荐里，倒计时停住", 600, function () {
             if (window.__stNoRelated) { post("跳过：这个视频没有相关推荐"); return null; }
             if (!visible("nextup")) {
@@ -782,12 +815,16 @@ var SelfTest = (function () {
             post("UP 主芯片：" + chip.textContent);
             return null;
         }],
-        /* At most four presses: the ring opens on the playing part or on the
-         * first related card, and the chip is the only focusable above either.
-         * One press too many closes the panel, which is why each press checks
-         * first. */
+        /* The ring opens on the playing part, the playing 合集 episode or the
+         * first related card, and the chip is the only focusable above all of
+         * them. One press too many closes the panel, which is why each press
+         * checks first. */
         ["上键走到 UP 主芯片", 600, function () {
-            for (var i = 0; i < 4; i++) {
+            /* Not four any more: a 合集 lists every episode and wraps, and the
+             * ring opens on the current one — 10-18 that was the 23rd of a long
+             * season, four presses stayed inside the row, and the 确认 meant
+             * for the chip played episode 24. */
+            for (var i = 0; i < 24; i++) {
                 if (document.querySelector("#panel-up.focused")) { break; }
                 key(KEY.UP);
             }
@@ -1060,18 +1097,39 @@ var SelfTest = (function () {
             var t = probe.sub.tracks;
             post("字幕轨 " + t.map(function (x) { return x.lan_doc || x.lan; }).join(" / ") +
                  "（" + probe.sub.v.bvid + "，推荐第 " + (probe.sub.idx + 1) + " 个）");
-            API.subtitle(t[0].subtitle_url, function (cues) { probe.cues = cues.length; },
+            /* The first track with an address, as startSubtitles() picks: a
+             * listed track can come without one (2026-10-18, the first of eight
+             * on BV1W8J46KEo6), and the app itself loaded 中文 fine that minute. */
+            var withUrl = t.filter(function (x) { return x && x.subtitle_url; })[0];
+            /* And all of them can: BV1gnhJ6JEAA's one track came back without
+             * an address on this probe (10-18 15:56), while the app's own
+             * request a few seconds later loaded it and put it on screen.
+             * bilibili's answer, not ours — the file check has nothing to
+             * fetch, and the on-screen check below still runs. */
+            if (!withUrl) { probe.noUrl = true; post("字幕轨这次都没给地址，跳过文件解析（画面那一步照样验）"); return null; }
+            probe.noUrl = false;
+            API.subtitle(withUrl.subtitle_url, function (cues) {
+                probe.cues = cues.length;
+                probe.cueFirst = cues.length ? cues[0].from : -1;
+            },
                          function (why) { probe.cueErr = String(why); });
             return null;
         }],
         ["字幕文件解析出了字幕行", 3000, function () {
-            if (!probe.sub) { return null; }
+            if (!probe.sub || probe.noUrl) { return null; }
             if (probe.cueErr) { return "字幕文件取不到：" + probe.cueErr; }
             post("字幕 " + probe.cues + " 行");
             return probe.cues ? null : "字幕文件是空的";
         }],
         ["打开字幕开关，播这个视频", 300, function () {
             if (!probe.sub) { return null; }
+            /* Twenty seconds of looking proves nothing about a file whose first
+             * line comes later — BV1qqJe6yEtt (10-18) had nine lines in all. */
+            if (probe.cues && probe.cueFirst > 15) {
+                post("跳过画面上的字幕：第一行在 " + Math.round(probe.cueFirst) + " 秒，二十秒里看不到");
+                probe.sub = null;
+                return null;
+            }
             probe.subWas = Settings.get("showSubtitles", false);
             Settings.set("showSubtitles", true);
             var card = document.querySelector('#feed-grid .card[data-i="' + probe.sub.idx + '"]');
@@ -1112,19 +1170,34 @@ var SelfTest = (function () {
             var v = (window.__stItems || [])[0];
             probe.dm = null; probe.dmDone = false;
             if (!v || !v.cid) { probe.dmDone = true; post("跳过弹幕：推荐第一张卡片没有 cid"); return null; }
-            Danmaku.load(v.cid, function (list) { probe.dm = { n: list.length, v: v }; probe.dmDone = true; },
+            Danmaku.load(v.cid, function (list) {
+                var early = list.filter(function (d) { return d.t < 15000; }).length;
+                probe.dm = { n: list.length, early: early, v: v }; probe.dmDone = true;
+            },
                          function (why) { probe.dmErr = String(why); probe.dmDone = true; });
             return null;
         }],
-        ["弹幕：打开它，画面上出现弹幕", 300, function () {
-            if (!probe.dmDone) { return "弹幕池 0.6 秒没问完"; }
-            if (probe.dmErr) { return "弹幕池取不到：" + probe.dmErr; }
+        /* Three seconds for the pool: the first run on the set (2026-10-18)
+         * gave it 0.3 s, it took longer, and the step bailed before opening the
+         * video — the next one then reported an empty screen, and its 返回 on
+         * the home screen closed the app. A bail now clears probe.dm, so the
+         * steps after it skip. */
+        ["弹幕：打开它，画面上出现弹幕", 3000, function () {
+            if (!probe.dmDone) { probe.dm = null; return "弹幕池 3 秒没问完"; }
+            if (probe.dmErr) { probe.dm = null; return "弹幕池取不到：" + probe.dmErr; }
             if (!probe.dm) { return null; }
             if (!probe.dm.n) { post("跳过弹幕：这个视频没人发弹幕"); probe.dm = null; return null; }
+            /* The same for a pool that has nothing early: BV1qqJe6yEtt (10-18)
+             * had one comment, and twenty seconds of an empty screen was right. */
+            if (!probe.dm.early) {
+                post("跳过弹幕：弹幕池 " + probe.dm.n + " 条，前 15 秒一条都没有");
+                probe.dm = null;
+                return null;
+            }
             probe.dmWas = Settings.get("danmaku", "normal");
             Settings.set("danmaku", "normal");
             var card = document.querySelector('#feed-grid .card[data-i="0"]');
-            if (!card) { Settings.set("danmaku", probe.dmWas); return "网格里找不到第一张卡片"; }
+            if (!card) { Settings.set("danmaku", probe.dmWas); probe.dm = null; return "网格里找不到第一张卡片"; }
             Nav.focus(card);
             key(KEY.ENTER);
             probe.dmSeen = "";
@@ -1142,6 +1215,7 @@ var SelfTest = (function () {
         }],
         ["弹幕：退出播放，设置恢复原样", 600, function () {
             if (!probe.dm) { return null; }
+            if (visible("shell")) { Settings.set("danmaku", probe.dmWas); return "不在播放（没有返回，免得在首页按返回把应用退了）"; }
             key(KEY.RETURN);
             Settings.set("danmaku", probe.dmWas);
             return visible("danmaku") ? "退出播放之后弹幕层还在" : null;
@@ -1156,15 +1230,23 @@ var SelfTest = (function () {
                 post(failures ? ("结束，" + failures + " 步失败") : "结束，全部通过");
                 return;
             }
-            var step = steps[i++];
-            setTimeout(function () {
+            var step = steps[i++], firstAt = 0;
+            function attempt() {
                 var why;
                 try { why = step[2](); }
                 catch (e) { why = "抛出异常 " + e.message; }
+                if (why === WAIT) {
+                    var now = new Date().getTime();
+                    if (!firstAt) { firstAt = now; }
+                    if (now - firstAt < (step[3] || 0)) { setTimeout(attempt, 500); return; }
+                    why = typeof step[4] === "function" ? step[4]()
+                        : step[4] || "等了 " + Math.round((step[3] || 0) / 1000) + " 秒还没有";
+                }
                 if (why) { failures++; post("✗ " + step[0] + " — " + why); }
                 else { post("✓ " + step[0]); }
                 next();
-            }, step[1]);
+            }
+            setTimeout(attempt, step[1]);
         }
         next();
     }
