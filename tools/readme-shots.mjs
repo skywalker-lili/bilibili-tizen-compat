@@ -1,23 +1,30 @@
-/* Screenshots for the README, taken in desktop Chromium: the player with
- * danmaku (03-player-danmaku), the play panel (04-panel), scrubbing
- * (03-player-scrub) and the settings page scrolled from 播放 to 自动更新
- * (06-settings). Home, search and comments (01, 02, 05) were taken by hand.
+/* Screenshots for the README, taken in desktop Chromium:
+ *   01-home            美食, the cursor on the first card
+ *   02-search          搜索 for 猫: suggestions and results
+ *   03-player-danmaku  a video playing with danmaku (03-player-scrub: scrubbing)
+ *   04-panel           the play panel, the danmaku row lit
+ *   06-settings        设置 from 播放 to 自动更新
+ *   07-live            直播: the rooms
+ *   08-bar             设置 → 顶栏, one tab picked up to move
+ * 05-comments was taken by hand. 01, 02, 07 and 08 were last taken 10-18, when the
+ * bar got 直播 and became the viewer's.
  *
- *   PICK=绵羊料理 node tools/readme-shots.mjs [outdir]    # default dist/readme-shots
+ *   SHOTS=01,02,07,08 PICK=绵羊料理 node tools/readme-shots.mjs [outdir]   # default all, into dist/readme-shots
  *
  * Written to dist/ to be looked at first, not straight into docs/screenshots:
  * what scrolls across the picture is whatever strangers typed (10-18: one run
  * caught a remark not fit for a public README), so PICK names the card to play
  * by a piece of its title. Also as of 10-18: the scrub thumbnail comes out as a
  * black box on the desktop (the README's scrub shot is gone; the danmaku one
- * replaced it).
+ * replaced it). Every grid shot waits for its covers: the first 直播 one was
+ * taken the moment the cards appeared, and every cover was blank.
  *
  * Runs tools/devserver.mjs --no-auth: logged out, so no account shows. It does
- * reach bilibili — a feed, a video or two, their danmaku pools and thumbnails,
- * twenty-odd requests. Run it once, not in a loop: on 10-18 a few desktop runs
- * of the danmaku measurement got this IP a 412 for half an hour, and the
- * television shares the IP. Needs Playwright from the douyin-tizen desktop
- * harness, like tools/update-e2e.mjs.
+ * reach bilibili — feeds, a video or two, their danmaku pools and thumbnails,
+ * the live list, twenty-odd requests. Run it once, not in a loop: on 10-18 a
+ * few desktop runs of the danmaku measurement got this IP a 412 for half an
+ * hour, and the television shares the IP. Needs Playwright from the
+ * douyin-tizen desktop harness, like tools/update-e2e.mjs.
  *
  * 1920×1080 laid out, written at 1600×900 like the rest of docs/screenshots. */
 import fs from "fs";
@@ -66,11 +73,57 @@ const waitFor = async (what, fn, ms) => {
 };
 const shot = async (name) => { await page.screenshot({ path: path.join(OUT, name + ".jpg"), type: "jpeg", quality: 88 }); say("→ " + name + ".jpg"); };
 const openTab = (screen) => page.evaluate((s) => { Nav.focus(document.querySelector('.tab[data-screen="' + s + '"]')); }, screen).then(() => key(KEY.ENTER));
+const WANT = (process.env.SHOTS || "01,02,03,04,06,07,08").split(",").map((x) => x.trim());
+const want = (n) => WANT.indexOf(n) >= 0;
+/* The covers of what is on screen, loaded — or eight seconds, whichever first. */
+const coversIn = () => waitFor("封面", () => {
+  const imgs = Array.prototype.slice.call(document.querySelectorAll("#screen .card img")).filter((i) => {
+    const r = i.getBoundingClientRect(); return r.bottom > 0 && r.top < innerHeight; });
+  return imgs.length > 0 && imgs.every((i) => i.complete && i.naturalWidth > 0);
+}, 8000).catch((e) => say(e.message));
 
 try {
   await page.goto(`http://localhost:${PORT}/`);
   await waitFor("首页", () => document.querySelectorAll("#screen .card").length > 0, 20000);
 
+  if (want("01")) {
+    await openTab("food");
+    await waitFor("美食", () => document.querySelectorAll("#feed-grid .card").length > 0, 15000);
+    await page.evaluate(() => Nav.focus(document.querySelector('#feed-grid .card[data-i="0"]')));
+    await coversIn();
+    await page.waitForTimeout(400);
+    await shot("01-home");
+  }
+
+  if (want("02")) {
+    await openTab("search");
+    await waitFor("搜索页", () => !!document.querySelector('[data-act="ime"]'), 5000);
+    await page.evaluate(() => Nav.focus(document.querySelector('[data-act="ime"]')));
+    await key(KEY.ENTER);
+    await page.evaluate(() => {
+      const input = document.getElementById("ime");
+      input.value = "猫"; input.oninput();
+      input.onkeydown({ keyCode: 13, stopPropagation() {}, preventDefault() {} });
+      Nav.focus(document.querySelector('[data-act="ime"]'));
+    });
+    await waitFor("搜索结果", () => document.querySelectorAll("#results .card").length > 2 &&
+                  document.querySelectorAll("#suggests .chip, #suggests .focusable").length > 0, 15000).catch((e) => say(e.message));
+    await page.evaluate(() => { document.getElementById("screen").scrollTop = 0; });
+    await coversIn();
+    await page.waitForTimeout(400);
+    await shot("02-search");
+  }
+
+  if (want("07")) {
+    await openTab("live");
+    await waitFor("直播", () => document.querySelectorAll("#feed-grid .card .live-badge").length > 5, 15000);
+    await page.evaluate(() => Nav.focus(document.querySelector('#feed-grid .card[data-i="0"]')));
+    await coversIn();
+    await page.waitForTimeout(400);
+    await shot("07-live");
+  }
+
+  if (want("03") || want("04")) {
   /* 美食, like the home shot. The first card that plays and keeps playing:
    * logged out, a video's web token is sometimes refused by the CDN and the
    * player gives up and returns to the grid. */
@@ -140,11 +193,12 @@ try {
   await page.waitForTimeout(250);
   await shot("03-player-scrub");
 
-  /* Out of the player, onto 设置: the top of the page, and scrolled down to
-   * 自动更新 — the page is taller than the screen now. */
   await page.waitForTimeout(1500);
   await key(KEY.RETURN);
   await waitFor("回到首页", () => { const s = document.getElementById("shell"); return s && s.offsetParent !== null; }, 5000);
+  }
+
+  if (want("06")) {
   await openTab("settings");
   await waitFor("设置页", () => !!document.getElementById("btn-danmaku"), 5000);
   /* One shot from 播放 down to 自动更新: the page is taller than the screen
@@ -158,6 +212,26 @@ try {
   });
   await page.waitForTimeout(600);
   await shot("06-settings");
+  }
+
+  /* 设置 → 顶栏, with 直播 picked up (the arrows), then put back down. */
+  if (want("08")) {
+    await openTab("settings");
+    await waitFor("设置页", () => !!document.querySelector('#bar-chips .opt[data-tab="live"]'), 5000);
+    await page.evaluate(() => Nav.focus(document.querySelector('#bar-chips .opt[data-tab="live"]')));
+    await key(KEY.ENTER);
+    await page.evaluate(() => {
+      const head = Array.prototype.filter.call(document.querySelectorAll("#screen .section"), (n) => n.textContent === "顶栏")[0];
+      const box = document.getElementById("screen");
+      if (head) { box.scrollTop += head.getBoundingClientRect().top - 150; }
+      /* That runs the page to its end, which leaves half of the line above
+       * under the tab bar; 24px back shows it whole. */
+      box.scrollTop -= 24;
+    });
+    await page.waitForTimeout(500);
+    await shot("08-bar");
+    await key(KEY.ENTER);
+  }
 } catch (e) {
   say("✗ " + e.message);
   await page.screenshot({ path: path.join(OUT, "readme-shots-failed.jpg"), type: "jpeg", quality: 80 });

@@ -25,6 +25,8 @@ what you half-watched on the phone is under the cursor when the TV comes on.
 | Press down while playing for the description, speed, danmaku, parts / collection and related videos — **the video keeps running**, with the danmaku moved up above the panel; like / coin / favourite and comments are here too | Comments and replies beside the video, which keeps playing |
 | ![Settings](docs/screenshots/06-settings.jpg) | ![Search](docs/screenshots/02-search.jpg) |
 | Settings: autoplay, subtitles, danmaku, quality cap, clearing watch history, self-update, and cards per row to suit the TV and the sofa | Search, with the TV's own Chinese IME one button away |
+| ![Live](docs/screenshots/07-live.jpg) | ![Top bar](docs/screenshots/08-bar.jpg) |
+| Live: the streamers you follow who are on come first, then the whole site by popularity; inside, up and down change room like channels | Your own top bar: pick a tab up and move it left or right, take it off with down, add from the row below with one press |
 
 ## Will it run on my TV
 
