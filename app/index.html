@@ -57,6 +57,8 @@
 </div>
 
 <div id="pause-glyph" class="hidden"><div class="bar"></div><div class="bar"></div></div>
+<!-- 弹幕 (danmaku.js): under the subtitles and the player chrome, by document order. -->
+<div id="danmaku" class="hidden"></div>
 <div id="subtitle-overlay" class="hidden"><div id="subtitle-text"></div></div>
 
 <div id="playerui" class="hidden">
@@ -105,6 +107,10 @@
     <div class="opt-group" id="opt-speed-group">
         <div class="opt-label">播放速度</div>
         <div class="opt-row" id="opt-speed"></div>
+    </div>
+    <div class="opt-group" id="opt-danmaku-group">
+        <div class="opt-label">弹幕</div>
+        <div class="opt-row" id="opt-danmaku"></div>
     </div>
     <div class="opt-group" id="opt-related-group">
         <div class="opt-label">相关推荐</div>
@@ -196,6 +202,7 @@
 <script src="js/api.js"></script>
 <script src="js/nav.js"></script>
 <script src="js/player.js"></script>
+<script src="js/danmaku.js"></script>
 <script src="js/app.js"></script>
 <script src="js/updater.js"></script>
 <script src="js/selftest.js"></script>

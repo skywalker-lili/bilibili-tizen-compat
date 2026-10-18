@@ -1102,6 +1102,49 @@ var SelfTest = (function () {
             if (!probe.sub) { return null; }
             key(KEY.RETURN);
             return Settings.get("showSubtitles", false) === probe.subWas ? null : "字幕开关没有恢复";
+        }],
+
+        /* 弹幕 (2026-10-18). The pool is asked first, so a video nobody has
+         * commented on is a skip, not a failure; then the first recommended
+         * video plays and the overlay has to show a comment within 20 s. The
+         * setting is put back afterwards. */
+        ["弹幕：问推荐第一个视频的弹幕池", 600, function () {
+            var v = (window.__stItems || [])[0];
+            probe.dm = null; probe.dmDone = false;
+            if (!v || !v.cid) { probe.dmDone = true; post("跳过弹幕：推荐第一张卡片没有 cid"); return null; }
+            Danmaku.load(v.cid, function (list) { probe.dm = { n: list.length, v: v }; probe.dmDone = true; },
+                         function (why) { probe.dmErr = String(why); probe.dmDone = true; });
+            return null;
+        }],
+        ["弹幕：打开它，画面上出现弹幕", 300, function () {
+            if (!probe.dmDone) { return "弹幕池 0.6 秒没问完"; }
+            if (probe.dmErr) { return "弹幕池取不到：" + probe.dmErr; }
+            if (!probe.dm) { return null; }
+            if (!probe.dm.n) { post("跳过弹幕：这个视频没人发弹幕"); probe.dm = null; return null; }
+            probe.dmWas = Settings.get("danmaku", "normal");
+            Settings.set("danmaku", "normal");
+            var card = document.querySelector('#feed-grid .card[data-i="0"]');
+            if (!card) { Settings.set("danmaku", probe.dmWas); return "网格里找不到第一张卡片"; }
+            Nav.focus(card);
+            key(KEY.ENTER);
+            probe.dmSeen = "";
+            probe.dmTimer = setInterval(function () {
+                var n = document.querySelector("#danmaku .dm");
+                if (!probe.dmSeen && visible("danmaku") && n && n.textContent) { probe.dmSeen = n.textContent; }
+            }, 250);
+            return null;
+        }],
+        ["弹幕：20 秒内画面上有弹幕", 20000, function () {
+            if (!probe.dm) { return null; }
+            clearInterval(probe.dmTimer);
+            post("弹幕池 " + probe.dm.n + " 条，画面上：「" + (probe.dmSeen || "").slice(0, 20) + "」");
+            return probe.dmSeen ? null : "播了 20 秒，画面上一条弹幕都没出现";
+        }],
+        ["弹幕：退出播放，设置恢复原样", 600, function () {
+            if (!probe.dm) { return null; }
+            key(KEY.RETURN);
+            Settings.set("danmaku", probe.dmWas);
+            return visible("danmaku") ? "退出播放之后弹幕层还在" : null;
         }]
     ];
 

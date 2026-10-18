@@ -141,7 +141,10 @@ uploader's name in the panel, or 右 on the end-of-video screen, for everything
 they have posted; 返回 goes back to the tab you came from). About **2.5–3.5 s**
 from OK to a picture, 1080p H.265.
 
-Also: favourite folders and followed uploaders under 「我的」; comments (with
+Also: danmaku (off / sparse / standard / dense, in 设置 or the playback panel);
+collections (合集 — a row of episodes in the panel, and the next episode plays
+when one ends); a quality cap (highest by default: 4K for 大会员 accounts) and
+clearing this set's watch history; favourite folders and followed uploaders under 「我的」; comments (with
 replies) beside the running video; subtitles; like, coin and favourite (hold OK
 on a card, or the buttons in the playback panel; a coin asks once more); and a
 「设置」 tab — autoplay next, subtitles on/off, and cards per row (3 / 4 / 5, to
@@ -149,9 +152,6 @@ suit how big the TV is and how far the sofa). These come from
 [PR #2](https://github.com/titlog/bilibili-tizen/pull/2).
 
 **Does not**:
-- **4K.** The two missing tiers (1080p high bitrate, 4K) are what the paid
-  membership sells, very few uploads have them, and whether this set's MSE can
-  hardware-decode 4K is unverified.
 - **Casting from the phone.** A cast receiver has to listen on a port; a Tizen
   web widget cannot, regardless of how official it is. The substitute is
   watch-later: tap on the phone, open on the TV.

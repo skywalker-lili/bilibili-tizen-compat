@@ -692,3 +692,15 @@ body.density-5 .library-item { width: 344px; }
     animation: spin 0.9s linear infinite;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* 弹幕 (danmaku.js, 2026-10-18). The top ~70% of the picture — the bottom is
+ * the subtitles' and the progress bar's. No z-index: document order puts it
+ * under the subtitles and the player chrome. Plain text-shadow for the outline;
+ * CSS filters were measured expensive on this set (douyin-tizen). */
+#danmaku { position: absolute; left: 0; top: 0; width: 1920px; height: 756px;
+    overflow: hidden; pointer-events: none; opacity: 0.85; }
+#danmaku .dm { position: absolute; left: 0; top: 0; white-space: nowrap;
+    font-weight: 600; line-height: 1.24; will-change: transform;
+    text-shadow: 1px 1px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 0 0 4px rgba(0,0,0,0.6); }
+.comments-open #danmaku { display: none; }
+

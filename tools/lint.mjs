@@ -46,6 +46,9 @@ const HOST = [
   "unescape", "btoa", "atob", "Uint8Array", "Uint8ClampedArray", "ArrayBuffer",
   "DataView", "Promise", "Blob", "Function", "fetch", "shaka",
   "tizen", "webapis",
+  /* danmaku.js: the dev server strips the pool's Content-Encoding, so there
+   * it decodes the deflate itself. */
+  "TextDecoder",
 ];
 
 let failed = false;

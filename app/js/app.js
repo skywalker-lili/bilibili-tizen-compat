@@ -2176,6 +2176,53 @@
         return Settings.get("showSubtitles", false) === true;
     }
 
+    /* 弹幕 (2026-10-18; danmaku.js does the fetching and drawing). One
+     * setting for the television — off, sparse, standard, dense — shared by the
+     * settings page and the row in the play panel. Fetched after the first
+     * frame, like the subtitles and the rest of the metadata: it must not race
+     * the stream for this set's slow link. */
+    var DM_LEVELS = ["off", "low", "normal", "high"];
+    var DM_NAMES = { off: "关", low: "少", normal: "标准", high: "多" };
+    var dm = null;            /* the renderer, built on first use */
+    var viewerPaused = false; /* what setPaused last asked for; danmaku stop with it */
+    function danmakuLevel() {
+        var v = Settings.get("danmaku", "normal");
+        return DM_NAMES[v] ? v : "normal";
+    }
+    function danmakuRenderer() {
+        if (!dm && typeof Danmaku !== "undefined") {
+            dm = Danmaku.renderer(el("danmaku"));
+            dm.density(danmakuLevel());
+        }
+        return dm;
+    }
+    function clearDanmaku() {
+        if (dm) { dm.clear(); dm.set([]); }
+        el("danmaku").className = "hidden";
+    }
+    function startDanmaku() {
+        if (!playing || playing.danmakuStarted || danmakuLevel() === "off" || !danmakuRenderer()) { return; }
+        var session = playing, t0 = new Date().getTime();
+        session.danmakuStarted = true;
+        Danmaku.load(session.cid, function (list) {
+            if (playing !== session) { return; }
+            dm.set(list);
+            dm.rate(Player.rate());
+            el("danmaku").className = "";
+            report("danmaku", list.length + " 条（" + DM_NAMES[danmakuLevel()] + "），" + (new Date().getTime() - t0) + "ms");
+        }, function (why) {
+            if (playing === session) { report("danmaku", "弹幕取不到：" + why); }
+        });
+    }
+    function setDanmakuLevel(v) {
+        Settings.set("danmaku", v);
+        if (danmakuRenderer()) { dm.density(v); }
+        if (v === "off") { el("danmaku").className = "hidden"; }
+        else if (playing && playing.danmakuStarted) { el("danmaku").className = ""; }
+        else { startDanmaku(); }
+        report("settings", "弹幕=" + DM_NAMES[v]);
+    }
+
     function clearSubtitles() {
         el("subtitle-overlay").className = "hidden";
         el("subtitle-text").textContent = "";
@@ -2254,9 +2301,11 @@
             '<div class="me-sub" style="margin-top:12px">' + esc(expiryNote) + '</div>' +
             '<div class="section">播放</div>' +
             '<div class="actions"><div class="btn focusable" id="btn-autoplay"></div>' +
-            '<div class="btn focusable" id="btn-subtitles"></div></div>' +
+            '<div class="btn focusable" id="btn-subtitles"></div>' +
+            '<div class="btn focusable" id="btn-danmaku"></div></div>' +
             '<div class="me-sub" style="margin-top:24px">关闭后，视频或分 P 播完会停在下一条推荐页面，按确认键才会继续播放。</div>' +
             '<div class="me-sub" style="margin-top:12px">字幕只在视频提供字幕轨道时显示；设置会在下一次播放时生效。</div>' +
+            '<div class="me-sub" style="margin-top:12px">弹幕显示在画面上方，播放时按下键打开面板也能调。</div>' +
             '<div class="section">画质</div>' +
             '<div class="actions"><div class="btn focusable" id="btn-quality"></div></div>' +
             '<div class="me-sub" style="margin-top:24px">最高用到哪一档，下一个视频生效。1080P 高码率和 4K 是大会员才有的；账号拿不到的档 bilibili 不给，' +
@@ -2287,6 +2336,14 @@
             paintSubtitles();
             report("settings", "显示字幕=" + (subtitlesEnabled() ? "开" : "关"));
         };
+        var dmBtn = el("btn-danmaku");
+        function paintDm() { dmBtn.textContent = "弹幕：" + DM_NAMES[danmakuLevel()]; }
+        paintDm();
+        dmBtn.onselect = function () {
+            setDanmakuLevel(DM_LEVELS[(DM_LEVELS.indexOf(danmakuLevel()) + 1) % DM_LEVELS.length]);
+            paintDm();
+        };
+
         var quality = el("btn-quality");
         function paintQuality() { quality.textContent = "画质上限：" + QN_LABELS[Settings.qnCap()]; }
         paintQuality();
@@ -3230,6 +3287,8 @@
     /* A paused video should read as paused from the sofa, not just by a frozen
      * number in the corner. */
     function setPaused(paused) {
+        viewerPaused = !!paused;
+        if (dm) { dm.pause(viewerPaused); }
         if (paused) {
             Player.pause();
             el("pause-glyph").className = "";
@@ -3702,6 +3761,28 @@
         }
     }
 
+    /* 弹幕 in the panel: the same four levels as the settings page, as chips
+     * like the speed row. Choosing keeps the panel open. */
+    function paintDanmakuRow() {
+        var cur = danmakuLevel(), html = "";
+        for (var i = 0; i < DM_LEVELS.length; i++) {
+            html += '<div class="opt focusable' + (DM_LEVELS[i] === cur ? " current" : "") +
+                    '" data-dm="' + DM_LEVELS[i] + '">' + DM_NAMES[DM_LEVELS[i]] + "</div>";
+        }
+        el("opt-danmaku").innerHTML = html;
+        var chips = document.querySelectorAll("#opt-danmaku .opt");
+        for (var j = 0; j < chips.length; j++) {
+            (function (node) {
+                node.onselect = function () {
+                    var v = node.getAttribute("data-dm");
+                    setDanmakuLevel(v);
+                    paintDanmakuRow();
+                    Nav.focus(document.querySelector('#opt-danmaku .opt[data-dm="' + v + '"]'));
+                };
+            })(chips[j]);
+        }
+    }
+
     /* 合集 (2026-10-18). The same chips as the parts, one per episode, every
      * one of them (the parts row's reasoning: a series long enough to need a
      * list is exactly the one a cap would cut). Choosing one plays that video;
@@ -3768,6 +3849,7 @@
                 node.onselect = function () {
                     var r = Number(node.getAttribute("data-rate"));
                     if (!Player.setRate(r)) { toast("当前播放方式不支持这个速度"); return; }
+                    if (dm) { dm.rate(r); }
                     paintSpeed();
                     setQualityBadge(qualityText);
                     Nav.focus(document.querySelector('#opt-speed .opt[data-rate="' + r + '"]'));
@@ -3820,6 +3902,7 @@
         paintParts();
         paintSeason();
         paintSpeed();
+        paintDanmakuRow();
 
         /* Related videos live in the panel now, so "what else" never costs the
          * viewer their place in the video. All of them, not the first sixteen:
@@ -4237,6 +4320,8 @@
         }
         Player.stop();
         clearSubtitles();
+        clearDanmaku();
+        viewerPaused = false;
         playing = { detail: detail, cid: cid };
 
         var startMs = Resume.positionMs(detail.bvid, cid);
@@ -5037,6 +5122,7 @@
         Player.stop();
         playing = null;
         clearSubtitles();
+        clearDanmaku();
         showPlayerUi(false);
         /* Unless the set slept through the middle of this video, in which case
          * what is behind the player is last night's screen and the owed refresh
@@ -5052,6 +5138,7 @@
         if (kind === "time") {
             if (playing) {
                 paintSubtitleAt(data.position);
+                if (dm && playing.danmakuStarted) { dm.tick(data.position, !viewerPaused); }
                 var d0 = playing.detail;
                 /* Which part this is, so 我的 can say P7 and reopening the
                  * video can land back on it. */
@@ -5140,6 +5227,7 @@
             }
             loadMetaForPlaying();
             startSubtitles();
+            startDanmaku();
             /* The duration is only real once there is a picture, and the marks
              * are placed as a fraction of it. */
             paintChapters();
@@ -5171,6 +5259,7 @@
         } else if (kind === "ended") {
             if (playing) { playing.subtitleCues = []; }
             clearSubtitles();
+            clearDanmaku();
             if (playing) {
                 Resume.finished(playing.detail.bvid, playing.cid);
                 reportProgress(-1, true);   /* -1 is bilibili's "watched to the end" */
