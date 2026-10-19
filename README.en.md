@@ -7,9 +7,9 @@ An unofficial, remote-controlled bilibili client customized for **older Samsung 
 | At a glance | Details |
 | --- | --- |
 | **Upstream base** | **titlog**'s [bilibili-tizen](https://github.com/titlog/bilibili-tizen), `master` at [commit `76003faf3ae1a647a92c532b968e4896427530cb`](https://github.com/titlog/bilibili-tizen/commit/76003faf3ae1a647a92c532b968e4896427530cb), dated **2026-10-02**. This is an exact commit, not an upstream release number. |
-| **This derivative** | **1.0.12**; independently maintained under the upstream MIT license and attribution. We plan to offer the changes back to the original maintainer for review. |
+| **This derivative** | **1.0.16**; independently maintained under the upstream MIT license and attribution. We plan to offer the changes back to the original maintainer for review. |
 | **Tested TV** | **55-inch Samsung Q90T (QN55Q90TAFXZA), Tizen 5.5, firmware 2743**. Installation, QR sign-in, and main remote-control flows were tested here; other models remain unverified. |
-| **Highlights** | Tizen 5.5 support, denser four/five-column browsing with publication dates, favorites and followed creators, long-press video actions, comments beside playback, subtitle/autoplay settings, and token-expiry display. See the [itemized changes](#what-this-version-adds-to-the-original-project). |
+| **Highlights** | Tizen 5.5 support, denser four/five-column browsing with publication dates, favorites and followed creators, long-press video actions, comments beside playback, lightweight danmaku, subtitle/autoplay settings, and token-expiry display. See the [itemized changes](#what-this-version-adds-to-the-original-project). |
 
 The installed TV app is named **Bilibili Tizen 兼容版 / Compatibility**. The name does not restrict it to Q90T, but Q90T remains the only model tested so far.
 
@@ -17,7 +17,7 @@ The installed TV app is named **Bilibili Tizen 兼容版 / Compatibility**. The 
 
 ## Screenshots from the tested TV
 
-These are photos of the app running on the Q90T. Only embedded file metadata was removed; the image pixels were left unchanged.
+These are photos of the app running on the Q90T. Embedded capture-time, location, and device metadata was removed. The first five photos have unchanged pixels; the danmaku-settings photo also masks the account token's visible expiry time.
 
 ![bilibili Tizen compatibility version home screen](docs/screenshots/01-home.jpg)
 
@@ -39,6 +39,14 @@ These are photos of the app running on the Q90T. Only embedded file metadata was
 
 *The app in the TV app bar after installation.*
 
+![Danmaku over video playback](docs/screenshots/06-danmaku-playback.jpg)
+
+*Danmaku scrolling over the playing video.*
+
+![Danmaku settings](docs/screenshots/07-danmaku-settings.jpg)
+
+*Global danmaku toggle, density, and screen area in Settings; account expiry masked.*
+
 ## Who is this for?
 
 Use it if your Samsung Tizen TV has no usable bilibili app in its regional store and you are willing to enable Developer Mode and sign/install a Tizen Web app for your own TV. It is **not** an Android APK or a USB-stick installation. If an official app is available and works for you, try that first.
@@ -51,7 +59,7 @@ Use it if your Samsung Tizen TV has no usable bilibili app in its regional store
 | **Potentially compatible, untested** | Other 2020 Tizen 5.5 models and newer Samsung Tizen TVs. Installation, decoding, layout, and API behavior still need testing. |
 | **Not supported by this package** | Tizen versions below 5.5 (generally 2019 and earlier Samsung TVs), and non-Samsung platforms. |
 
-Samsung lists the 2020 Q90 lineup under Tizen 5.5 in its [TV model groups](https://developer.samsung.com/smarttv/develop/specifications/tv-model-groups.html); the [Web engine table](https://developer.samsung.com/smarttv/develop/specifications/web-engine-specifications.html) covers model years. The package's minimum is declared in [app/config.xml](app/config.xml). If you test another TV, report its full model and firmware version, but never publish its DUID or certificates.
+Samsung lists the 2020 Q90 lineup under Tizen 5.5 in its [TV model groups](https://developer.samsung.com/smarttv/develop/specifications/tv-model-groups.html). The tested Q90T's app runtime also reported **Tizen 5.5 / Chromium 69** through `navigator.userAgent`, so this is not inferred from the model year alone. The [Web engine table](https://developer.samsung.com/smarttv/develop/specifications/web-engine-specifications.html) covers model years, and the package's minimum is declared in [app/config.xml](app/config.xml). A separate `USER_AGENT` in the source says `Tizen 7.0` for AVPlay stream requests; it is a request identifier sent to the video service, **not the TV's actual OS version**. If you test another TV, report its full model and firmware version, but never publish its DUID or certificates.
 
 **We have not found a verifiable published minimum Tizen version for an official bilibili client.** Samsung groups 2023 models under Tizen 7.0, but that model-year mapping does not establish the minimum for bilibili's app: each app declares its own minimum in its package, as [Samsung explains](https://developer.samsung.com/smarttv/develop/faq/specifications-and-feature-support.html). Store availability also depends on the [TV model's store region](https://developer.samsung.com/tv-seller-office/faq/tv-seller-office-use.html). **If your TV runs a version below Tizen 7.0 but at least 5.5, and its store has no usable bilibili app, you can try this compatibility version.** This is this project's tentative range, not a claim about an official 7.0 cutoff. Search your TV's store first.
 
@@ -62,6 +70,7 @@ Samsung lists the 2020 Q90 lineup under Tizen 5.5 in its [TV model groups](https
 - Video cards show creator, view count, and publication date. Settings offer four or five cards per row and an autoplay-next toggle.
 - Short-press **OK** on a card to play. Long-press **OK** (about 0.65 seconds) to open like/coin/favorite actions. Coin spending requires a second confirmation. Arrow keys navigate cards directly.
 - During playback, **OK** pauses/resumes, left/right seek, and down opens the information panel with **Read comments** selected by default. Comments and nested replies appear beside the still-playing video. Comments are currently read-only.
+- Optional ordinary scrolling danmaku can be adjusted in Settings or the playback panel. Low/medium/high density allows up to 12/25/40 simultaneous comments; choose the top quarter, the upper three quarters, or the full screen.
 
 ## What this version adds to the original project
 
@@ -75,12 +84,13 @@ The original **[titlog/bilibili-tizen](https://github.com/titlog/bilibili-tizen)
 6. **Playback preferences:** toggles for autoplay-next and subtitles, a four/five-column choice, and a playback panel that initially focuses **Read comments**.
 7. **Navigation fixes:** the first related-video card can move down to the next row immediately, and the nonworking Chinese-input button has been removed pending real Pinyin support.
 8. **Token-expiry display:** Settings shows the locally stored TV access token's nominal expiry away from the home screen, without exposing the token.
+9. **Lightweight danmaku:** synchronized ordinary scrolling comments, a global toggle, three density levels, and three screen areas. Each six-minute response is capped at 1 MB, and only the previous/current/next segments are kept in memory; changing videos clears them.
 
 These are changes relative to the upstream client, not a claim that this branch designed every feature from scratch. See [BUGS.md](BUGS.md) and [FEATURES.md](FEATURES.md) for unresolved issues and plans.
 
-Currently unsupported: 4K, danmaku, reliable Chinese Pinyin entry, commenting or liking comments, and casting from a phone to this app. TV-to-bilibili watch-progress reporting has been observed to fail with HTTP 403; local TV resume still works. See [BUGS.md](BUGS.md) and [FEATURES.md](FEATURES.md).
+Currently unsupported: 4K, sending or filtering danmaku, reliable Chinese Pinyin entry, commenting or liking comments, and casting from a phone to this app. A danmaku segment above the 1 MB response limit is skipped with a visible notice. TV-to-bilibili watch-progress reporting has been observed to fail with HTTP 403; local TV resume still works. See [BUGS.md](BUGS.md) and [FEATURES.md](FEATURES.md).
 
-**Known bugs:** watch-progress reporting and comment-like writes receive HTTP 403 on the tested TV. **Planned features:** standalone comment likes, danmaku with density controls, true Chinese Pinyin input, safer account retention across updates, token refresh, and subtitle track selection. See [BUGS.md](BUGS.md) and [FEATURES.md](FEATURES.md) for details.
+**Known bugs:** watch-progress reporting and comment-like writes receive HTTP 403 on the tested TV. **Planned features:** standalone comment likes, danmaku filtering, true Chinese Pinyin input, safer account retention across updates, token refresh, and subtitle track selection. See [BUGS.md](BUGS.md) and [FEATURES.md](FEATURES.md) for details.
 
 ## Installation
 

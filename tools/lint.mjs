@@ -44,7 +44,7 @@ const HOST = [
   "Boolean", "Array", "Object", "RegExp", "Error", "parseInt", "parseFloat",
   "isNaN", "isFinite", "encodeURIComponent", "decodeURIComponent", "escape",
   "unescape", "btoa", "atob", "Uint8Array", "Uint8ClampedArray", "ArrayBuffer",
-  "DataView", "Promise", "Blob", "Function", "fetch", "shaka",
+  "DataView", "TextDecoder", "Promise", "Blob", "Function", "fetch", "shaka",
   "tizen", "webapis",
 ];
 

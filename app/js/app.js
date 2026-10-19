@@ -2093,6 +2093,34 @@
         return Settings.get("showSubtitles", false) === true;
     }
 
+    function danmakuEnabled() { return Settings.get("showDanmaku", false) === true; }
+    function danmakuDensity() {
+        var v = Settings.get("danmakuDensity", "low");
+        return v === "medium" || v === "high" ? v : "low";
+    }
+    function danmakuArea() {
+        var v = Settings.get("danmakuArea", "safe");
+        return v === "full" || v === "top" ? v : "safe";
+    }
+    function changeDanmakuSetting(which) {
+        if (which === "switch") { Settings.set("showDanmaku", !danmakuEnabled()); }
+        else if (which === "density") {
+            var densities = ["low", "medium", "high"];
+            Settings.set("danmakuDensity",
+                densities[(densities.indexOf(danmakuDensity()) + 1) % densities.length]);
+        } else if (which === "area") {
+            var areas = ["full", "top", "safe"];
+            Settings.set("danmakuArea", areas[(areas.indexOf(danmakuArea()) + 1) % areas.length]);
+        }
+        Danmaku.refresh();
+    }
+    function danmakuLabels() {
+        return { "switch": "弹幕：" + (danmakuEnabled() ? "开" : "关"),
+            "density": "密度：" + ({ low: "低", medium: "中", high: "高" })[danmakuDensity()],
+            "area": "位置：" + ({ full: "全屏", top: "顶部 1/4",
+                                  safe: "避开底部 1/4" })[danmakuArea()] };
+    }
+
     function clearSubtitles() {
         el("subtitle-overlay").className = "hidden";
         el("subtitle-text").textContent = "";
@@ -2161,7 +2189,7 @@
         }
         screenEl.innerHTML = '<div class="mine">' +
             '<div class="me"><div class="me-name">设置</div>' +
-            '<div class="me-sub">版本 1.0.12 · 播放偏好会保存在这台电视上</div></div>' +
+            '<div class="me-sub">版本 1.0.16 · 播放偏好会保存在这台电视上</div></div>' +
             '<div class="section">账号</div>' +
             '<div class="me-sub" style="margin-top:12px">' + esc(expiryNote) + '</div>' +
             '<div class="section">播放</div>' +
@@ -2169,6 +2197,11 @@
             '<div class="btn focusable" id="btn-subtitles"></div></div>' +
             '<div class="me-sub" style="margin-top:24px">关闭后，视频或分 P 播完会停在下一条推荐页面，按确认键才会继续播放。</div>' +
             '<div class="me-sub" style="margin-top:12px">字幕只在视频提供字幕轨道时显示；设置会在下一次播放时生效。</div>' +
+            '<div class="section">弹幕</div>' +
+            '<div class="actions"><div class="btn focusable" id="btn-dm-switch"></div>' +
+            '<div class="btn focusable" id="btn-dm-density"></div>' +
+            '<div class="btn focusable" id="btn-dm-area"></div></div>' +
+            '<div class="me-sub" style="margin-top:24px">开启后也可在播放视频时按下键调整；设置对所有视频生效。仅显示普通滚动弹幕。</div>' +
             '<div class="section">浏览</div>' +
             '<div class="actions"><div class="btn focusable" id="btn-density"></div></div>' +
             '<div class="me-sub" style="margin-top:24px">每行 4 个适合阅读标题；每行 5 个可看到更多视频。</div></div>';
@@ -2192,6 +2225,19 @@
             paintSubtitles();
             report("settings", "显示字幕=" + (subtitlesEnabled() ? "开" : "关"));
         };
+        function paintDanmakuSettings() {
+            var names = danmakuLabels();
+            el("btn-dm-switch").textContent = names["switch"];
+            el("btn-dm-density").textContent = names.density;
+            el("btn-dm-area").textContent = names.area;
+        }
+        paintDanmakuSettings();
+        ["switch", "density", "area"].forEach(function (which) {
+            el("btn-dm-" + which).onselect = function () {
+                changeDanmakuSetting(which);
+                paintDanmakuSettings();
+            };
+        });
         var density = el("btn-density");
         function paintDensity() { density.textContent = "每行视频：" + gridColumns() + " 个"; }
         paintDensity();
@@ -3104,11 +3150,13 @@
     function setPaused(paused) {
         if (paused) {
             Player.pause();
+            Danmaku.pause(true);
             el("pause-glyph").className = "";
             if (!commentsView) { el("playerui").className = ""; }
             if (chromeTimer) { clearTimeout(chromeTimer); chromeTimer = null; }
         } else {
             Player.resume();
+            Danmaku.pause(false);
             el("pause-glyph").className = "hidden";
             showChrome();
         }
@@ -3426,6 +3474,7 @@
         el("comments-view").className = "";
         el("playerui").className = "hidden";
         Player.setViewport(48, 72, 1216, 684);
+        Danmaku.viewportChanged();
         paintComments(0);
         loadComments();
     }
@@ -3438,6 +3487,7 @@
         el("comments-view").className = "hidden";
         el("comments-list").innerHTML = "";
         Player.setViewport(0, 0, 1920, 1080);
+        Danmaku.viewportChanged();
         if (playing && !silent) { showChrome(); }
     }
 
@@ -3574,12 +3624,44 @@
                 node.onselect = function () {
                     var r = Number(node.getAttribute("data-rate"));
                     if (!Player.setRate(r)) { toast("当前播放方式不支持这个速度"); return; }
+                    Danmaku.setRate(Player.rate());
                     paintSpeed();
                     setQualityBadge(qualityText);
                     Nav.focus(document.querySelector('#opt-speed .opt[data-rate="' + r + '"]'));
                 };
             })(chips[j]);
         }
+    }
+
+    function paintDanmakuPanel(focusWhich) {
+        var names = danmakuLabels(), whiches = ["switch", "density", "area"];
+        var html = "", i;
+        for (i = 0; i < whiches.length; i++) {
+            var which = whiches[i];
+            html += '<div class="opt focusable" data-dm-setting="' + which + '">' +
+                    esc(names[which]) + '</div>';
+        }
+        el("opt-danmaku").innerHTML = html;
+        paintDanmakuStatus();
+        var nodes = document.querySelectorAll("#opt-danmaku .opt");
+        for (i = 0; i < nodes.length; i++) {
+            (function (node) {
+                node.onselect = function () {
+                    var which = node.getAttribute("data-dm-setting");
+                    changeDanmakuSetting(which);
+                    paintDanmakuPanel(which);
+                };
+            })(nodes[i]);
+        }
+        if (focusWhich) {
+            Nav.focus(document.querySelector('#opt-danmaku [data-dm-setting="' +
+                                     focusWhich + '"]'));
+        }
+    }
+
+    function paintDanmakuStatus() {
+        var node = el("opt-danmaku-status");
+        if (node) { node.textContent = Danmaku.statusText(); }
     }
 
     function openOptions() {
@@ -3625,6 +3707,7 @@
 
         paintParts();
         paintSpeed();
+        paintDanmakuPanel();
 
         /* Related videos live in the panel now, so "what else" never costs the
          * viewer their place in the video. All of them, not the first sixteen:
@@ -4040,6 +4123,7 @@
                            Math.floor(lastKnownDuration / 1000));
         }
         Player.stop();
+        Danmaku.stop();
         clearSubtitles();
         playing = { detail: detail, cid: cid };
 
@@ -4062,6 +4146,7 @@
         lastKnownPosition = startMs;
         lastKnownDuration = 0;      /* the previous video's length is not this one's */
         playing.startMs = startMs;
+        Danmaku.start(cid, detail.aid, startMs);
         playing.fromPhone = fromPhone;
         /* Where playback starts is settled in `decide()`: bilibili's own record
          * for this video is still in flight at this point and may move it. */
@@ -4838,6 +4923,7 @@
         cancelNext();
         playedInChain = {};
         Player.stop();
+        Danmaku.stop();
         playing = null;
         clearSubtitles();
         showPlayerUi(false);
@@ -4855,6 +4941,14 @@
         if (kind === "time") {
             if (playing) {
                 paintSubtitleAt(data.position);
+                if (danmakuEnabled()) {
+                    /* A real playhead tick is enough to start the delayed,
+                     * one-at-a-time comment fetch. Player.steady() demands
+                     * 20 seconds of MSE buffer for video prefetching; on this
+                     * TV that can remain false throughout healthy playback. */
+                    Danmaku.onTime(data.position, true);
+                    if (optionsOpen) { paintDanmakuStatus(); }
+                }
                 var d0 = playing.detail;
                 /* Which part this is, so 我的 can say P7 and reopening the
                  * video can land back on it. */
@@ -4919,6 +5013,8 @@
             el("loading-status").textContent = data;
             el("player-loading").className = "";
         } else if (kind === "playing") {
+            Danmaku.playing(Player.rate());
+            Danmaku.pause(Player.userPaused());
             el("player-loading").className = "hidden";
             el("loading-status").textContent = "";
             /* Where the seconds before a picture actually went. Without this,
@@ -4947,6 +5043,7 @@
              * are placed as a fraction of it. */
             paintChapters();
         } else if (kind === "buffering") {
+            Danmaku.pause(data || Player.userPaused());
             el("player-hint").textContent = data ? "缓冲中…" : HINT;
             /* 「缓冲中…」 is written inside the banner, and the banner is gone four
              * seconds after the last keypress — so for a viewer who is simply
@@ -4972,6 +5069,7 @@
                 bufferNoticeTimer = null;
             }
         } else if (kind === "ended") {
+            Danmaku.stop();
             if (playing) { playing.subtitleCues = []; }
             clearSubtitles();
             if (playing) {

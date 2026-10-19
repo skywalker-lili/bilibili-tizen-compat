@@ -886,6 +886,49 @@ var API = (function () {
             try { xhr.send(); } catch (e) { fail("request error"); }
         },
 
+        /* One six-minute ordinary-danmaku segment. The response is protobuf,
+         * so unlike the JSON helpers it is passed through as an ArrayBuffer.
+         * A handle lets a seek or video switch cancel an obsolete download. */
+        danmakuSegment: function (cid, aid, index, onOk, onFail) {
+            if (!/^[1-9]\d*$/.test(String(cid)) || !/^[1-9]\d*$/.test(String(index))) {
+                onFail("invalid danmaku segment"); return null;
+            }
+            var url = BASE + "/x/v2/dm/web/seg.so?type=1&oid=" + cid +
+                      "&segment_index=" + index;
+            if (aid && /^[1-9]\d*$/.test(String(aid))) { url += "&pid=" + aid; }
+            var xhr = new XMLHttpRequest(), done = false;
+            function fail(why) { if (!done) { done = true; onFail(why); } }
+            xhr.open("GET", withSession(url), true);
+            xhr.responseType = "arraybuffer";
+            applySession(xhr);
+            xhr.timeout = 12000;
+            xhr.onprogress = function (event) {
+                if (!done && event.loaded > 1024 * 1024) {
+                    fail("本段弹幕超过 1 MB 上限");
+                    try { xhr.abort(); } catch (e) {}
+                }
+            };
+            xhr.onreadystatechange = function () {
+                if (xhr.readyState !== 4 || done) { return; }
+                if (xhr.status !== 200) { fail("HTTP " + xhr.status); return; }
+                if (!xhr.response) {
+                    fail("弹幕片段不可用"); return;
+                }
+                if (xhr.response.byteLength > 1024 * 1024) {
+                    fail("本段弹幕超过 1 MB 上限"); return;
+                }
+                done = true;
+                onOk(xhr.response);
+            };
+            xhr.onerror = function () { fail("network error"); };
+            xhr.ontimeout = function () { fail("timeout"); };
+            try { xhr.send(); } catch (e) { fail("request error"); }
+            return { abort: function () {
+                done = true;
+                try { xhr.abort(); } catch (e) {}
+            } };
+        },
+
         /* The sprite sheets behind the scrub preview.
          *
          * Frames are laid out cols × rows per sheet. `index` gives each frame's

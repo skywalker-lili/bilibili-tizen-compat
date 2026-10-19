@@ -486,6 +486,24 @@ body.density-5 .library-item { width: 344px; }
 #subtitle-text { max-width: 1500px; text-align: center; white-space: pre-line;
     font-size: 42px; line-height: 1.35; color: #fff; font-weight: 600;
     text-shadow: 0 2px 5px #000, 0 0 12px #000, 0 0 22px #000; }
+/* The overlay follows the native AVPlay or MSE viewport. No full-screen GPU
+   texture or permanent will-change per comment on memory-limited TVs. */
+#danmaku-overlay { position: absolute; left: 0; top: 0; width: 1920px;
+    height: 1080px; overflow: hidden; pointer-events: none; }
+#danmaku-overlay.dm-top { height: 270px; }
+#danmaku-overlay.dm-safe { height: 810px; }
+.dm-item { position: absolute; white-space: nowrap; max-width: 640px;
+    overflow: hidden; text-overflow: ellipsis; color: #fff; font-size: 32px;
+    line-height: 44px; font-weight: 600; text-shadow: 0 2px 4px #000, 0 0 7px #000;
+    animation-name: dm-cross; animation-timing-function: linear;
+    animation-fill-mode: forwards; }
+.danmaku-paused .dm-item { animation-play-state: paused; }
+@keyframes dm-cross { from { transform: translateX(0); }
+    to { transform: translateX(var(--dm-travel)); } }
+.comments-open #danmaku-overlay { left: 48px; top: 72px; width: 1216px; height: 684px; }
+.comments-open #danmaku-overlay.dm-top { height: 171px; }
+.comments-open #danmaku-overlay.dm-safe { height: 513px; }
+.comments-open .dm-item { font-size: 25px; line-height: 34px; }
 .comments-open #subtitle-overlay { left: 48px; top: 72px; width: 1216px;
     height: 684px; padding: 0 38px 34px; }
 .comments-open #subtitle-text { font-size: 31px; max-width: 1100px; }
@@ -574,6 +592,7 @@ body.density-5 .library-item { width: 344px; }
 .opt-group { margin-bottom: 32px; }
 .opt-label { font-size: 24px; color: #8b959e; margin-bottom: 16px; letter-spacing: 2px; }
 .opt-row { display: flex; flex-wrap: wrap; gap: 16px; }
+.opt-help { margin-top: 14px; font-size: 21px; color: #9aa4ad; }
 /* Sized to its own text rather than to a column, so the row degrades on its
    own: bare numbers pack five or six to a line the way they always did, and
    named parts take the width they need up to a limit and then ellipsis. One

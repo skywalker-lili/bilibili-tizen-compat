@@ -10,7 +10,8 @@ const scripts = [
   ...fs.readdirSync(appJs).filter((name) => name.endsWith(".js"))
     .map((name) => ["--check", path.join(appJs, name)]),
   ...["lint", "md5-verify", "accounts-verify", "mpd-verify",
-      "mirrors-verify", "qr-verify", "compat-api-verify", "nav-verify"]
+      "mirrors-verify", "qr-verify", "compat-api-verify", "nav-verify",
+      "danmaku-verify"]
     .map((name) => [path.join(root, "tools", `${name}.mjs`)]),
 ];
 
