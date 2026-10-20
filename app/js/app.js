@@ -4785,6 +4785,16 @@
         }
     }
 
+    /* bilibili writes 「-」 for an upload with no description, and the panel
+     * showed it as a stray dash under the uploader (10-20, the viewer: 「up 主
+     * 下面那一行是啥？」). Blank, or only punctuation: no line at all. */
+    function paintDesc(desc) {
+        var text = String(desc || "").replace(/^\s+|\s+$/g, "").slice(0, 400);
+        var node = el("panel-desc");
+        node.textContent = /^[\s\-—_.。·、,，]*$/.test(text) ? "" : text;
+        node.className = node.textContent ? "" : "hidden";
+    }
+
     /* One episode of the 合集, from the tiles or the side list. The one already
      * playing just carries on. */
     function playSeasonEpisode(s, i) {
@@ -4924,7 +4934,7 @@
             var mid = cur.mid, name = cur.author, face = cur.face;
             stopPlayback(function () { openUp(mid, name, face); });
         };
-        el("panel-desc").textContent = (d.desc || "").slice(0, 400);
+        paintDesc(d.desc);
         paintPanelActions();
         loadPanelActions();
         el("panel-comments").onselect = openComments;
@@ -5998,7 +6008,7 @@
             paintSeason();
             paintPanelActions();
             loadPanelActions();
-            el("panel-desc").textContent = (full.desc || "").slice(0, 400);
+            paintDesc(full.desc);
             var meta = el("panel-meta").querySelector(".panel-meta-rest");
             if (meta) {
                 meta.textContent = [full.duration, full.play ? full.play + "次观看" : "",
