@@ -1226,14 +1226,28 @@
     function backFromPlayer() {
         var prev = backStack.pop();
         if (!prev) { stopPlayback(); return; }
-        report("player", "返回：回到 " + videoTag(prev.detail) + " 的 " + fmt(prev.at) + "，打开相关推荐");
+        returnTo(prev);
+    }
+
+    /* Replay a video that was left for a related pick or for its uploader's
+     * page, from the second it was left, with the panel open on what was
+     * pressed: a related card (`pick`) or the uploader chip (`focus`). */
+    function returnTo(prev) {
+        report("player", "返回：回到 " + videoTag(prev.detail) + " 的 " + fmt(prev.at) +
+               (prev.focus ? "（从 UP 主页回来）" : "，打开相关推荐"));
+        if (prev.stack) { backStack = prev.stack; }
         returning = prev;
         play(prev.detail, prev.cid);
         /* At once, not on the first frame: the list is in hand (it rides on the
          * detail), and opening it a second or two later read as the panel
          * jumping up under a video that had already started (the viewer,
          * 10-20). The video loads in the strip above it. */
-        reopenRelated(prev.pick);
+        if (prev.focus) {
+            openOptions();
+            if (el(prev.focus)) { Nav.focus(el(prev.focus)); }
+        } else {
+            reopenRelated(prev.pick);
+        }
     }
 
     /* The exits that say 「播放失败」: a video picked from the related list
@@ -1453,6 +1467,10 @@
      * another uploader's page keeps the original origin, so 返回 still lands
      * on the tab the browsing started from. */
     var upFrom = "rcmd";
+    /* Set when the UP page was opened from the play panel: what 返回 on that
+     * page goes back to. Keyed to the page, so another uploader's page (or a
+     * tab in between) does not inherit it. */
+    var upReturn = null;
     var upInfo = {};        /* kind -> {mid, name, face}, for the page header */
     function isUp(kind) { return String(kind || "").indexOf("up:") === 0; }
     function upMid(kind) { return Number(String(kind).slice(3)) || 0; }
@@ -4995,7 +5013,14 @@
              * what is behind the video, so this press means 返回. */
             if (state.screen === kind) { stopPlayback(); return; }
             var mid = cur.mid, name = cur.author, face = cur.face;
-            stopPlayback(function () { openUp(mid, name, face); });
+            /* 返回 from that page comes back here (2026-10-20, the viewer: 「从一个
+             * 视频下方的 UP 主点进他的 UP 主页，然后再按返回键，为什么就退到了首页？
+             * 应该退到刚刚那个视频呀」): this video, this second, the related-pick
+             * trail behind it, and the ring back on the chip. */
+            var ret = { detail: cur, cid: playing.cid, kind: kind, pick: -1, focus: "panel-up",
+                        at: Player.hasPosition() ? Player.position() : lastKnownPosition,
+                        stack: backStack.slice() };
+            stopPlayback(function () { openUp(mid, name, face); upReturn = ret; });
         };
         paintDesc(d.desc);
         paintPanelActions();
@@ -7031,7 +7056,15 @@
         /* Backing out of "add an account" belongs on the switcher, not on the
          * home feed — the viewer was one press into a two-press errand. */
         if (state.screen === "login" && Accounts.count()) { renderAccounts(false); return; }
-        if (isUp(state.screen)) { showScreen(upFrom, true); return; }
+        if (isUp(state.screen)) {
+            var onKind = state.screen, ur = upReturn;
+            upReturn = null;
+            /* The tab behind goes back under the player first, so leaving the
+             * video afterwards lands where it would have before the detour. */
+            showScreen(upFrom, true);
+            if (ur && ur.kind === onKind && ur.detail) { returnTo(ur); }
+            return;
+        }
         if (state.screen === "mine" && mineView.kind !== "history") {
             mineView = mineView.kind === "videos"
                 ? { kind: "folders", id: 0, title: "" }

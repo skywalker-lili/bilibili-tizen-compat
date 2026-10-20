@@ -859,6 +859,7 @@ var SelfTest = (function () {
             var chip = document.getElementById("panel-up");
             if (!chip || chip.offsetParent === null) { return "面板里没有 UP 主芯片"; }
             if (!chip.textContent) { return "UP 主芯片上没有名字"; }
+            rel.upVideo = document.getElementById("player-title").textContent;
             post("UP 主芯片：" + chip.textContent);
             return null;
         }],
@@ -895,9 +896,29 @@ var SelfTest = (function () {
             if (!n) { return "UP 主页没有卡片"; }
             if (document.querySelector("#tabs .tab.active")) { return "UP 主页上还有页签在高亮"; }
             if (!document.querySelector("#feed-grid .card.focused")) { return "光标没有落在 UP 主页的卡片上"; }
+            /* 关注 (10-20): read, never pressed. */
+            var follow = document.getElementById("up-follow");
+            if (Auth.isLoggedIn() && (!follow || follow.offsetParent === null)) {
+                post("UP 主页没有关注按钮（可能是自己的主页，或状态还没读到）");
+            }
             return null;
         }],
-        ["返回键回到来的地方", 600, function () { key(KEY.RETURN); return null; }],
+        /* 返回 from an UP page opened in the panel goes back to the video, at
+         * that second, the ring on the chip (10-20, the viewer: 「应该退到刚刚
+         * 那个视频呀」); the tab is two more presses away. */
+        ["返回键回到刚才那个视频", 600, function () { key(KEY.RETURN); return null; }],
+        ["回到那个视频，面板开着，焦点在 UP 主芯片", 1000, function () {
+            if (visible("shell")) { return "返回键退回了网格，没有回到视频"; }
+            if (document.getElementById("player-title").textContent !== rel.upVideo) { return WAIT; }
+            if (!visible("options")) { return WAIT; }
+            return document.querySelector("#panel-up.focused") ? null : "面板开了，焦点却不在 UP 主芯片上";
+        }, 15000, "15 秒了还没回到刚才那个视频"],
+        ["返回键收起面板", 700, function () { key(KEY.RETURN); return null; }],
+        ["再按返回回到网格", 700, function () {
+            if (visible("options")) { return "面板没有收起"; }
+            key(KEY.RETURN);
+            return null;
+        }],
         ["回到首页：页签重新高亮，页眉没了", 2500, function () {
             if (!visible("shell")) { return "返回之后不在浏览界面"; }
             if (document.getElementById("up-head")) { return "返回之后 UP 主页眉还在"; }
