@@ -303,6 +303,10 @@ var Player = (function () {
         rep = rep || reps[0];
         var url = rep && ((rep.urls && rep.urls[0]) || rep.baseUrl);
         if (!url) { return; }
+        /* After a token swap the player asks with the strong url; asking with
+         * the web one answered 403 three times on 10-20 16:38 and read as the
+         * file being refused, which it was not. */
+        if (tokenSwap && tokenSwap[swapPathOf(url)]) { url = tokenSwap[swapPathOf(url)][0]; }
         /* At the stalled position, NOT at byte zero. The first version asked
          * for bytes 0-131071 and came back 206 in 95ms, which proved only that
          * the host, the token and the UA are fine — the head of a file is
@@ -665,7 +669,13 @@ var Player = (function () {
              * `decodeRecoveries` recorded the bad files and lost the answer. */
             if (incidentAt && new Date().getTime() - incidentAt > 60000) {
                 incidentAt = 0;
-                if (mode === "mse" && lastDash) {
+                /* Not av01: on this SoC it has turned the picture green and,
+                 * 10-20 16:40, kept the sound going over a frozen picture — a
+                 * minute of clock is no proof the picture survived, and the
+                 * lesson would open the video on it next time. */
+                if (mode === "mse" && lastDash && lastDash.family === "av01") {
+                    log("这条路是 av01，稳定播了一分钟也不记成教训（它在这块芯片上绿过屏、卡死过画面）");
+                } else if (mode === "mse" && lastDash) {
                     stashLesson({ f: lastDash.family });
                     log("这条路稳定播了一分钟，记为本视频的教训（" + lastDash.family + "）");
                 }
@@ -1805,16 +1815,29 @@ var Player = (function () {
             for (var j = 0; j < urls.length; j++) { if (urls[j]) { map[swapPathOf(urls[j])] = urls; } }
         }
         var cur = [].concat(lastDash.dash.video || [], lastDash.dash.audio || []);
-        var covered = 0, total = 0;
+        var covered = 0, total = 0, inUse = 0, inUseCovered = 0;
         for (var k = 0; k < cur.length; k++) {
             if (!cur[k].segments) { continue; }
             total++;
+            /* What this manifest can ask for: its family's tiers and the audio. */
+            var used = (lastDash.dash.audio || []).indexOf(cur[k]) >= 0 ||
+                       String(cur[k].codecs || "").split(".")[0] === lastDash.family;
+            if (used) { inUse++; }
             var cu = cur[k].urls || [cur[k].baseUrl];
             for (var m = 0; m < cu.length; m++) {
-                if (map[swapPathOf(cu[m])]) { covered++; break; }
+                if (map[swapPathOf(cu[m])]) { covered++; if (used) { inUseCovered++; } break; }
             }
         }
-        if (!covered) { return { covered: 0, total: total }; }
+        /* Every file the manifest can ask for, or none of this: 10-20 16:37 a
+         * swap covering 11 of 15 left one tier of the playing family on the web
+         * token, ABR stepped onto it, its 403 stopped the video stream without
+         * a word, and seventy seconds later the buffer ran dry into a ladder
+         * that ended on a frozen av01 picture. A partial swap is handed back
+         * (`partial`) and app.js rebuilds on the strong manifest instead. */
+        if (!covered || inUseCovered < inUse) {
+            return { covered: covered, total: total, partial: inUseCovered < inUse,
+                     inUse: inUse, inUseCovered: inUseCovered };
+        }
         tokenSwap = map;
         swapPending = 0;
         swapGen++;
@@ -2275,6 +2298,9 @@ var Player = (function () {
                     if (new Date().getTime() - lessonAt <= BAD_FILE_TTL) { freshFiles++; }
                 }
                 lessonFamily = lesson.f || "";
+                /* Written before 10-20 16:40 an av01 lesson could exist; it no
+                 * longer leads (see where lessons are written). */
+                if (lessonFamily === "av01") { lessonFamily = ""; }
                 log("沿用 " + Math.round((new Date().getTime() - (lesson.t || 0)) / 60000) +
                     " 分钟前的教训：" +
                     (lessonFamily ? "编码从 " + lessonFamily + " 出发" : "编码不限") +

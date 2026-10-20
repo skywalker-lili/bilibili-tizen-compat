@@ -3875,6 +3875,28 @@
     var WEB_REFUSED_WINDOW = 15 * 60 * 1000;
     function noteWebRefused() { webRefusedAt = new Date().getTime(); }
 
+    /* The strong manifest is in hand but cannot be swapped in under the
+     * playing one (B could not cover every file it may ask for): one ordinary
+     * rebuild on it from where the viewer is — a second or two of spinner,
+     * against 10-20 16:37's partial swap, which ended in a minute of stalls. */
+    function rebuildOnStrong(sess, sd, aid, why) {
+        var atMs = Player.hasPosition() ? Player.position() : (lastKnownPosition || sess.startMs || 0);
+        sess.triedStrong = true;
+        if (sess.dashReady) { sess.dashReady.strongTried = true; }
+        sess.failed = false;
+        sess.startMs = atMs;
+        el("player-loading").className = "";
+        Player.startTiming();
+        sess.timed = false;
+        sess.timedLabel = "到画面(强令牌)";
+        report("player", why + "，改用强令牌从 " + fmt(atMs) + " 整个重建");
+        Player.stop();
+        sess.dashReady = sd;
+        Player.learnStrong(sess.cid, aid);
+        var rep = Player.pickDashVideo(sd);
+        playDash(sd, (rep && rep.id) || Settings.qnCap());
+    }
+
     /* The press behind the next play(), for the 到画面 line's 按下起 (D). The
      * player's own clock restarts at every rescue, so a start that went web →
      * 403 → strong printed playing=2122ms after five seconds on the sofa. */
@@ -6311,6 +6333,11 @@
                     if (playing !== sessSw) { report("player", "换令牌：强令牌回来时会话已经没了，丢弃"); return; }
                     var swapRes = Player.swapToken(sd);
                     if (!swapRes) { report("player", "换令牌：强令牌回来时播放器已经不在等它了"); return; }
+                    if (swapRes.partial) {
+                        rebuildOnStrong(sessSw, sd, aidSw, "换令牌：强令牌只对上正在用的 " + swapRes.inUseCovered +
+                                        "/" + swapRes.inUse + " 份文件（全部 " + swapRes.covered + "/" + swapRes.total + "）");
+                        return;
+                    }
                     if (!swapRes.covered) {
                         Player.swapFailed("强令牌的 " + ((sd.video || []).length + (sd.audio || []).length) +
                                           " 份文件和正在放的 " + swapRes.total + " 份一份都对不上");
