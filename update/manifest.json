@@ -1,4 +1,4 @@
 {
- "manifest": "{\"version\":\"1.3.0\",\"shell\":1,\"sha256\":\"3cac6cfa8a6af152716a9e853ccc718bc633494c358556e3449ce99348346042\",\"size\":945913,\"date\":\"2026-10-20T15:07:53.889Z\",\"urls\":[\"https://cdn.jsdelivr.net/gh/titlog/bilibili-tizen@v1.3.0/update/bundle-1.3.0.json\",\"https://raw.githubusercontent.com/titlog/bilibili-tizen/v1.3.0/update/bundle-1.3.0.json\"]}",
- "sig": "JSAdAV8TG3TViU9oSR422twpUMv5Z00SymAX7inlVEiuJeNKJ/QIhQ1b0VHOjZeeP+3fWYDdEkjK4pd4nGK+1Q=="
+ "manifest": "{\"version\":\"1.3.1\",\"shell\":1,\"sha256\":\"22a31917063b34026cf30253ec956172a7558f0417a4de63812136b61c959d52\",\"size\":956393,\"date\":\"2026-10-20T16:07:08.967Z\",\"urls\":[\"https://cdn.jsdelivr.net/gh/titlog/bilibili-tizen@v1.3.1/update/bundle-1.3.1.json\",\"https://raw.githubusercontent.com/titlog/bilibili-tizen/v1.3.1/update/bundle-1.3.1.json\"]}",
+ "sig": "L5qNMoL4/DKCqCIlTPK+DpQLakF8gN9CyoKAif9mXltyf0G/mujy18smCNXS50AjPYUfd0gKMImOpndM60hiig=="
 }
