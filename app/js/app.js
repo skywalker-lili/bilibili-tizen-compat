@@ -1923,6 +1923,17 @@
     window.__stLoadFeed = function (kind) { loadFeed(kind); };
     window.__stDanmaku = function (level) { setDanmakuLevel(level); };
 
+    /* For deploy.sh --tokenswap: what the session made of a refusal, and a way
+     * to leave the 15-minute window (C) behind so normal viewing is not
+     * steered by a refusal the test manufactured. */
+    window.__stStrongState = function () {
+        if (!playing) { return null; }
+        return { route: playing.route || "", triedStrong: !!playing.triedStrong,
+                 strong: !!(playing.dashReady && playing.dashReady.strong),
+                 label: playing.timedLabel || "", shown: !!playing.shown };
+    };
+    window.__stForgetRefusal = function () { webRefusedAt = 0; };
+
     function watchForWake() {
         /* Nothing is reported when the set goes away: the POST would be dialling
          * into a suspending network stack, and five of those are what puts the
@@ -3419,6 +3430,7 @@
     function warmRefused(e, label) {
         if (e.warmRefused) { return; }
         e.warmRefused = label + " 403";
+        noteWebRefused();
         startEagerStrong(e);
     }
 
@@ -3509,7 +3521,7 @@
      * not hide. So at 8s and 20s it says where it is — app endpoint, codecs
      * query, or which header reads — and says how long it took when it ends.
      * Behaviour is untouched: this only reports. */
-    function mintStrong(aid, cid, qn, onOk, onFail) {
+    function mintStrong(aid, cid, qn, onOk, onFail, webDash) {
         var t0 = new Date().getTime(), finished = false;
         var bvid = (playing && playing.detail && playing.detail.bvid) || "";
         var slow = [8000, 20000], timers = [];
@@ -3528,10 +3540,27 @@
         API.playurlDashStrong(aid, cid, qn,
             function (d) { end(); onOk(d); },
             function (why) { end(); onFail(why); },
-            Player.badFilesFor(cid));
+            Player.badFilesFor(cid), webDash || null);
     }
 
+    /* When a web token was last refused, on any video (C, 2026-10-20). On 10-20
+     * both of the first two videos were refused — one at load, one eleven
+     * seconds in — and each paid 1–3 s of 403 → blacklist → rebuild before the
+     * strong token, which the next video then paid all over again. Inside this
+     * window a new video mints the strong token from the start instead; each
+     * fresh refusal extends it, and once it lapses the next video tries the web
+     * token again, so a day the CDN stops refusing costs one refusal to notice. */
+    var webRefusedAt = 0;
+    var WEB_REFUSED_WINDOW = 15 * 60 * 1000;
+    function noteWebRefused() { webRefusedAt = new Date().getTime(); }
+
+    /* The press behind the next play(), for the 到画面 line's 按下起 (D). The
+     * player's own clock restarts at every rescue, so a start that went web →
+     * 403 → strong printed playing=2122ms after five seconds on the sofa. */
+    var pressAt = 0;
+
     function playVideo(v, fromPanel) {
+        pressAt = new Date().getTime();
         if (!fromPanel) { rememberPosition(); }
         if (v.live) { openLive(v); return; }
 
@@ -4916,6 +4945,11 @@
         clearDanmaku();
         viewerPaused = false;
         playing = { detail: detail, cid: cid };
+        var nowPress = new Date().getTime();
+        /* A card without a cid asks view() first, so the press can be a few
+         * hundred milliseconds before this; autoplay has no press at all. */
+        playing.pressedAt = (pressAt && nowPress - pressAt < 20000) ? pressAt : nowPress;
+        pressAt = 0;
 
         var startMs = Resume.positionMs(detail.bvid, cid);
         var fromPhone = false;
@@ -5162,7 +5196,6 @@
              * BV1GAu163EXE answered -404 on both forms, and view() answered
              * -404 for the whole 稿件 — pressed twice, five seconds apart. */
             if (API.gone(whyText)) {
-                toast("这个视频已经被删除或下架了");
                 /* Hiding a card is a persistent decision, so it gets a
                  * discriminating test rather than an inference. playurl is
                  * asked for one *part*: a -404 means the streams behind this
@@ -5174,10 +5207,23 @@
                  * Should the other case ever appear in the log, the answer is
                  * to re-resolve the cid, not to hide anything. */
                 var deadBvid = detail.bvid;
-                API.view(deadBvid, function () {
+                /* The toast waits for view(), which tells the three apart —
+                 * one round trip after a playback that has already failed.
+                 * 10-20: 「【风骚律师】全系列上线B站！」 is a 稿件 that stands
+                 * for 番剧 episode ep813154, and was told 「已经被删除或下架」
+                 * and sent back to the grid, which read as a crash. */
+                API.view(deadBvid, function (full) {
+                    if (full && /\/bangumi\/play\//.test(full.redirect || "")) {
+                        toast("这是番剧或影视区的正片，这个应用还放不了");
+                        report("player", "playurl -404：这个稿件跳到番剧页（" + full.redirect +
+                               "），番剧走的是另一套播放接口，这个应用没接");
+                        return;
+                    }
+                    toast("这个视频已经被删除或下架了");
                     report("player", "playurl 说 -404 但稿件还在 —— 是这一 P 的 cid" +
                            "（" + cid + "）过期了，继续观看不动它");
                 }, function (vWhy) {
+                    toast("这个视频已经被删除或下架了");
                     /* 62002 「稿件不可见」 is the other shape of gone: 2026-09-28
                      * BV1pPY66BEJX played at 21:24 and answered playurl -404 +
                      * wbi/view 62002 from 21:30 — pressed five times in thirty
@@ -5256,6 +5302,30 @@
             }, function (why) {
                 if (playing !== session) { return; }
                 report("player", "预热路上的强令牌铸不出来（" + why + "），改回 web 清单");
+                got.strong = null;
+                got.strongWhy = "";
+                decide();
+            });
+        } else if (webRefusedAt && new Date().getTime() - webRefusedAt < WEB_REFUSED_WINDOW &&
+                   Auth.isLoggedIn() && Auth.accessKey() && (detail.aid || (pre && pre.aid))) {
+            /* C: another video's web token was refused within the window, so
+             * this one goes to the strong token at once rather than proving the
+             * refusal again with its own 403s. The mint asks the web endpoint
+             * in parallel anyway (codecs, and now the indexes), so the extra
+             * cost on a day the web token would have worked is the app
+             * endpoint's ~300 ms. No lesson is written: nothing about this
+             * video was observed. */
+            got.strong = undefined;
+            got.strongWhy = "近来被拒";
+            report("player", Math.round((new Date().getTime() - webRefusedAt) / 60000) +
+                   " 分钟前别的视频 web 令牌被拒过，这个视频直接铸 app 端点强令牌");
+            mintStrong(detail.aid || pre.aid, cid, Settings.qnCap(), function (sd) {
+                if (playing !== session) { report("player", "近来被拒那条路的强令牌回来时会话已经没了，丢弃"); return; }
+                got.strong = sd;
+                decide();
+            }, function (why) {
+                if (playing !== session) { return; }
+                report("player", "近来被拒那条路的强令牌铸不出来（" + why + "），改回 web 清单");
                 got.strong = null;
                 got.strongWhy = "";
                 decide();
@@ -5795,6 +5865,45 @@
              * a hand-rolled step-down and announced "原画质取不到" every time the
              * picture got better. */
             setQualityBadge(QUALITY_NAMES[data.id] || ("QN " + data.id));
+        } else if (kind === "tokenSwap") {
+            /* B: the web token was refused mid-play and the player kept going
+             * on its buffer (`data` is how many seconds of it). Mint the strong
+             * token and hand it over; anything short of that falls back to the
+             * 403 handler's rebuild through Player.swapFailed. Not marked
+             * triedStrong until it worked, so that fallback is still open. */
+            noteWebRefused();
+            if (!playing || playing.route !== "dash" || playing.triedStrong ||
+                    !Auth.isLoggedIn() || !Auth.accessKey()) {
+                Player.swapFailed(!playing ? "会话已经没了" : "这个会话换不了强令牌");
+                return;
+            }
+            var sessSw = playing, swapT0 = new Date().getTime(), webSw = playing.dashReady;
+            report("player", "播放中 web 令牌被拒（403），后台铸 app 端点强令牌，缓冲区里还有 " +
+                   Math.round(data || 0) + " 秒，接着放");
+            withAid(sessSw, function (aidSw) {
+                if (playing !== sessSw) { report("player", "换令牌：会话已经没了，丢弃"); return; }
+                if (!aidSw) { Player.swapFailed("手里没有 aid"); return; }
+                mintStrong(aidSw, sessSw.cid, Settings.qnCap(), function (sd) {
+                    if (playing !== sessSw) { report("player", "换令牌：强令牌回来时会话已经没了，丢弃"); return; }
+                    var swapRes = Player.swapToken(sd);
+                    if (!swapRes) { report("player", "换令牌：强令牌回来时播放器已经不在等它了"); return; }
+                    if (!swapRes.covered) {
+                        Player.swapFailed("强令牌的 " + ((sd.video || []).length + (sd.audio || []).length) +
+                                          " 份文件和正在放的 " + swapRes.total + " 份一份都对不上");
+                        return;
+                    }
+                    playing.triedStrong = true;
+                    if (webSw) { webSw.strongTried = true; }
+                    playing.dashReady = sd;
+                    Player.learnStrong(sessSw.cid, aidSw);
+                    report("player", "换上了强令牌，没有重建：" + swapRes.covered + "/" + swapRes.total +
+                           " 份文件改走 app 端点的签名，铸令牌 " + (new Date().getTime() - swapT0) + "ms" +
+                           (sd.strongTiming ? "（" + sd.strongTiming + "）" : ""));
+                }, function (why) {
+                    if (playing !== sessSw) { return; }
+                    Player.swapFailed("强令牌铸不出来：" + why);
+                }, webSw);
+            });
         } else if (kind === "status") {
             /* The ladder is acting and the screen must say so — a minute of
              * self-rescue that looks identical to a crash is what got the app
@@ -5824,7 +5933,12 @@
                  * reports its own truth instead. */
                 /* The note belongs to the first line only — the fallback and the
                  * restart lines are later legs on the same session. */
-                report("player", (playing.timedLabel || "到画面") + " " + Player.timings() +
+                /* 按下起 only on the first picture: a mid-play rescue's line
+                 * is about the rescue, and minutes since the press say nothing. */
+                var sincePress = playing.shown ? "" :
+                    "按下起=" + (new Date().getTime() - playing.pressedAt) + "ms ";
+                playing.shown = true;
+                report("player", (playing.timedLabel || "到画面") + " " + sincePress + Player.timings() +
                        (playing.prefetchNote ? " | " + playing.prefetchNote : ""));
                 playing.prefetchNote = "";
             }
@@ -5957,6 +6071,9 @@
                 var atMs = Player.hasPosition() ? Player.position()
                          : (lastKnownPosition || playing.startMs || 0);
                 playing.triedStrong = true;
+                noteWebRefused();
+                /* Its segment indexes go with the mint (A): the files are the same. */
+                var webForIndex = playing.dashReady;
                 /* Stamp the manifest too, as the player-initiated path does:
                  * handing this web manifest back later must not re-arm the
                  * strong-token try it just spent. */
@@ -6013,7 +6130,7 @@
                             if (playing !== sessST) { report("player", "强令牌回来时会话已经没了，丢弃"); return; }
                             report("player", "app 端点强令牌也不行（" + whyST + "）");
                             finalFallback("强令牌失败 " + whyST);
-                        });
+                        }, webForIndex);
                 });
                 return;
             }

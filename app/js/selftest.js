@@ -1565,9 +1565,84 @@ var SelfTest = (function () {
         }]
     ];
 
+    /* ---------------- 播放中换令牌（deploy.sh --tokenswap, 2026-10-20） ----------------
+     *
+     * A web-token 403 mid-play used to tear the player down and rebuild on the
+     * strong token — seven frozen seconds on 10-20 with thirty buffered. Now
+     * the strong token is minted behind the playing buffer and later requests
+     * are rewritten to it (B), its indexes come from the web answers (A), and
+     * the next video within fifteen minutes starts on it (C). The CDN refuses
+     * when it likes, so the refusal is made here: one media request goes out
+     * with its signature spoiled, and the CDN's own 403 does the rest. */
+    var sw = {};
+    function swPos() { return Player.hasPosition() ? Player.position() : 0; }
+    function swOpen(n) {
+        var cards = document.querySelectorAll("#feed-grid .card");
+        if (cards.length <= n) { return "推荐网格里不到 " + (n + 1) + " 张卡片"; }
+        Nav.focus(cards[n]);
+        key(KEY.ENTER);
+        return null;
+    }
+    var swapSteps = [
+        ["首页加载出卡片", 500, function () {
+            return count("#feed-grid .card") > 1 ? null : WAIT;
+        }, 20000, "20 秒了首页还没有卡片"],
+        ["打开推荐第一个视频", 300, function () {
+            window.__stNoHistory = true;
+            return swOpen(0);
+        }],
+        ["出画面、播过 6 秒", 1000, function () {
+            if (visible("shell") || visible("player-loading")) { return WAIT; }
+            return swPos() > 6000 ? null : WAIT;
+        }, 30000, function () { return "30 秒了还没播到 6 秒（位置 " + Math.round(swPos() / 1000) + "s）"; }],
+        ["造一次 web 令牌 403", 200, function () {
+            var st = window.__stStrongState();
+            if (!st || st.route !== "dash") { return "这个视频走的不是 DASH，换令牌这条路用不上"; }
+            if (st.strong) { return "这个视频一开始就是强令牌（教训或近来被拒），造不出 web 令牌被拒"; }
+            sw.at = swPos();
+            Player.test.fake403();
+            return null;
+        }],
+        ["换上强令牌、没有重建", 1000, function () {
+            var info = Player.test.swapInfo(), st = window.__stStrongState();
+            if (!info.swapped) { return WAIT; }
+            if (visible("player-loading")) { return "换上了，但加载画面出来了 —— 那是重建"; }
+            if (!st || !st.strong) { return "播放器换了，会话里的清单却不是强令牌"; }
+            sw.swappedAt = swPos();
+            return null;
+        }, 15000, function () {
+            var info = Player.test.swapInfo();
+            return info.fakeLeft ? "改坏签名的请求一直没发出去" :
+                   info.pending ? "15 秒了强令牌还没铸好" : "15 秒了没换上（看 player: 那几行，可能退回了重建）";
+        }],
+        ["换上之后接着放", 8000, function () {
+            var moved = swPos() - sw.swappedAt;
+            post("换令牌：从 " + Math.round(sw.at / 1000) + "s 起，换上时在 " + Math.round(sw.swappedAt / 1000) +
+                 "s，之后 8 秒走了 " + (moved / 1000).toFixed(1) + "s");
+            return moved >= 5000 ? null : "换上之后 8 秒只走了 " + (moved / 1000).toFixed(1) + " 秒";
+        }],
+        ["退出播放", 300, function () { key(KEY.RETURN); return null; }],
+        ["回到网格", 500, function () { return visible("shell") ? null : WAIT; }, 5000, "5 秒了还没回到网格"],
+        ["打开推荐第二个视频", 300, function () { return swOpen(1); }],
+        ["第二个直接走强令牌（近来被拒）", 1000, function () {
+            if (visible("shell") || visible("player-loading")) { return WAIT; }
+            var st = window.__stStrongState();
+            if (!st || !st.shown) { return WAIT; }
+            return /近来被拒/.test(st.label) ? null :
+                "第二个没走「近来被拒」那条路（" + (st.label || "web 令牌") + "）";
+        }, 25000, "25 秒了第二个还没出画面"],
+        ["收尾：退出播放，忘掉这次造出来的被拒", 300, function () {
+            if (!visible("shell")) { key(KEY.RETURN); }
+            window.__stForgetRefusal();
+            setTimeout(function () { window.__stNoHistory = false; }, 2000);
+            return null;
+        }]
+    ];
+
     function run() {
         var i = 0, failures = 0;
         if (SELFTEST === "dmperf") { steps = dmperfSteps; }
+        if (SELFTEST === "tokenswap") { steps = swapSteps; }
         post("开始");
         function next() {
             if (i >= steps.length) {

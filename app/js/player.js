@@ -864,6 +864,9 @@ var Player = (function () {
         duration = 0;
         lastTime = 0;
         haveTime = false;
+        tokenSwap = null;
+        swapPending = 0;
+        swapGen++;
         /* Belongs to the video being torn down. Left behind, a decode failure on
          * the next one would replay the previous one's manifest, and the retry
          * budget would already be spent before it started. */
@@ -1019,6 +1022,17 @@ var Player = (function () {
                 emit("error", "清单已过期");
                 return;
             }
+            /* B: the first web-token 403 with a picture up swaps the token in
+             * place; nothing is blacklisted, because neither the host nor the
+             * file was at fault. While the mint is out, further 403s are the
+             * same refusal arriving for other segments and are left alone. */
+            var is403 = !!(err && err.category === 1 && err.code === 1001 && err.data &&
+                           (err.data[1] === 403 || err.data[1] === 401));
+            if (is403 && swapPending) {
+                if (!swapQuiet++) { log("换令牌期间又来一个 403（" + hostOf(err.data[0]) + "），先不动"); }
+                return;
+            }
+            if (is403 && canSwapToken()) { startTokenSwap(err); return; }
             noteBadHost(err);
             /* A critical 403 usually names one *file*, not one host — the
              * 15:54 incident: hev1-720p answered 403 on every host while its
@@ -1186,6 +1200,20 @@ var Player = (function () {
             var ne = player.getNetworkingEngine();
             ne.registerRequestFilter(function (type, request) {
                 if (type !== RT.SEGMENT) { return; }
+                /* B: a file the strong manifest also names goes out under its
+                 * signature — the whole candidate list, mirrors included. */
+                if (tokenSwap) {
+                    for (var ti = 0; ti < request.uris.length; ti++) {
+                        var to = tokenSwap[swapPathOf(request.uris[ti])];
+                        if (to) { request.uris = to.slice(); break; }
+                    }
+                } else if (fake403 && marks && marks.loaded !== undefined) {
+                    fake403 = 0;
+                    request.uris = request.uris.map(function (u) {
+                        return String(u).replace(/([?&]upsig=)[^&]*/, "$1" + "0000000000000000");
+                    });
+                    log("自测：把这个分段请求的签名改坏了，等 CDN 拒绝");
+                }
                 /* Send time per (file, range start), so the first media
                  * segment can be paired with its own request — see media1. */
                 if (marks && marks.manifest !== undefined && marks.media1in === undefined) {
@@ -1716,6 +1744,86 @@ var Player = (function () {
      * — logging a 403 nobody received and spending the aid+strong+sidx round
      * trip ahead of the avc1 fallback. Reset with the per-video scope. */
     var saw403 = false;
+
+    /* B (2026-10-20): a web-token 403 in the middle of playback no longer tears
+     * the player down. 10-20 15:23: refused eleven seconds in, with 30-odd
+     * seconds already buffered, the rebuild froze the picture for seven
+     * seconds. The strong token names the same files (same path), so app.js
+     * mints one in the background while the buffer plays on, and the request
+     * filter in ensureShaka rewrites every later segment request for a file it
+     * knows to the strong url. `tokenSwap` is that path → urls map, per video;
+     * `swapPending` is when the mint was asked for, 0 when none is. */
+    var tokenSwap = null, swapPending = 0, swapGen = 0, swapQuiet = 0;
+    /* deploy.sh --tokenswap: spoil the next media request's signature so the
+     * CDN answers a real 403 — a refusal cannot be ordered up otherwise. */
+    var fake403 = 0;
+    function swapPathOf(u) { return String(u || "").replace(/^[a-z]+:\/\/[^\/]+/i, "").split(/[?#]/)[0]; }
+
+    /* Only once there is a picture on a web manifest, and only the first time:
+     * at load time there is nothing to keep playing (that 403 goes through
+     * load()'s own catch), and a second refusal after a swap is a different
+     * problem for the ladder. */
+    function canSwapToken() {
+        return mode === "mse" && !!shakaPlayer && !loadPending && haveTime &&
+               !!lastDash && !!lastDash.dash && !lastDash.dash.strong &&
+               !lastDash.dash.strongTried && !strongEmitted;
+    }
+
+    function startTokenSwap(err) {
+        var g = ++swapGen;
+        swapPending = new Date().getTime();
+        swapQuiet = 0;
+        strongEmitted = true;
+        lastDash.dash.strongTried = true;
+        var ahead = 0;
+        try { ahead = bufferedAhead(el("html5-video")); } catch (e) {}
+        log("web 令牌被拒（" + hostOf(err.data && err.data[0]) + " " + (err.data && err.data[1]) +
+            "），不拆播放器：后台换强令牌，前方还有 " + ahead.toFixed(1) + " 秒");
+        emit("tokenSwap", ahead);
+        setTimeout(function () {
+            if (swapPending && g === swapGen) { swapFailed("10 秒还没换上"); }
+        }, 10000);
+    }
+
+    /* Back to the old way: app.js's 403 handler tears down and rebuilds. */
+    function swapFailed(why) {
+        if (!swapPending) { return; }
+        swapPending = 0;
+        swapGen++;
+        log("后台换令牌没成（" + why + "），改回拆掉重建");
+        lastDecodeHandled = false;
+        emit("error", "web 令牌 403，交给 app 端点强令牌");
+    }
+
+    /* The strong manifest app.js minted. Returns how many of the playing
+     * manifest's files it covers, 0 when none (and then nothing changed). */
+    function swapToken(sd) {
+        if (!swapPending || !lastDash || !lastDash.dash || !shakaPlayer || !sd) { return null; }
+        var map = {}, lists = [].concat(sd.video || [], sd.audio || []);
+        for (var i = 0; i < lists.length; i++) {
+            var urls = (lists[i].urls && lists[i].urls.length) ? lists[i].urls : [lists[i].baseUrl];
+            for (var j = 0; j < urls.length; j++) { if (urls[j]) { map[swapPathOf(urls[j])] = urls; } }
+        }
+        var cur = [].concat(lastDash.dash.video || [], lastDash.dash.audio || []);
+        var covered = 0, total = 0;
+        for (var k = 0; k < cur.length; k++) {
+            if (!cur[k].segments) { continue; }
+            total++;
+            var cu = cur[k].urls || [cur[k].baseUrl];
+            for (var m = 0; m < cu.length; m++) {
+                if (map[swapPathOf(cu[m])]) { covered++; break; }
+            }
+        }
+        if (!covered) { return { covered: 0, total: total }; }
+        tokenSwap = map;
+        swapPending = 0;
+        swapGen++;
+        /* The 403 that started this was the token's, not the file's or the
+         * host's — the files are being served now, under the other signature. */
+        saw403 = false;
+        try { shakaPlayer.retryStreaming(); } catch (e) {}
+        return { covered: covered, total: total };
+    }
 
     function leadHostOf(dash) {
         var v = dash && dash.video && dash.video[0];
@@ -2681,6 +2789,18 @@ var Player = (function () {
         },
         learnStrong: function (cid, aid) {
             stashLessonFor(String(cid), { s: aid || 0 });
+        },
+        /* B: the answer to a `tokenSwap` event — the strong manifest, or why
+         * there is none (which falls back to the rebuild). */
+        swapToken: swapToken,
+        swapFailed: swapFailed,
+        test: {
+            fake403: function () {
+                if (typeof SELFTEST !== "undefined" && SELFTEST) { fake403 = 1; }
+            },
+            swapInfo: function () {
+                return { pending: !!swapPending, swapped: !!tokenSwap, fakeLeft: fake403, mode: mode };
+            }
         },
 
         playProgressive: function (url, startMs) { reset(); playAvplay(url, startMs); },

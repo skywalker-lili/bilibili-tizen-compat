@@ -366,6 +366,24 @@ var API = (function () {
      * house has 大会员); it is sent because the reference client sends it. */
     function fnvalFor(qn) { return 2064 | (qn >= 120 ? 128 : 0); }
 
+    /* Where the init segment and the segment index live inside the file, kept
+     * as the "0-916" strings the API states them in — that is the form a DASH
+     * manifest wants, and Shaka reads the index itself. bilibili gives both
+     * casings; take either. Shared by the web manifest and the strong one,
+     * which borrows these for the files the two have in common. */
+    function segmentBaseOf(rep) {
+        var sb = rep.SegmentBase || rep.segment_base || {};
+        var init = sb.Initialization || sb.initialization || "";
+        var index = sb.indexRange || sb.index_range || "";
+        if (!/^\d+-\d+$/.test(init) || !/^\d+-\d+$/.test(index)) { return null; }
+        return { init: init, index: index };
+    }
+
+    /* A stream url without its host and its signature: what names the file. */
+    function streamPath(u) {
+        return String(u || "").replace(/^[a-z]+:\/\/[^\/]+/i, "").split(/[?#]/)[0];
+    }
+
     return {
         /* Which cover format this set was given, for the boot line. */
         thumbFormat: THUMB_FORMAT,
@@ -1164,6 +1182,10 @@ var API = (function () {
                     play: count((d.stat || {}).view),
                     publishedAt: Number(d.pubdate || 0) || 0,
                     season: seasonOf(d.ugc_season),
+                    /* Set on the entries that stand for a 番剧 / 影视 episode
+                     * (…/bangumi/play/ep813154): their streams live behind the
+                     * PGC playurl, and the UGC one answers -404 (10-20). */
+                    redirect: String(d.redirect_url || ""),
                     pages: (d.pages || []).map(function (p) {
                         /* Per-part length, formatted here like every other
                          * duration in this file. It is seconds on a page and
@@ -1266,24 +1288,13 @@ var API = (function () {
                     return mirrors(rep.baseUrl || rep.base_url,
                                    rep.backupUrl || rep.backup_url, false);
                 }
-                /* Where the init segment and the segment index live inside the
-                 * file, kept as the "0-916" strings the API states them in —
-                 * that is the form a DASH manifest wants, and Shaka reads the
-                 * index itself. bilibili gives both casings; take either. */
-                function segments(rep) {
-                    var sb = rep.SegmentBase || rep.segment_base || {};
-                    var init = sb.Initialization || sb.initialization || "";
-                    var index = sb.indexRange || sb.index_range || "";
-                    if (!/^\d+-\d+$/.test(init) || !/^\d+-\d+$/.test(index)) { return null; }
-                    return { init: init, index: index };
-                }
                 var kinds = ["video", "audio"];
                 for (var k = 0; k < kinds.length; k++) {
                     var list = d.dash[kinds[k]] || [];
                     for (var i = 0; i < list.length; i++) {
                         list[i].urls = candidates(list[i]);
                         list[i].baseUrl = list[i].urls[0];
-                        list[i].segments = segments(list[i]);
+                        list[i].segments = segmentBaseOf(list[i]);
                     }
                 }
                 /* Carry the tier list across: the panel had to guess it. */
@@ -1345,8 +1356,11 @@ var API = (function () {
          *
          * Only reached when the web endpoint's token is refused — normal videos
          * never pay for the header reads. Requires aid: the app endpoint rejects
-         * bvid with -400. */
-        playurlDashStrong: function (aid, cid, qn, onOk, onFail, avoid) {
+         * bvid with -400.
+         *
+         * `webDash`, when the caller has the session's web manifest, lends its
+         * segment indexes: see `known` below. */
+        playurlDashStrong: function (aid, cid, qn, onOk, onFail, avoid, webDash) {
             if (typeof Auth === "undefined" || !Auth.accessKey()) {
                 onFail("无 access_key，app 端点不可用"); return;
             }
@@ -1406,6 +1420,8 @@ var API = (function () {
              * CDN's per-IP limiter, which is the very thing that was starving
              * the 403'd tiers to begin with; 2 keeps the pipe busy without it. */
             function fillSegments(streams, whenDone) {
+                /* Streams whose index was borrowed from a web answer need no read. */
+                streams = streams.filter(function (s) { return !s.segments; });
                 var i = 0, active = 0, remaining = streams.length;
                 if (!remaining) { whenDone(); return; }
                 function pump() {
@@ -1454,7 +1470,7 @@ var API = (function () {
                                      retried: 0, active: 0, starts: [], oldest: 0 };
             var wdDone = false, wdData = null, adData = null, joined = false;
             var url2 = BASE + "/x/player/playurl?avid=" + aid + "&cid=" + cid +
-                       "&qn=16&fnval=2064&fnver=0&fourk=1";
+                       "&qn=" + (qn || 80) + "&fnval=" + fnvalFor(qn) + "&fnver=0&fourk=1";
             function url2Settled(wd) {
                 wdData = wd || null; wdDone = true;
                 tCodecs = new Date().getTime() - t0;
@@ -1518,6 +1534,36 @@ var API = (function () {
                         s.codecs = audioCodecs;
                         s.mimeType = "audio/mp4";
                     }
+                    /* The web answers already say where each file's init and
+                     * index sit: the codec lookup above (asked at the cap, with
+                     * the same fnval, so it lists the same tiers) and the
+                     * session's own web manifest. Same path on the CDN is the
+                     * same file, whichever endpoint signed the url — the bad-file
+                     * list has keyed both by file name since 09-28 — so a strong
+                     * stream with a matching path takes the index and skips its
+                     * header read. Those reads were 1.8–3.4 s of black screen per
+                     * strong start on 10-18 and 3.3 s on 10-20, and a stream
+                     * with no match is read exactly as before. */
+                    var known = {}, reused = 0;
+                    function learnIndex(list) {
+                        for (var li = 0; li < (list || []).length; li++) {
+                            var r0 = list[li], seg0 = r0.segments || segmentBaseOf(r0);
+                            if (!seg0) { continue; }
+                            var us0 = [].concat(r0.urls || [], r0.baseUrl || r0.base_url || [],
+                                                r0.backupUrl || r0.backup_url || []);
+                            for (var lu = 0; lu < us0.length; lu++) { known[streamPath(us0[lu])] = seg0; }
+                        }
+                    }
+                    var wd0 = (wdData && wdData.dash) || {};
+                    learnIndex(wd0.video); learnIndex(wd0.audio);
+                    if (webDash) { learnIndex(webDash.video); learnIndex(webDash.audio); }
+                    var all0 = video.concat(audio);
+                    for (var ki = 0; ki < all0.length; ki++) {
+                        for (var ku = 0; ku < all0[ki].urls.length; ku++) {
+                            var hit = known[streamPath(all0[ki].urls[ku])];
+                            if (hit) { all0[ki].segments = hit; reused++; break; }
+                        }
+                    }
                     /* Read every stream's sidx, then drop the ones that failed —
                      * a rep with no segments cannot go into the manifest. */
                     var tSidx0 = new Date().getTime();
@@ -1562,7 +1608,8 @@ var API = (function () {
                         dash.strongTiming = "app端点=" + tApp + "ms codecs=" + tCodecs +
                             "ms 文件头=" + (staged ? first.length + "/" + (vAll + aAll) + "个（" + fam + " 先读）"
                                                    : (vAll + aAll) + "个") +
-                            "/并发2=" + (new Date().getTime() - tSidx0) + "ms";
+                            "/并发2=" + (new Date().getTime() - tSidx0) + "ms" +
+                            "（其中 " + reused + " 份沿用 web 清单的索引，没读）";
                         dash.video = video.filter(function (r) { return r.segments; });
                         dash.audio = audio.filter(function (r) { return r.segments; });
                         if (!dash.video.length || !dash.audio.length) {
@@ -1588,6 +1635,11 @@ var API = (function () {
                             if (first[q].mimeType === "audio/mp4") { haveA = true; } else { haveV = true; }
                         }
                         if (!later.length) { deliver(false); return; }
+                        /* Every later stream borrowed its index: nothing left to
+                         * read in the background, so it all goes in now. */
+                        if (!later.filter(function (r) { return !r.segments; }).length) {
+                            deliver(false); return;
+                        }
                         if (!haveV || !haveA) {
                             /* The chosen family's headers all failed: nothing to
                              * start on, so read the rest now as before. */

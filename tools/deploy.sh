@@ -14,6 +14,10 @@ SELFTEST=false
 # --dmperf: the danmaku frame-time run instead (selftest.js, 2026-10-18) — the
 # ways of drawing rotated on one dense video, rAF intervals per window.
 [ "$1" = "--dmperf" ] && SELFTEST='"dmperf"'
+# --tokenswap: a web-token 403 made to order mid-play (selftest.js, 2026-10-20) —
+# checks the strong token is swapped in without a rebuild, and that the next
+# video starts on it. One spoiled request to the CDN per run.
+[ "$1" = "--tokenswap" ] && SELFTEST='"tokenswap"'
 
 export PATH="$HOME/tizen-studio/tools:$HOME/tizen-studio/tools/ide/bin:$PATH"
 
