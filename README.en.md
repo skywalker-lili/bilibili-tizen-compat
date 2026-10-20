@@ -235,9 +235,11 @@ do. Each of these cost at least a day and none of them is written down elsewhere
   ranked and never dropped.** Which mirror is dead is that day's weather: the same
   host 403'd all evening and served all of the next.
 
-The stories behind each are in [`docs/平台坑.md`](docs/平台坑.md) (Chinese); every
-measurement, log line and the debugging discipline are in [`CLAUDE.md`](CLAUDE.md),
-the project's working notes, including the conclusions that were later overturned.
+The stories behind each are in [`docs/平台坑.md`](docs/平台坑.md) (Chinese).
+[`CLAUDE.md`](CLAUDE.md) holds what is currently true, how to deploy and debug, and the
+debugging discipline; every measurement, log line and investigation — including the
+conclusions that were later overturned — is in [`docs/`](docs/) by topic, with a map at
+the top of CLAUDE.md (all Chinese).
 
 ## Layout
 
@@ -256,8 +258,8 @@ tools/
   lint.mjs            catches calls to things that do not exist
   *-verify.mjs        manifest / accounts / md5 / QR / interaction APIs / hold-to-open
                       navigation / old-engine layout — any failure refuses to ship
-docs/         platform notes, login routes, the full stream-token investigation
-CLAUDE.md     everything learned, every trap, and how to debug on a retail set
+docs/         investigations and measurements by topic: playback and CDN, the log-line table, accounts, UI, self-update…
+CLAUDE.md     what is currently true, deploying and debugging, the traps (with a map of docs/)
 ```
 
 ## Debugging
