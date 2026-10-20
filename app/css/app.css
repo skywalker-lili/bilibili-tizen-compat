@@ -644,6 +644,16 @@ body.density-5 .library-item { width: 344px; }
 .opt-up::before { content: "UP "; color: #ff6699; font-weight: 700; }
 .opt-up.focused { border-color: #ff6699; background: rgba(255,102,153,0.18); }
 .panel-meta-rest { white-space: nowrap; }
+/* 关注 (2026-10-20), beside the uploader's chip and on their page. */
+/* The uploader chip's own light grey, not pink (the viewer: 「不要用粉色，太亮了」);
+   「已关注」 in dimmer text. */
+.opt-follow {
+    font-size: 24px; padding: 8px 22px; border-radius: 999px;
+    background: rgba(255,255,255,0.10); color: #e8eaed; border: 3px solid transparent;
+}
+.opt-follow.on { color: #8b959e; }
+.opt-follow.focused { border-color: #ff6699; background: rgba(255,102,153,0.18); }
+.up-head .opt-follow { font-size: 26px; padding: 10px 30px; margin-left: 12px; }
 
 /* ---------------- uploader page ---------------- */
 

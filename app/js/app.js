@@ -895,6 +895,65 @@
         });
     }
 
+    /* ---------------- 关注 (2026-10-20) ----------------
+     *
+     * The viewer: 「增加一个关注 UP 主的功能」. Beside the uploader's chip in the
+     * play panel and on their page, the way the web page puts 「+ 关注」 by the
+     * name: pink 「+ 关注」, grey 「已关注」, a press toggles. No confirmation for
+     * unfollowing — pressing again undoes it. Read once per account and
+     * uploader; not shown for yourself or when signed out. */
+    var followKnown = {};   /* account:mid → true / false, once read */
+    var followBusy = false;
+
+    function followKey(mid) { return activeAccountId() + ":" + mid; }
+
+    function paintFollow(node, mid) {
+        if (!node) { return; }
+        var me = Accounts.active();
+        if (!mid || !Auth.isLoggedIn() || (me && String(me.mid) === String(mid))) {
+            node.className = "opt-follow hidden";
+            return;
+        }
+        var on = followKnown[followKey(mid)] === true;
+        var ring = /(^|\s)focused(\s|$)/.test(node.className);
+        node.textContent = on ? "已关注" : "+ 关注";
+        node.className = "opt-follow focusable" + (on ? " on" : "") + (ring ? " focused" : "");
+        node.onselect = function () { pressFollow(node, mid); };
+    }
+
+    function loadFollow(node, mid) {
+        paintFollow(node, mid);
+        if (!node || !mid || !Auth.isLoggedIn() || followKnown[followKey(mid)] !== undefined) { return; }
+        var key = followKey(mid);
+        API.followState(mid, function (on) {
+            followKnown[key] = on;
+            if (node.parentNode) { paintFollow(node, mid); }
+        }, function (why) { report("action", "关注状态 " + why); });
+    }
+
+    function pressFollow(node, mid) {
+        if (!API.videoActionReady()) { toast("这个账号是网页扫码登录的，提交不了，请用电视二维码重新登录"); return; }
+        var key = followKey(mid);
+        if (followKnown[key] === undefined) { toast("正在读取关注状态，稍等一下再按"); return; }
+        if (followBusy) { toast("正在提交，稍等"); return; }
+        var want = !followKnown[key];
+        followBusy = true;
+        API.follow(mid, want, function () {
+            followBusy = false;
+            followKnown[key] = want;
+            report("action", (want ? "关注了 UP 主 " : "取消关注 UP 主 ") + mid);
+            /* 我的 → 关注的 UP 主 is a cached list; it is wrong now. */
+            for (var k in mineLibraryCache) {
+                if (mineLibraryCache.hasOwnProperty(k) && /:following:/.test(k)) { delete mineLibraryCache[k]; }
+            }
+            if (node.parentNode) { paintFollow(node, mid); }
+        }, function (why) {
+            followBusy = false;
+            report("action", "关注失败 " + why);
+            toast((want ? "关注" : "取消关注") + "没成功：" + why);
+        });
+    }
+
     /* Four-column cards put metadata on one row. Preserve the UP name first:
      * shave the date punctuation, then the viewing-count suffix, and only let
      * the browser ellipsize the name when even those savings are insufficient.
@@ -978,6 +1037,7 @@
                (info.face ? '<img class="up-face" src="' + esc(info.face) + '" alt="">'
                           : '<span class="up-initial">' + esc(name.charAt(0)) + '</span>') +
                '<div class="up-name">' + esc(name) + '<span class="up-sub">的投稿</span></div>' +
+               '<span class="opt-follow hidden" id="up-follow"></span>' +
                '</div>';
     }
 
@@ -985,6 +1045,7 @@
         var head = isUp(state.screen) ? upHeadHtml(state.screen) : "";
         if (!items.length) {
             screenEl.innerHTML = head + '<div class="empty">' + esc(emptyText || "没有内容") + '</div>';
+            if (head) { loadFollow(el("up-follow"), state.screen.slice(3)); }
             return;
         }
 
@@ -1003,6 +1064,7 @@
         html += '<div class="grid" id="feed-grid">';
         for (var i = 0; i < items.length; i++) { html += cardHtml(items[i], i); }
         screenEl.innerHTML = html + "</div>";
+        if (head) { loadFollow(el("up-follow"), state.screen.slice(3)); }
         fitCardMeta(el("feed-grid"));
 
         if (resume.length) { paintCards(el("resume-row"), resume); }
@@ -4920,6 +4982,7 @@
             .filter(function (x) { return !!x; }).join("  ·  ");
         el("panel-meta").innerHTML =
             '<span class="opt-up focusable" id="panel-up">' + esc(d.author || "UP 主") + '</span>' +
+            '<span class="opt-follow hidden" id="panel-follow"></span>' +
             (rest ? '<span class="panel-meta-rest">' + esc(rest) + '</span>' : "");
         el("panel-up").onselect = function () {
             var cur = playing && playing.detail;
@@ -4937,6 +5000,7 @@
         paintDesc(d.desc);
         paintPanelActions();
         loadPanelActions();
+        loadFollow(el("panel-follow"), d.mid);
         el("panel-comments").onselect = openComments;
 
         paintParts();
@@ -6008,6 +6072,7 @@
             paintSeason();
             paintPanelActions();
             loadPanelActions();
+            loadFollow(el("panel-follow"), full.mid);
             paintDesc(full.desc);
             var meta = el("panel-meta").querySelector(".panel-meta-rest");
             if (meta) {

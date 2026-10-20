@@ -103,6 +103,7 @@ const before = calls.length;
 failed((ok, fail) => API.videoLike(99, true, ok, fail), /登录凭证/);
 failed((ok, fail) => API.videoCoin(99, 1, ok, fail), /登录凭证/);
 failed((ok, fail) => API.videoFavorite(99, 12, true, ok, fail), /登录凭证/);
+failed((ok, fail) => API.follow(7, true, ok, fail), /登录凭证/);
 assert.equal(calls.length, before);
 
 // A TV token takes the app routes. Coin does not opt into an automatic like.
@@ -133,6 +134,21 @@ request = take();
 assert.equal(url(request).pathname, "/medialist/gateway/coll/resource/deal");
 assert.equal(form(request).get("del_media_ids"), "12");
 assert.equal(form(request).get("add_media_ids"), "");
+/* 关注 (2026-10-20): signed with the TV token, act 1 / 2. */
+respond({ code: 0, data: {} });
+result((ok, fail) => API.follow(7, true, ok, fail));
+request = take();
+assert.equal(url(request).pathname, "/x/relation/modify");
+assert.equal(form(request).get("fid"), "7");
+assert.equal(form(request).get("act"), "1");
+assert.equal(form(request).get("access_key"), "tv-token");
+respond({ code: 22014, message: "已经关注" });
+result((ok, fail) => API.follow(7, true, ok, fail));
+take();
+respond({ code: 0, data: {} });
+result((ok, fail) => API.follow(7, false, ok, fail));
+request = take();
+assert.equal(form(request).get("act"), "2");
 
 // An engine-jar session uses browser + CSRF routes instead of the TV token.
 session.key = ""; session.csrf = "csrf-token"; session.jar = true;
@@ -142,6 +158,12 @@ request = take();
 assert.equal(url(request).pathname, "/x/web-interface/archive/like");
 assert.equal(form(request).get("like"), "2");
 assert.equal(form(request).get("csrf"), "csrf-token");
+respond({ code: 0, data: {} });
+result((ok, fail) => API.follow(7, true, ok, fail));
+request = take();
+assert.equal(url(request).pathname, "/x/relation/modify");
+assert.equal(form(request).get("csrf"), "csrf-token");
+assert.equal(form(request).get("access_key"), null);
 
 // A stale state read can disagree with the server; the explicit duplicate
 // response means the requested final state is already true.

@@ -824,6 +824,34 @@ var API = (function () {
             } else { onFail("此账号缺少可用于操作的登录凭证，请用电视二维码重新登录"); }
         },
 
+        /* 关注 (2026-10-20). Read with /x/relation?fid= — attribute 2 is
+         * following, 6 mutual, 128 blocked — and written with
+         * /x/relation/modify, act 1 follow / 2 unfollow, re_src 14 (a video
+         * page). Both take the TV login's access_key; the web route needs this
+         * account's own jar and bili_jct, as the video writes do. */
+        followState: function (mid, onOk, onFail) {
+            getJson(BASE + "/x/relation?fid=" + encodeURIComponent(mid), function (d) {
+                var a = Number((d || {}).attribute) || 0;
+                onOk(a === 2 || a === 6);
+            }, onFail);
+        },
+
+        follow: function (mid, on, onOk, onFail) {
+            var key = Auth.accessKey(), csrf = Auth.csrf();
+            var fields = { fid: mid, act: on ? 1 : 2, re_src: 14 };
+            function failed(why) {
+                /* 22014 is 「已经关注了」: the state asked for is the state. */
+                if (on && /^code 22014\b/.test(String(why))) { onOk({}); } else { onFail(why); }
+            }
+            if (key) {
+                fields.access_key = key;
+                postForm(BASE + "/x/relation/modify", Auth.signTv(fields), null, onOk, failed);
+            } else if (Auth.jarIsOurs() && csrf) {
+                fields.csrf = csrf;
+                postForm(BASE + "/x/relation/modify", fields, null, onOk, failed);
+            } else { onFail("此账号缺少可用于操作的登录凭证，请用电视二维码重新登录"); }
+        },
+
         favoriteVideos: function (folderId, page, onOk, onFail) {
             getJson(BASE + "/x/v3/fav/resource/list?media_id=" +
                     encodeURIComponent(folderId) + "&pn=" + (page || 1) +
