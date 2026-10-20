@@ -331,7 +331,9 @@ body.density-5 .card-info-date { display: block; width: 100%; margin: 2px 0 0; f
     background: rgba(15,20,25,0.94); color: #fff;
     border: 2px solid rgba(255,102,153,0.6);
     font-size: 32px; line-height: 1.45; padding: 28px 56px; border-radius: 14px;
-    max-width: 1200px; text-align: center;
+    /* max-content: with left 50% the shrink-to-fit width stopped at 960px, so
+       the 1200 below never applied and long notices wrapped early. */
+    width: max-content; max-width: 1200px; text-align: center;
 }
 
 /* ---------------- login / mine ---------------- */
@@ -705,10 +707,12 @@ body.density-5 .library-item { width: 344px; }
  * uploader took that many presses of 上 — the selftest ran out at 24. */
 .opt-row.hscroll { flex-wrap: nowrap; overflow: hidden; }
 /* ⟶ 2026-10-20 the 合集 went back to tiles, four to a row (the viewer: 「不要放在
- * 一行展示，就一直平铺展示这样更直观」): 4 × 436 + 3 × 16 = 1792. 分P stays a row. */
-#opt-season .opt { width: 436px; max-width: none; }
-/* Past 50 episodes the 合集 is a row of ranges instead (openEpisodeList). */
-#opt-season .opt.opt-range { width: auto; }
+ * 一行展示，就一直平铺展示这样更直观」): 4 × 436 + 3 × 16 = 1792. 分P followed
+ * the same evening (「分 P 也像合集那样按段折叠吧」). */
+#opt-season .opt, #opt-parts .opt { width: 436px; max-width: none; }
+/* Past 50 the 合集 — and since the same evening 分P — is a row of ranges
+   instead (openEpisodeList). */
+#opt-season .opt.opt-range, #opt-parts .opt.opt-range { width: auto; }
 /* The range's episodes, in the comments' pane: number, the whole title (two
    lines at most), length; the playing one in pink. */
 .ep-item { display: flex; align-items: baseline; gap: 16px; font-size: 25px; }

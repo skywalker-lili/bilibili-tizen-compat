@@ -307,6 +307,7 @@
      * and serving those under a new name is both wrong and invisible. */
     function switchTo(id) {
         if (playing) { stopPlayback(); }
+        upReturn = null;
         Auth.cancelLogin();
         Resume.flush();          /* into the outgoing account's namespace */
         Accounts.switchTo(id);
@@ -676,6 +677,9 @@
         var s = panelActState();
         if (!s) { return; }
         var st = playing.detail.stat || null;
+        /* The deltas count against one stat object: view()'s fresh one already
+         * holds what was done (review, 10-20). */
+        if (s.statRef !== st) { s.statRef = st; s.d = { like: 0, coin: 0, fav: 0 }; }
         function num(key) { return st ? " " + API.countText(Math.max(0, st[key] + s.d[key])) : ""; }
         var like = el("panel-like"), coin = el("panel-coin"), fav = el("panel-fav");
         like.textContent = (s.liked ? "已点赞" : "点赞") + num("like");
@@ -690,16 +694,31 @@
         dmBtn.textContent = "弹幕 " + (dmOn ? "开" : "关");
         setLit(dmBtn, dmOn);
         dmBtn.onselect = function () {
-            var back = Settings.get("danmakuOnLevel", "normal");
-            if (DM_LEVELS.indexOf(back) < 1) { back = "normal"; }
-            setDanmakuLevel(danmakuLevel() === "off" ? back : "off");
+            var cur = danmakuLevel();
+            if (cur !== "off") {
+                /* Kept before switching off: a level chosen before this build
+                 * never went through the setter that records it. */
+                Settings.set("danmakuOnLevel", cur);
+                setDanmakuLevel("off");
+            } else {
+                var back = Settings.get("danmakuOnLevel", "normal");
+                if (DM_LEVELS.indexOf(back) < 1) { back = "normal"; }
+                setDanmakuLevel(back);
+            }
             paintPanelActions("panel-dm");
         };
         like.onselect = pressLike;
         coin.onselect = pressCoin;
         fav.onselect = pressFav;
+        /* The choice row is rebuilt below; a ring inside it would be left on a
+         * detached node (review, 10-20). Same id if it is still there, else
+         * the button that opened the row. */
+        var ring = Nav.current(), rowBox = el("panel-act-more");
+        var keepId = ring && ring.id && rowBox.contains(ring) ? ring.id : "";
         paintActMore();
-        if (focusId && el(focusId)) { Nav.focus(el(focusId)); }
+        var target = focusId || keepId;
+        if (target && el(target)) { Nav.focus(el(target)); }
+        else if (keepId && s.opener && el(s.opener)) { Nav.focus(el(s.opener)); }
     }
 
     function paintActMore() {
@@ -746,12 +765,18 @@
     }
 
     /* Back out of an open choice row: true when there was one. */
-    function closeActMore() {
+    /* Back out of an open choice row: true when there was one. From 返回 only
+     * when the ring is in that row or on the button that opened it — from down
+     * in the related grid 返回 means the panel (review, 10-20). */
+    function closeActMore(always) {
         if (!pa || !pa.more) { return false; }
         var back = pa.more === "coin" ? "panel-coin" : "panel-fav";
+        var cur = Nav.current();
+        var near = !!cur && (el("panel-act-more").contains(cur) || cur.id === back);
+        if (!always && !near) { return false; }
         pa.more = "";
         paintActMore();
-        if (el(back)) { Nav.focus(el(back)); }
+        if (near && el(back)) { Nav.focus(el(back)); }
         return true;
     }
 
@@ -760,7 +785,9 @@
     }
 
     /* The three states, once per video and account, when the panel first opens
-     * with an aid in hand (absorbMeta asks again when view() brings one). */
+     * with an aid in hand (absorbMeta asks again when view() brings one). One
+     * that failed to read is asked again at the next open or press — marking
+     * it read left that button dead for the rest of the video (review, 10-20). */
     function loadPanelActions() {
         var s = panelActState();
         if (!s || s.loaded || s.loading) { return; }
@@ -774,7 +801,7 @@
         function done() {
             if (pa !== s || --left) { return; }
             s.loading = false;
-            s.loaded = true;
+            s.loaded = s.liked !== null && s.coins !== null && s.folders !== null;
             rememberPanel(s);
             report("action", tag + " 状态：点赞=" + (s.liked === null ? "?" : s.liked ? "已赞" : "没赞") +
                    " 投币=" + (s.coins === null ? "?" : s.coins + "/" + coinLimit()) +
@@ -785,20 +812,23 @@
         function failed(what) {
             return function (why) { report("action", what + "状态 " + why); done(); };
         }
-        API.videoLikeState(aid, function (v) { s.liked = v; done(); }, failed("点赞"));
-        API.videoCoinState(aid, function (v) { s.coins = v; done(); }, failed("投币"));
-        API.favoriteFolders(me.mid, function (v) { s.folders = v; done(); }, failed("收藏夹"), aid);
+        if (s.liked === null) { API.videoLikeState(aid, function (v) { s.liked = v; done(); }, failed("点赞")); } else { done(); }
+        if (s.coins === null) { API.videoCoinState(aid, function (v) { s.coins = v; done(); }, failed("投币")); } else { done(); }
+        if (s.folders === null) {
+            API.favoriteFolders(me.mid, function (v) { s.folders = v; done(); }, failed("收藏夹"), aid);
+        } else { done(); }
     }
 
-    /* What every press checks first; each answer is a toast, never a dialog. */
-    function actReady(s) {
+    /* What every press checks first; each answer is a toast, never a dialog.
+     * `field` is the state that press needs. */
+    function actReady(s, field, what) {
         if (!s) { return false; }
         if (!Auth.isLoggedIn()) { toast("先在「我的」扫码登录，才能点赞、投币和收藏"); return false; }
         if (!API.videoActionReady()) { toast("这个账号是网页扫码登录的，提交不了，请用电视二维码重新登录"); return false; }
         if (s.busy) { toast("正在提交，稍等"); return false; }
-        if (!s.loaded) {
+        if (s[field] === null) {
             loadPanelActions();
-            toast(s.loading ? "正在读取状态，稍等一下再按" : "还没拿到这个视频的编号，稍等一下再按");
+            toast(s.loading ? "正在读取" + what + "状态，稍等一下再按" : "还没拿到这个视频的编号，稍等一下再按");
             return false;
         }
         return true;
@@ -806,16 +836,16 @@
 
     function pressLike() {
         var s = panelActState();
-        if (!actReady(s)) { return; }
-        if (s.liked === null) { toast("没读到点赞状态，先不提交"); return; }
-        var want = !s.liked;
+        if (!actReady(s, "liked", "点赞")) { return; }
+        var want = !s.liked, tag = videoTag(playing.detail);
         s.busy = true;
-        API.videoLike(s.aid, want, function () {
+        API.videoLike(s.aid, want, function (res) {
             if (pa !== s) { return; }
             s.busy = false;
             s.liked = want;
-            s.d.like += want ? 1 : -1;
-            report("action", (want ? "点赞了 " : "取消点赞 ") + videoTag(playing.detail));
+            /* 65006 (already liked) is a success whose count already has it. */
+            if (!(res && res.already)) { s.d.like += want ? 1 : -1; }
+            report("action", (want ? "点赞了 " : "取消点赞 ") + tag);
             rememberPanel(s);
             if (optionsOpen) { paintPanelActions(); }
         }, function (why) {
@@ -828,19 +858,20 @@
 
     function pressCoin() {
         var s = panelActState();
-        if (!actReady(s)) { return; }
-        if (s.coins === null) { toast("没读到投币状态，先不提交"); return; }
+        if (!actReady(s, "coins", "投币")) { return; }
         if (coinLimit() - s.coins <= 0) { toast("这个视频已经投过 " + s.coins + " 枚了"); return; }
-        if (s.more === "coin") { closeActMore(); return; }
+        if (s.more === "coin") { closeActMore(true); return; }
         s.more = "coin";
+        s.opener = "panel-coin";
         paintActMore();
         focusActMore();
     }
 
     function giveCoins(n) {
         var s = pa;
-        if (!s || s.busy) { return; }
-        var alsoLike = s.liked === false;
+        if (!s || !playing) { return; }
+        if (s.busy) { toast("正在提交，稍等"); return; }
+        var alsoLike = s.liked === false, tag = videoTag(playing.detail);
         s.busy = true;
         API.videoCoin(s.aid, n, function () {
             if (pa !== s) { return; }
@@ -848,10 +879,10 @@
             s.coins += n;
             s.d.coin += n;
             if (alsoLike) { s.liked = true; s.d.like += 1; }
-            report("action", "投了 " + n + " 枚" + (alsoLike ? "（同时点赞）" : "") + " " + videoTag(playing.detail));
+            report("action", "投了 " + n + " 枚" + (alsoLike ? "（同时点赞）" : "") + " " + tag);
             s.more = "";
             rememberPanel(s);
-            if (optionsOpen) { paintPanelActions("panel-coin"); }
+            if (optionsOpen) { paintPanelActions(); }
             toast("投币成功");
         }, function (why) {
             if (pa !== s) { return; }
@@ -863,30 +894,32 @@
 
     function pressFav() {
         var s = panelActState();
-        if (!actReady(s)) { return; }
-        if (!s.folders) { toast("没读到收藏夹，先不提交"); return; }
+        if (!actReady(s, "folders", "收藏夹")) { return; }
         if (!s.folders.length) { toast("这个账号还没有收藏夹"); return; }
-        if (s.folders.length === 1) { toggleFolder(0, "panel-fav"); return; }
-        if (s.more === "fav") { closeActMore(); return; }
+        if (s.folders.length === 1) { toggleFolder(0); return; }
+        if (s.more === "fav") { closeActMore(true); return; }
         s.more = "fav";
+        s.opener = "panel-fav";
         paintActMore();
         focusActMore();
     }
 
-    function toggleFolder(i, focusId) {
+    function toggleFolder(i) {
         var s = pa;
-        if (!s || s.busy || !s.folders || !s.folders[i]) { return; }
-        var f = s.folders[i], add = !f.selected, before = favouredOf(s);
+        if (!s || !playing || !s.folders || !s.folders[i]) { return; }
+        if (s.busy) { toast("正在提交，稍等"); return; }
+        var f = s.folders[i], add = !f.selected, before = favouredOf(s), tag = videoTag(playing.detail);
         s.busy = true;
         API.videoFavorite(s.aid, f.id, add, function () {
+            /* The library is stale whatever happened to the panel meanwhile. */
+            invalidateFavoriteLibrary();
             if (pa !== s) { return; }
             s.busy = false;
             f.selected = add;
             if (favouredOf(s) !== before) { s.d.fav += add ? 1 : -1; }
-            report("action", (add ? "收藏到「" : "从「") + f.title + (add ? "」 " : "」移出 ") + videoTag(playing.detail));
-            invalidateFavoriteLibrary();
+            report("action", (add ? "收藏到「" : "从「") + f.title + (add ? "」 " : "」移出 ") + tag);
             rememberPanel(s);
-            if (optionsOpen) { paintPanelActions(focusId || "act-fav-" + i); }
+            if (optionsOpen) { paintPanelActions(); }
         }, function (why) {
             if (pa !== s) { return; }
             s.busy = false;
@@ -904,6 +937,9 @@
      * uploader; not shown for yourself or when signed out. */
     var followKnown = {};   /* account:mid → true / false, once read */
     var followBusy = false;
+    /* One read at a time per uploader, and a read that started before a press
+     * does not overwrite what the press set (review, 10-20). */
+    var followLoading = {}, followVer = {};
 
     function followKey(mid) { return activeAccountId() + ":" + mid; }
 
@@ -923,24 +959,35 @@
 
     function loadFollow(node, mid) {
         paintFollow(node, mid);
-        if (!node || !mid || !Auth.isLoggedIn() || followKnown[followKey(mid)] !== undefined) { return; }
         var key = followKey(mid);
+        if (!node || !mid || !Auth.isLoggedIn() || followKnown[key] !== undefined || followLoading[key]) { return; }
+        followLoading[key] = true;
+        var ver = followVer[key] || 0;
         API.followState(mid, function (on) {
-            followKnown[key] = on;
+            followLoading[key] = false;
+            if ((followVer[key] || 0) === ver) { followKnown[key] = on; }
             if (node.parentNode) { paintFollow(node, mid); }
-        }, function (why) { report("action", "关注状态 " + why); });
+        }, function (why) {
+            followLoading[key] = false;
+            report("action", "关注状态 " + why);
+        });
     }
 
     function pressFollow(node, mid) {
         if (!API.videoActionReady()) { toast("这个账号是网页扫码登录的，提交不了，请用电视二维码重新登录"); return; }
         var key = followKey(mid);
-        if (followKnown[key] === undefined) { toast("正在读取关注状态，稍等一下再按"); return; }
+        if (followKnown[key] === undefined) {
+            loadFollow(node, mid);   /* asks again when the first read failed */
+            toast("正在读取关注状态，稍等一下再按");
+            return;
+        }
         if (followBusy) { toast("正在提交，稍等"); return; }
         var want = !followKnown[key];
         followBusy = true;
         API.follow(mid, want, function () {
             followBusy = false;
             followKnown[key] = want;
+            followVer[key] = (followVer[key] || 0) + 1;
             report("action", (want ? "关注了 UP 主 " : "取消关注 UP 主 ") + mid);
             /* 我的 → 关注的 UP 主 is a cached list; it is wrong now. */
             for (var k in mineLibraryCache) {
@@ -1468,8 +1515,9 @@
      * on the tab the browsing started from. */
     var upFrom = "rcmd";
     /* Set when the UP page was opened from the play panel: what 返回 on that
-     * page goes back to. Keyed to the page, so another uploader's page (or a
-     * tab in between) does not inherit it. */
+     * page goes back to. Keyed to the page and cleared by every other way onto
+     * an UP page (openUp) and by switching account; leaving by a tab and
+     * coming back to the same page some other way starts clean. */
     var upReturn = null;
     var upInfo = {};        /* kind -> {mid, name, face}, for the page header */
     function isUp(kind) { return String(kind || "").indexOf("up:") === 0; }
@@ -1487,6 +1535,11 @@
     }
     function openUp(mid, name, face) {
         if (!mid) { toast("拿不到这位 UP 主的资料"); return; }
+        /* Any way in but the panel's starts with nothing to go back to; the
+         * panel sets its return after this call. A stale one replayed a video
+         * from hours before when the page was reached again from 我的 (review,
+         * 10-20). */
+        upReturn = null;
         var kind = "up:" + mid;
         if (!isUp(state.screen)) { upFrom = state.screen; }
         var held = upInfo[kind] || {};
@@ -2311,7 +2364,7 @@
      * steered by a refusal the test manufactured. */
     window.__stStrongState = function () {
         if (!playing) { return null; }
-        return { route: playing.route || "", triedStrong: !!playing.triedStrong,
+        return { route: playing.route || "", triedStrong: !!playing.triedStrong, cid: playing.cid,
                  strong: !!(playing.dashReady && playing.dashReady.strong),
                  label: playing.timedLabel || "", shown: !!playing.shown };
     };
@@ -4642,7 +4695,7 @@
     }
 
     function openComments() {
-        if (!playing || commentsView) { return; }
+        if (!playing || commentsView || episodeView) { return; }
         var aid = Number(playing.detail.aid) || 0;
         if (!aid) {
             var session = playing;
@@ -4750,7 +4803,20 @@
              * list was dozens of lines to climb past on the way up the panel —
              * and Nav.reset puts the focus on `.opt.current`, so the row opens
              * on the part being watched rather than at P1. */
-            for (var p = 0; p < d.pages.length; p++) {
+            /* ⟶ 2026-10-20 tiled four to a row like the 合集, and past fifty
+             * folded into ranges whose list opens on the right (the viewer:
+             * 「分 P 也像合集那样按段折叠吧」). */
+            var folded = d.pages.length > SEASON_FOLD;
+            if (folded) {
+                var curP = -1;
+                for (var cp = 0; cp < d.pages.length; cp++) { if (d.pages[cp].cid === playing.cid) { curP = cp; } }
+                for (var pr = 0; pr * SEASON_FOLD < d.pages.length; pr++) {
+                    var pa0 = pr * SEASON_FOLD, pb0 = Math.min(d.pages.length, pa0 + SEASON_FOLD);
+                    ph += '<div class="opt opt-range focusable' + (curP >= pa0 && curP < pb0 ? " current" : "") +
+                          '" data-range="' + pr + '">P' + (pa0 + 1) + "–P" + pb0 + "</div>";
+                }
+            }
+            for (var p = 0; !folded && p < d.pages.length; p++) {
                 /* The name, not just the number. It has been in hand all along —
                  * `view()` maps `part`, and the resume toast and the player's own
                  * 「P7 / 24 …」 label both print it — this row was the one place
@@ -4796,6 +4862,10 @@
         for (var k = 0; k < opts.length; k++) {
             (function (node) {
                 node.onselect = function () {
+                    if (node.hasAttribute("data-range")) {
+                        openEpisodeList("parts", Number(node.getAttribute("data-range")));
+                        return;
+                    }
                     var cid = node.getAttribute("data-cid");
                     closeOptions();
                     if (cid) { play(playing.detail, Number(cid)); }
@@ -4841,7 +4911,7 @@
             var ranges = document.querySelectorAll("#opt-season .opt");
             for (var q = 0; q < ranges.length; q++) {
                 (function (node) {
-                    node.onselect = function () { openEpisodeList(Number(node.getAttribute("data-range"))); };
+                    node.onselect = function () { openEpisodeList("season", Number(node.getAttribute("data-range"))); };
                 })(ranges[q]);
             }
             return;
@@ -4892,28 +4962,52 @@
     var episodeView = null;
     var COMMENTS_VIDEO_HINT = "视频继续播放中 · 播放/暂停键控制视频 · 返回键关闭评论";
 
-    function openEpisodeList(r) {
-        var s = playing && playing.detail && playing.detail.season;
-        if (!s || episodeView) { return; }
+    /* What a fold lists: the 合集's episodes or the upload's parts — the
+     * label for each, which one is playing, and what picking one does. */
+    function foldList(kind) {
+        var d = playing && playing.detail;
+        if (!d) { return null; }
+        if (kind === "parts") {
+            if (!d.pages || !d.pages.length) { return null; }
+            var atP = -1;
+            for (var i = 0; i < d.pages.length; i++) { if (d.pages[i].cid === playing.cid) { atP = i; } }
+            return { name: "分 P", unit: "P", title: d.title || "", at: atP, count: d.pages.length,
+                     no: function (j) { return "P" + (j + 1); },
+                     label: function (j) { var n = d.pages[j].part || ""; return n === String(j + 1) ? "" : n; },
+                     dur: function (j) { return d.pages[j].duration || ""; },
+                     pick: function (j) { if (d.pages[j].cid !== playing.cid) { play(d, d.pages[j].cid); } } };
+        }
+        var s = d.season;
+        if (!s) { return null; }
+        return { name: "合集", unit: "集", title: s.title, at: seasonIndex(s, d.bvid), count: s.episodes.length,
+                 no: function (j) { return String(j + 1); },
+                 label: function (j) { return s.episodes[j].title; },
+                 dur: function (j) { return s.episodes[j].duration || ""; },
+                 pick: function (j) { playSeasonEpisode(s, j); } };
+    }
+
+    function openEpisodeList(kind, r) {
+        var L = foldList(kind);
+        if (!L || episodeView) { return; }
         closeOptions();
         cancelScrub();
-        var from = r * SEASON_FOLD, to = Math.min(s.episodes.length, from + SEASON_FOLD);
-        var at = seasonIndex(s, playing.detail.bvid), html = "";
-        episodeView = { range: r };
-        report("season", "合集「" + s.title + "」打开第 " + (from + 1) + "–" + to + " 集的列表（共 " +
-               s.episodes.length + " 集，正在看第 " + (at + 1) + " 集）");
+        var from = r * SEASON_FOLD, to = Math.min(L.count, from + SEASON_FOLD);
+        var at = L.at, html = "";
+        var span = L.unit === "P" ? "P" + (from + 1) + "–P" + to : "第 " + (from + 1) + "–" + to + " 集";
+        episodeView = { kind: kind, range: r };
+        report(kind === "parts" ? "parts" : "season", L.name + "「" + L.title + "」打开 " + span + " 的列表（共 " +
+               L.count + " " + L.unit + "，正在看 " + (at >= 0 ? L.no(at) : "?") + "）");
         for (var i = from; i < to; i++) {
-            var ep = s.episodes[i];
             html += '<div class="comment-item ep-item focusable' + (i === at ? " current" : "") + '" data-ep="' + i + '">' +
-                    '<span class="ep-no">' + (i + 1) + '</span><span class="ep-title">' + esc(ep.title) + '</span>' +
-                    (ep.duration ? '<span class="ep-dur">' + esc(ep.duration) + '</span>' : "") + '</div>';
+                    '<span class="ep-no">' + esc(L.no(i)) + '</span><span class="ep-title">' + esc(L.label(i)) + '</span>' +
+                    (L.dur(i) ? '<span class="ep-dur">' + esc(L.dur(i)) + '</span>' : "") + '</div>';
         }
         /* The comments' side view, lent: same shrunk picture, same pane. */
         el("comments-video-title").textContent = playing.detail.title || "";
         el("comments-video-hint").textContent = "视频继续播放中 · 播放/暂停键控制视频 · 返回键回到面板";
-        el("comments-title").textContent = "合集";
-        el("comments-level").textContent = "第 " + (from + 1) + "–" + to + " 集 · 共 " + s.episodes.length + " 集";
-        el("comments-hint").textContent = s.title;
+        el("comments-title").textContent = L.name;
+        el("comments-level").textContent = span + " · 共 " + L.count + " " + L.unit;
+        el("comments-hint").textContent = L.title;
         el("comments-status").textContent = "";
         el("comments-list").innerHTML = html;
         el("comments-list").scrollTop = 0;
@@ -4927,7 +5021,8 @@
                 node.onselect = function () {
                     var i2 = Number(node.getAttribute("data-ep"));
                     closeEpisodeList(true);
-                    playSeasonEpisode(s, i2);
+                    if (kind === "parts") { report("parts", "分 P 选 P" + (i2 + 1)); }
+                    L.pick(i2);
                 };
             })(items[k]);
         }
@@ -4940,7 +5035,7 @@
      * the picture; otherwise 返回, back to the panel on that range. */
     function closeEpisodeList(toVideo) {
         if (!episodeView) { return; }
-        var r = episodeView.range;
+        var r = episodeView.range, fromRow = episodeView.kind === "parts" ? "#opt-parts" : "#opt-season";
         episodeView = null;
         document.body.className = document.body.className.replace(/\s*comments-open/g, "");
         el("comments-view").className = "hidden";
@@ -4950,7 +5045,7 @@
         if (!playing) { return; }
         if (toVideo) { showChrome(); return; }
         openOptions();
-        var chip = document.querySelector('#opt-season .opt[data-range="' + r + '"]');
+        var chip = document.querySelector(fromRow + ' .opt[data-range="' + r + '"]');
         if (chip) { Nav.focus(chip); }
     }
 
@@ -5467,6 +5562,7 @@
         clearDanmaku();
         viewerPaused = false;
         playing = { detail: detail, cid: cid };
+        pa = null;   /* each playback reads its own like / coin / folder state */
         var nowPress = new Date().getTime();
         /* A card without a cid asks view() first, so the press can be a few
          * hundred milliseconds before this; autoplay has no press at all. */
@@ -6426,34 +6522,43 @@
             var sessSw = playing, swapT0 = new Date().getTime(), webSw = playing.dashReady;
             report("player", "播放中 web 令牌被拒（403），后台铸 app 端点强令牌，缓冲区里还有 " +
                    Math.round(data || 0) + " 秒，接着放");
-            withAid(sessSw, function (aidSw) {
-                if (playing !== sessSw) { report("player", "换令牌：会话已经没了，丢弃"); return; }
-                if (!aidSw) { Player.swapFailed("手里没有 aid"); return; }
-                mintStrong(aidSw, sessSw.cid, Settings.qnCap(), function (sd) {
-                    if (playing !== sessSw) { report("player", "换令牌：强令牌回来时会话已经没了，丢弃"); return; }
-                    var swapRes = Player.swapToken(sd);
-                    if (!swapRes) { report("player", "换令牌：强令牌回来时播放器已经不在等它了"); return; }
-                    if (swapRes.partial) {
-                        rebuildOnStrong(sessSw, sd, aidSw, "换令牌：强令牌只对上正在用的 " + swapRes.inUseCovered +
-                                        "/" + swapRes.inUse + " 份文件（全部 " + swapRes.covered + "/" + swapRes.total + "）");
-                        return;
-                    }
-                    if (!swapRes.covered) {
-                        Player.swapFailed("强令牌的 " + ((sd.video || []).length + (sd.audio || []).length) +
-                                          " 份文件和正在放的 " + swapRes.total + " 份一份都对不上");
-                        return;
-                    }
-                    playing.triedStrong = true;
-                    if (webSw) { webSw.strongTried = true; }
-                    playing.dashReady = sd;
-                    Player.learnStrong(sessSw.cid, aidSw);
-                    report("player", "换上了强令牌，没有重建：" + swapRes.covered + "/" + swapRes.total +
-                           " 份文件改走 app 端点的签名，铸令牌 " + (new Date().getTime() - swapT0) + "ms" +
-                           (sd.strongTiming ? "（" + sd.strongTiming + "）" : ""));
-                }, function (why) {
-                    if (playing !== sessSw) { return; }
-                    Player.swapFailed("强令牌铸不出来：" + why);
-                }, webSw);
+            /* One mint, held in a slot: should the player give up waiting (its
+             * ten seconds), the 403 rebuild that follows waits on this same
+             * slot instead of minting a second strong manifest into a CDN that
+             * is busy refusing us (review, 10-20). */
+            sessSw.swapSlot = prefetchSlot(function (ok, fail) {
+                withAid(sessSw, function (aid0) {
+                    if (!aid0) { fail("手里没有 aid"); return; }
+                    sessSw.swapAid = aid0;
+                    mintStrong(aid0, sessSw.cid, Settings.qnCap(), ok, fail, webSw);
+                });
+            });
+            whenSettled(sessSw.swapSlot, function (sd) {
+                var aidSw = sessSw.swapAid;
+                if (playing !== sessSw) { report("player", "换令牌：强令牌回来时会话已经没了，丢弃"); return; }
+                var swapRes = Player.swapToken(sd);
+                /* The player stopped waiting; the 403 rebuild has this slot. */
+                if (!swapRes) { report("player", "换令牌：强令牌回来时播放器已经不在等它了，交给重建那条路"); return; }
+                if (swapRes.partial) {
+                    rebuildOnStrong(sessSw, sd, aidSw, "换令牌：强令牌只对上正在用的 " + swapRes.inUseCovered +
+                                    "/" + swapRes.inUse + " 份文件（全部 " + swapRes.covered + "/" + swapRes.total + "）");
+                    return;
+                }
+                if (!swapRes.covered) {
+                    Player.swapFailed("强令牌的 " + ((sd.video || []).length + (sd.audio || []).length) +
+                                      " 份文件和正在放的 " + swapRes.total + " 份一份都对不上");
+                    return;
+                }
+                playing.triedStrong = true;
+                if (webSw) { webSw.strongTried = true; }
+                playing.dashReady = sd;
+                Player.learnStrong(sessSw.cid, aidSw);
+                report("player", "换上了强令牌，没有重建：" + swapRes.covered + "/" + swapRes.total +
+                       " 份文件改走 app 端点的签名，铸令牌 " + (new Date().getTime() - swapT0) + "ms" +
+                       (sd.strongTiming ? "（" + sd.strongTiming + "）" : ""));
+            }, function (why) {
+                if (playing !== sessSw) { return; }
+                Player.swapFailed("强令牌铸不出来：" + why);
             });
         } else if (kind === "status") {
             /* The ladder is acting and the screen must say so — a minute of
@@ -6663,6 +6768,8 @@
                  * so the route built for videos that cannot start was reachable
                  * only by videos that had already started. Fetch it here rather
                  * than fall through to 「DASH 全灭」. */
+                /* A swap's mint already in flight (or landed) is this one. */
+                var swapSlotST = sessST.swapSlot;
                 withAid(sessST, function (aidST) {
                     if (playing !== sessST) { report("player", "强令牌回来时会话已经没了，丢弃"); return; }
                     if (!aidST) {
@@ -6670,7 +6777,12 @@
                         finalFallback("强令牌缺 aid");
                         return;
                     }
-                    mintStrong(aidST, sessST.cid, Settings.qnCap(),
+                    (swapSlotST ? function (ok, fail) {
+                        report("player", "用换令牌那次正在铸（或已铸好）的强令牌重建，不再铸第二次");
+                        whenSettled(swapSlotST, ok, fail);
+                    } : function (ok, fail) {
+                        mintStrong(aidST, sessST.cid, Settings.qnCap(), ok, fail, webForIndex);
+                    })(
                         function (strongDash) {
                             if (playing !== sessST) { report("player", "强令牌回来时会话已经没了，丢弃"); return; }
                             playing.dashReady = strongDash;
@@ -6688,7 +6800,7 @@
                             if (playing !== sessST) { report("player", "强令牌回来时会话已经没了，丢弃"); return; }
                             report("player", "app 端点强令牌也不行（" + whyST + "）");
                             finalFallback("强令牌失败 " + whyST);
-                        }, webForIndex);
+                        });
                 });
                 return;
             }
@@ -6987,7 +7099,7 @@
         }
         if (pendingNext) { return handleNextKeys(k); }
         if (optionsOpen) {
-            if (k === Nav.KEY.RETURN) { if (!closeActMore()) { closeOptions(); } return true; }
+            if (k === Nav.KEY.RETURN) { if (!closeActMore(false)) { closeOptions(); } return true; }
             /* Up from the first row leaves the panel, mirroring the down key
              * that opened it — otherwise return is the only way out and there
              * is nothing on screen that says so. */
@@ -7059,10 +7171,19 @@
         if (isUp(state.screen)) {
             var onKind = state.screen, ur = upReturn;
             upReturn = null;
-            /* The tab behind goes back under the player first, so leaving the
-             * video afterwards lands where it would have before the detour. */
+            if (ur && ur.kind === onKind && ur.detail) {
+                /* The tab is only named, not painted: painting it under the
+                 * player started its own requests, and their answers moved the
+                 * ring onto the hidden screen — 我的's nav() landed it on
+                 * 切换账号, one 确认 from opening the switcher behind the video
+                 * (review, 10-20). Leaving the video paints it (stopPlayback),
+                 * and newView() silences what the UP page still had in flight. */
+                state.screen = upFrom;
+                newView();
+                returnTo(ur);
+                return;
+            }
             showScreen(upFrom, true);
-            if (ur && ur.kind === onKind && ur.detail) { returnTo(ur); }
             return;
         }
         if (state.screen === "mine" && mineView.kind !== "history") {

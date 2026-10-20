@@ -779,7 +779,7 @@ var API = (function () {
                 /* The status GET only remembers recent likes. A stale 0 can
                  * therefore meet an already-liked video; the server's explicit
                  * duplicate code means the requested final state is true. */
-                if (liked && /^code 65006\b/.test(String(why))) { onOk({}); }
+                if (liked && /^code 65006\b/.test(String(why))) { onOk({ already: true }); }
                 else { onFail(why); }
             }
             if (key) {
@@ -1673,7 +1673,8 @@ var API = (function () {
                             onFail("app 端点自读 sidx 后无可用流"); return;
                         }
                         dash.tierNote = dash.video.length + "/" + vAll + " 视频档" +
-                            (staged ? "（其余 " + later.length + " 份文件头稍后后台补读）"
+                            (staged ? "（其余 " + later.filter(function (r) { return !r.segments; }).length +
+                                      " 份文件头稍后后台补读）"
                                     : (dash.video.length < vAll ? "（其余 sidx 读失败，已剔）" : ""));
                         dash.acceptQuality = ad.accept_quality || [];
                         dash.duration = Math.round((ad.timelength || 0) / 1000) ||
@@ -1704,10 +1705,14 @@ var API = (function () {
                             return;
                         }
                         deliver(true);
+                        /* Only the ones read now: a borrowed index already put
+                         * its stream in dash.video at deliver(), and pushing it
+                         * again listed it twice (review, 10-20). */
+                        var laterTodo = later.filter(function (r) { return !r.segments; });
                         setTimeout(function () {
-                            fillSegments(later, function () {
-                                for (var z = 0; z < later.length; z++) {
-                                    var r = later[z];
+                            fillSegments(laterTodo, function () {
+                                for (var z = 0; z < laterTodo.length; z++) {
+                                    var r = laterTodo[z];
                                     if (!r.segments) { continue; }
                                     (r.mimeType === "audio/mp4" ? dash.audio : dash.video).push(r);
                                 }

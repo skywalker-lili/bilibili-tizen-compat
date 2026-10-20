@@ -262,6 +262,10 @@ var SelfTest = (function () {
             }
             if (document.getElementById("opt-danmaku")) { return "面板里又出现了弹幕那一排"; }
             if (!Auth.isLoggedIn()) { post("跳过：没登录，读不了点赞状态"); return null; }
+            if (!API.videoActionReady() || !Accounts.active() || !Accounts.active().mid) {
+                post("跳过：这个账号是网页扫码登录的（或还没有 mid），面板不读这些状态");
+                return null;
+            }
             var a = window.__stPanelActs && window.__stPanelActs();
             if (!a || !a.loaded) { return WAIT; }
             post("面板：" + document.getElementById("panel-like").textContent + " / " +
@@ -396,6 +400,8 @@ var SelfTest = (function () {
         ["返回键回到原来那个视频", 300, function () { key(KEY.RETURN); return null; }],
         ["回到原来的视频，面板开着，焦点在点过的那张", 1000, function () {
             if (visible("shell")) { return "返回键退回了首页"; }
+            /* The picture too: the scrub steps after this need its duration. */
+            if (visible("player-loading")) { return WAIT; }
             if (document.getElementById("player-title").textContent !== rel.title) { return WAIT; }
             if (!visible("options")) { return WAIT; }
             var f = Nav.current(), box = document.getElementById("opt-related");
@@ -880,6 +886,9 @@ var SelfTest = (function () {
              * cost the viewer pays too. */
             for (var i = 0; i < 300; i++) {
                 if (document.querySelector("#panel-up.focused")) { break; }
+                /* 关注 shares the chip's row and can take the ring first; one
+                 * more 上 from it closes the panel (review, 10-20). */
+                if (document.querySelector("#panel-follow.focused")) { key(KEY.LEFT); continue; }
                 key(KEY.UP);
             }
             if (i > 6) { post("走到 UP 主芯片按了 " + i + " 次上键（选集那一排很长）"); }
@@ -909,6 +918,7 @@ var SelfTest = (function () {
         ["返回键回到刚才那个视频", 600, function () { key(KEY.RETURN); return null; }],
         ["回到那个视频，面板开着，焦点在 UP 主芯片", 1000, function () {
             if (visible("shell")) { return "返回键退回了网格，没有回到视频"; }
+            if (visible("player-loading")) { return WAIT; }
             if (document.getElementById("player-title").textContent !== rel.upVideo) { return WAIT; }
             if (!visible("options")) { return WAIT; }
             return document.querySelector("#panel-up.focused") ? null : "面板开了，焦点却不在 UP 主芯片上";
@@ -1668,6 +1678,7 @@ var SelfTest = (function () {
             if (!st || st.route !== "dash") { return "这个视频走的不是 DASH，换令牌这条路用不上"; }
             if (st.strong) { return "这个视频一开始就是强令牌（教训或近来被拒），造不出 web 令牌被拒"; }
             sw.at = swPos();
+            sw.cid = st.cid;
             Player.test.fake403();
             return null;
         }],
@@ -1702,6 +1713,9 @@ var SelfTest = (function () {
         ["收尾：退出播放，忘掉这次造出来的被拒", 300, function () {
             if (!visible("shell")) { key(KEY.RETURN); }
             window.__stForgetRefusal();
+            /* And the six-hour lesson the swap wrote for the first video: the
+             * refusal was made up here (review, 10-20). */
+            if (sw.cid) { Player.learnStrong(sw.cid, 0); }
             setTimeout(function () { window.__stNoHistory = false; }, 2000);
             return null;
         }]

@@ -875,6 +875,7 @@ var Player = (function () {
         lastTime = 0;
         haveTime = false;
         tokenSwap = null;
+        tokenSwapFor = null;
         swapPending = 0;
         swapGen++;
         /* Belongs to the video being torn down. Left behind, a decode failure on
@@ -1763,7 +1764,7 @@ var Player = (function () {
      * filter in ensureShaka rewrites every later segment request for a file it
      * knows to the strong url. `tokenSwap` is that path → urls map, per video;
      * `swapPending` is when the mint was asked for, 0 when none is. */
-    var tokenSwap = null, swapPending = 0, swapGen = 0, swapQuiet = 0;
+    var tokenSwap = null, swapPending = 0, swapGen = 0, swapQuiet = 0, tokenSwapFor = null;
     /* deploy.sh --tokenswap: spoil the next media request's signature so the
      * CDN answers a real 403 — a refusal cannot be ordered up otherwise. */
     var fake403 = 0;
@@ -1819,9 +1820,16 @@ var Player = (function () {
         for (var k = 0; k < cur.length; k++) {
             if (!cur[k].segments) { continue; }
             total++;
-            /* What this manifest can ask for: its family's tiers and the audio. */
-            var used = (lastDash.dash.audio || []).indexOf(cur[k]) >= 0 ||
-                       String(cur[k].codecs || "").split(".")[0] === lastDash.family;
+            /* What this manifest can ask for: its family's tiers up to the cap
+             * (and av01 only to 1080P, as Mpd.build has it), minus the files it
+             * dropped, and the audio. Counting tiers it never listed made a cap
+             * of 720P read as partial on every refusal (review, 10-20). */
+            var curUrl = (cur[k].urls && cur[k].urls[0]) || cur[k].baseUrl;
+            var isAudio = (lastDash.dash.audio || []).indexOf(cur[k]) >= 0;
+            var cap = lastDash.capId || Settings.qnCap();
+            var used = !badFiles[fileTokenOf(curUrl)] && (isAudio ||
+                       (String(cur[k].codecs || "").split(".")[0] === lastDash.family &&
+                        !(cur[k].id > cap) && !(lastDash.family === "av01" && cur[k].id > 80)));
             if (used) { inUse++; }
             var cu = cur[k].urls || [cur[k].baseUrl];
             for (var m = 0; m < cu.length; m++) {
@@ -1839,8 +1847,14 @@ var Player = (function () {
                      inUse: inUse, inUseCovered: inUseCovered };
         }
         tokenSwap = map;
+        tokenSwapFor = lastDash.dash;
         swapPending = 0;
         swapGen++;
+        /* From here the strong manifest is this player's: every rung of the
+         * ladder rebuilds from lastDash.dash, and rebuilding from the web one
+         * asked for uncovered files under the refused token; its deadline is
+         * also the one that matters for expiry now (review, 10-20). */
+        lastDash.dash = sd;
         /* The 403 that started this was the token's, not the file's or the
          * host's — the files are being served now, under the other signature. */
         saw403 = false;
@@ -2376,6 +2390,12 @@ var Player = (function () {
             (capId ? "，画质压到 qn" + capId : ""));
         lastDash = { dash: dash, startMs: startMs, family: usedFamily,
                      capId: capId || 0 };
+        /* The swap map rewrites the web manifest it was made for. A build from
+         * anything else — the strong manifest after a swap, above all — asks
+         * with its own urls, in the order rotateMirrors and preferGoodHosts
+         * gave them; rewriting those put the strong list's first host back in
+         * front of every rotation (review, 10-20). */
+        if (tokenSwap && dash !== tokenSwapFor) { tokenSwap = null; tokenSwapFor = null; }
         var player = ensureShaka();
         if (!player) {
             emit("error", "这台设备的浏览器内核不支持 DASH 播放");

@@ -124,7 +124,8 @@ const htmlIds = new Set([...html.matchAll(/id="([\w-]+)"/g)].map((m) => m[1]));
 const jsIds = new Set();
 for (const f of ORDER) {
   const src = fs.readFileSync(path.join(APP, f), "utf8");
-  for (const m of src.matchAll(/el\("([\w-]+)"\)/g)) { jsIds.add(m[1]); }
+  /* `el(` on its own: setDanmakuLevel("off") ends in el("off") too. */
+  for (const m of src.matchAll(/(?<![\w$.])el\("([\w-]+)"\)/g)) { jsIds.add(m[1]); }
   /* ids created from template strings count as present */
   for (const m of src.matchAll(/id="([\w-]+)"/g)) { htmlIds.add(m[1]); }
 }
