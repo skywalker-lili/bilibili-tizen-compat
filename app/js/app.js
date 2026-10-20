@@ -4215,7 +4215,7 @@
         if (paused) {
             Player.pause();
             el("pause-glyph").className = "";
-            if (!commentsView) { el("playerui").className = ""; }
+            if (!commentsView && !episodeView) { el("playerui").className = ""; }
             if (chromeTimer) { clearTimeout(chromeTimer); chromeTimer = null; }
         } else {
             Player.resume();
@@ -4728,6 +4728,22 @@
         el("opt-season-label").textContent = "合集 · " + s.title +
             (at >= 0 ? "（第 " + (at + 1) + " / " + s.episodes.length + " 集）" : "（" + s.episodes.length + " 集）");
         var html = "";
+        if (s.episodes.length > SEASON_FOLD) {
+            /* Ranges of 50, the list itself on the right (openEpisodeList). */
+            for (var r = 0; r * SEASON_FOLD < s.episodes.length; r++) {
+                var a = r * SEASON_FOLD, b = Math.min(s.episodes.length, a + SEASON_FOLD);
+                html += '<div class="opt opt-range focusable' + (at >= a && at < b ? " current" : "") +
+                        '" data-range="' + r + '">' + (a + 1) + "–" + b + "</div>";
+            }
+            el("opt-season").innerHTML = html;
+            var ranges = document.querySelectorAll("#opt-season .opt");
+            for (var q = 0; q < ranges.length; q++) {
+                (function (node) {
+                    node.onselect = function () { openEpisodeList(Number(node.getAttribute("data-range"))); };
+                })(ranges[q]);
+            }
+            return;
+        }
         for (var i = 0; i < s.episodes.length; i++) {
             var ep = s.episodes[i];
             html += '<div class="opt focusable' + (i === at ? " current" : "") + '" data-i="' + i + '">' +
@@ -4740,16 +4756,90 @@
         for (var k = 0; k < chips.length; k++) {
             (function (node) {
                 node.onselect = function () {
-                    var ep = s.episodes[Number(node.getAttribute("data-i"))];
-                    if (!ep || !playing) { return; }
-                    if (ep.bvid === playing.detail.bvid) { closeOptions(); return; }
-                    report("season", "合集「" + s.title + "」选第 " + (Number(node.getAttribute("data-i")) + 1) + " 集 " + ep.bvid);
-                    var next = seasonEpisodeDetail(ep);
                     closeOptions();
-                    play(next, ep.cid);
+                    playSeasonEpisode(s, Number(node.getAttribute("data-i")));
                 };
             })(chips[k]);
         }
+    }
+
+    /* One episode of the 合集, from the tiles or the side list. The one already
+     * playing just carries on. */
+    function playSeasonEpisode(s, i) {
+        var ep = s && s.episodes[i];
+        if (!ep || !playing || ep.bvid === playing.detail.bvid) { return; }
+        report("season", "合集「" + s.title + "」选第 " + (i + 1) + " 集 " + ep.bvid);
+        play(seasonEpisodeDetail(ep), ep.cid);
+    }
+
+    /* A 合集 longer than this folds into ranges in the panel, and a range opens
+     * as a list on the right, where the comments go (2026-10-20, the viewer: a
+     * 400-odd episode 合集 tiled four to a row was a hundred rows). Fifty, not a
+     * hundred: the list is walked one press at a time. */
+    var SEASON_FOLD = 50;
+    var episodeView = null;
+    var COMMENTS_VIDEO_HINT = "视频继续播放中 · 播放/暂停键控制视频 · 返回键关闭评论";
+
+    function openEpisodeList(r) {
+        var s = playing && playing.detail && playing.detail.season;
+        if (!s || episodeView) { return; }
+        closeOptions();
+        cancelScrub();
+        var from = r * SEASON_FOLD, to = Math.min(s.episodes.length, from + SEASON_FOLD);
+        var at = seasonIndex(s, playing.detail.bvid), html = "";
+        episodeView = { range: r };
+        report("season", "合集「" + s.title + "」打开第 " + (from + 1) + "–" + to + " 集的列表（共 " +
+               s.episodes.length + " 集，正在看第 " + (at + 1) + " 集）");
+        for (var i = from; i < to; i++) {
+            var ep = s.episodes[i];
+            html += '<div class="comment-item ep-item focusable' + (i === at ? " current" : "") + '" data-ep="' + i + '">' +
+                    '<span class="ep-no">' + (i + 1) + '</span><span class="ep-title">' + esc(ep.title) + '</span>' +
+                    (ep.duration ? '<span class="ep-dur">' + esc(ep.duration) + '</span>' : "") + '</div>';
+        }
+        /* The comments' side view, lent: same shrunk picture, same pane. */
+        el("comments-video-title").textContent = playing.detail.title || "";
+        el("comments-video-hint").textContent = "视频继续播放中 · 播放/暂停键控制视频 · 返回键回到面板";
+        el("comments-title").textContent = "合集";
+        el("comments-level").textContent = "第 " + (from + 1) + "–" + to + " 集 · 共 " + s.episodes.length + " 集";
+        el("comments-hint").textContent = s.title;
+        el("comments-status").textContent = "";
+        el("comments-list").innerHTML = html;
+        el("comments-list").scrollTop = 0;
+        document.body.className += " comments-open";
+        el("comments-view").className = "";
+        el("playerui").className = "hidden";
+        Player.setViewport(48, 72, 1216, 684);
+        var items = document.querySelectorAll("#comments-list .ep-item");
+        for (var k = 0; k < items.length; k++) {
+            (function (node) {
+                node.onselect = function () {
+                    var i2 = Number(node.getAttribute("data-ep"));
+                    closeEpisodeList(true);
+                    playSeasonEpisode(s, i2);
+                };
+            })(items[k]);
+        }
+        var cur = document.querySelector("#comments-list .ep-item.current") ||
+                  document.querySelector("#comments-list .ep-item");
+        if (cur) { Nav.focus(cur); }
+    }
+
+    /* `toVideo`: an episode was picked (or playback is going away), so back to
+     * the picture; otherwise 返回, back to the panel on that range. */
+    function closeEpisodeList(toVideo) {
+        if (!episodeView) { return; }
+        var r = episodeView.range;
+        episodeView = null;
+        document.body.className = document.body.className.replace(/\s*comments-open/g, "");
+        el("comments-view").className = "hidden";
+        el("comments-list").innerHTML = "";
+        el("comments-video-hint").textContent = COMMENTS_VIDEO_HINT;
+        Player.setViewport(0, 0, 1920, 1080);
+        if (!playing) { return; }
+        if (toVideo) { showChrome(); return; }
+        openOptions();
+        var chip = document.querySelector('#opt-season .opt[data-range="' + r + '"]');
+        if (chip) { Nav.focus(chip); }
     }
 
     /* 播放速度 (2026-09-28). A row of chips like the parts, the current one
@@ -5101,7 +5191,7 @@
      * take it away again so the picture is unobstructed while watching. */
     function showChrome() {
         if (!playing) { return; }
-        if (commentsView) { return; }
+        if (commentsView || episodeView) { return; }
         el("playerui").className = "";
         /* Fresh start for the "how long has it been trying to hide" clock: a
          * keypress puts the banner up on purpose, so the four seconds that
@@ -5223,6 +5313,7 @@
          * own ending. */
         closeOptions();
         closeComments(true);
+        closeEpisodeList(true);
         cancelScrub();
         /* Diagnostics are per-video too: a capped count that is never reset
          * would go quiet after the first bad video of the evening, which is
@@ -6112,6 +6203,7 @@
         Resume.flush();
         cancelScrub();
         closeComments(true);
+        closeEpisodeList(true);
         closeOptions();
         el("pause-glyph").className = "hidden";
         cancelNext();
@@ -6320,6 +6412,7 @@
                 reportProgress(-1, true);   /* -1 is bilibili's "watched to the end" */
             }
             closeComments(true);
+        closeEpisodeList(true);
             beginAutoNext();
         } else if (kind === "log") {
             report("player", data);
@@ -6736,6 +6829,15 @@
             if (k === Nav.KEY.RETURN) { closeActionMenu(); return true; }
             return false;
         }
+        if (episodeView) {
+            if (k === Nav.KEY.RETURN) { closeEpisodeList(false); return true; }
+            if (k === Nav.KEY.PLAY_PAUSE) { setPaused(!Player.userPaused()); return true; }
+            if (k === Nav.KEY.PLAY) { if (Player.userPaused()) { setPaused(false); } return true; }
+            if (k === Nav.KEY.PAUSE) { if (!Player.userPaused()) { setPaused(true); } return true; }
+            if (k === Nav.KEY.UP || k === Nav.KEY.DOWN || k === Nav.KEY.ENTER) { return false; }
+            if (k === Nav.KEY.EXIT) { return false; }
+            return true;
+        }
         if (commentsView) {
             if (k === Nav.KEY.RETURN) { leaveCommentReplies(); return true; }
             if (k === Nav.KEY.PLAY_PAUSE) { setPaused(!Player.userPaused()); return true; }
@@ -6820,6 +6922,7 @@
         if (liveRoom) { stopLive(); return; }
         if (imeOpen) { closeIme(false); return; }
         if (actionView) { closeActionMenu(); return; }
+        if (episodeView) { closeEpisodeList(false); return; }
         if (commentsView) { leaveCommentReplies(); return; }
         if (playing) { backFromPlayer(); return; }
         Auth.cancelLogin();

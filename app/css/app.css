@@ -697,6 +697,16 @@ body.density-5 .library-item { width: 344px; }
 /* ⟶ 2026-10-20 the 合集 went back to tiles, four to a row (the viewer: 「不要放在
  * 一行展示，就一直平铺展示这样更直观」): 4 × 436 + 3 × 16 = 1792. 分P stays a row. */
 #opt-season .opt { width: 436px; max-width: none; }
+/* Past 50 episodes the 合集 is a row of ranges instead (openEpisodeList). */
+#opt-season .opt.opt-range { width: auto; }
+/* The range's episodes, in the comments' pane: number, the whole title (two
+   lines at most), length; the playing one in pink. */
+.ep-item { display: flex; align-items: baseline; gap: 16px; font-size: 25px; }
+.ep-no { color: #8b959e; flex-shrink: 0; min-width: 48px; }
+.ep-title { flex: 1; min-width: 0; line-height: 1.4; overflow: hidden;
+    display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.ep-dur { color: #8b959e; font-size: 21px; flex-shrink: 0; }
+.ep-item.current .ep-no, .ep-item.current .ep-title { color: #ff6699; }
 .opt.current .opt-p, .opt.current .opt-dur { color: rgba(255,255,255,0.8); }
 .opt.focused { border-color: #ff6699; }
 
