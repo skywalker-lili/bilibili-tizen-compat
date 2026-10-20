@@ -35,7 +35,8 @@ what you half-watched on the phone is under the cursor when the TV comes on.
 | **Verified** | Samsung 2023 65" **CU7090**, firmware Tizen 9.0 (Chromium 120). Every measurement in this project comes from this one set |
 | **Community-tested** | Samsung 2020 55" **Q90T**, Tizen 5.5 (Chromium 69), tested by the author of [PR #2](https://github.com/titlog/bilibili-tizen/pull/2) on their branch; the old-engine compatibility comes from there |
 | **Very likely** | 2020 onwards (Tizen 5.5+). Playback uses standard MSE and AVPlay, nothing model-specific — but **no other model has been tried yet** |
-| **No** | Non-Samsung sets; Samsung models from before 2016 (engine too old) |
+| **Installs, untested** | 2017–2019 sets (Tizen 3.0–5.0, Chromium 47–63), allowed to install from 1.2.5. A 2018 UA49NU7100 (Tizen 4) ran a September build: the UI came up, the covers had wrong colours (fixed since, [#1](https://github.com/titlog/bilibili-tizen/issues/1)); playback has not been tried. **If you install it on one, please open an issue saying how it went** |
+| **No** | Non-Samsung sets; Samsung models from 2016 and earlier (Tizen 2.x) |
 
 A build from source reports its engine string and codec support on boot; that
 line is the first thing to read (the release package reports nothing). **Either
@@ -189,6 +190,11 @@ did you power-cycle the set after changing it? A DHCP change means re-registerin
 
 **`Invalid certificate chain` (from source).** You are using a Tizen-bundled
 certificate. Run `zsh tools/setup.sh` for a Samsung-issued one.
+
+**You already made a signing profile in Tizen Studio's Certificate Manager.** No
+need to edit the scripts: put `BILI_PROFILE="<profile name>"` in
+`~/.bilibili-tizen.conf` and `deploy.sh` signs with it instead of the
+certificates `setup.sh` issues.
 
 **The install says the TV already has this app signed with a different
 certificate.** It was installed the other way; see "Do not switch between the

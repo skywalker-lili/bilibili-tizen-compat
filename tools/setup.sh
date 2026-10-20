@@ -133,7 +133,7 @@ if [ -f "$CERT_DIR/author.p12" ] && [ -f "$CERT_DIR/distributor.p12" ]; then
 else
   echo "接下来要签发三星证书。"
   echo "  这一步会打开浏览器让你登录三星账号（免费注册即可）。"
-  echo "  三星自己的分发证书在这一代电视上一律 Invalid certificate chain，"
+  echo "  Tizen 自带的分发证书在 2023 年以后的电视上一律 Invalid certificate chain，"
   echo "  所以必须是三星签发的那套 —— 这也是 Tizen Studio 的 GUI 之外没有别的路的原因。"
   echo -n "  现在签发？[Y/n] "; read ans
   case "$ans" in

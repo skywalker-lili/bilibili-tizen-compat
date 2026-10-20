@@ -8,10 +8,15 @@
     <!-- The 10-char prefix must match the package attribute below.
          If Tizen Studio assigns you a different ID on import, let it win.
          5.5, not 6.0: Chromium 69 there lacks flex gap, which compat.js and
-         css/legacy-layout.css stand in for (PR #2, from a Q90T). -->
+         css/legacy-layout.css stand in for (PR #2, from a Q90T).
+         3.0, not 5.5 (2026-10-20, issues #4 and #5): 2017/2018 sets refused the
+         package outright. Tizen 3.0 is Chromium 47 and 4.0 is 56: app/js is
+         ES5, Shaka 4.12.5 carries its own Tizen 3/4 MSE patches, and the
+         missing CSS grid is legacy-no-grid. Untested on either — a Tizen 4
+         set ran a September build with this hand-edited (issue #1). -->
     <tizen:application id="BiliTvApp0.Bilibili"
                        package="BiliTvApp0"
-                       required_version="5.5"/>
+                       required_version="3.0"/>
 
     <!-- Wildcard network access. On Tizen this widget access policy replaces
          the browser CORS model, so XHR to bilivideo.com returns real status

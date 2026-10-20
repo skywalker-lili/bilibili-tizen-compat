@@ -6458,7 +6458,11 @@
                    " | hev1=" + can("hev1.1.6.L120.90") +
                    " | hvc1=" + can("hvc1.1.6.L120.90") +
                    " | av01=" + can("av01.0.08M.08") +
-                   " | 封面=" + API.thumbFormat);
+                   " | 封面=" + API.thumbFormat +
+                   /* compat.js's verdicts: flex gap missing (Chromium 69),
+                    * grid missing too (56 and older). */
+                   " | 布局=" + ((/legacy-no-grid/.test(document.documentElement.className) ? "无grid" :
+                                 /legacy-flex-gap/.test(document.documentElement.className) ? "无flex-gap" : "现代")));
         } catch (e) { report("engine", "probe failed: " + e.message); }
 
         /* A set with more than one person on it asks before showing anyone's

@@ -94,3 +94,24 @@
 .legacy-flex-gap .nextup-up > * + * { margin-top: 12px; }
 .legacy-flex-gap .nextup-up > .nextup-up-name { margin-top: 18px; }
 .legacy-flex-gap #player-loading > * + * { margin-top: 32px; }
+
+/* Chromium 56 and older (Tizen 4 and 3, since required_version went to 3.0
+ * for issues #4 and #5) have no CSS grid either: the display: grid above is
+ * dropped and the card grid is flex with gap 0, cards touching. compat.js adds
+ * legacy-no-grid there; margins on the cards and an equal negative margin on
+ * the container stand in, the way .parts does. display: flex is what those
+ * engines end up with anyway — it is spelled out so adding the class by hand
+ * in a modern browser shows exactly this layout; so is gap: 0, because a
+ * modern engine reads the grid-gap above as flex gap too, and 56 does not. */
+.legacy-no-grid .grid,
+.legacy-no-grid .library-grid { display: flex; gap: 0; margin: 0 -32px -32px 0; }
+.legacy-no-grid .grid > *,
+.legacy-no-grid .library-grid > * { margin: 0 32px 32px 0; }
+.legacy-no-grid body.density-4 .grid,
+.legacy-no-grid body.density-4 .library-grid { gap: 0; margin: 0 -24px -24px 0; }
+.legacy-no-grid body.density-4 .grid > *,
+.legacy-no-grid body.density-4 .library-grid > * { margin: 0 24px 24px 0; }
+.legacy-no-grid body.density-5 .grid,
+.legacy-no-grid body.density-5 .library-grid { gap: 0; margin: 0 -18px -18px 0; }
+.legacy-no-grid body.density-5 .grid > *,
+.legacy-no-grid body.density-5 .library-grid > * { margin: 0 18px 18px 0; }

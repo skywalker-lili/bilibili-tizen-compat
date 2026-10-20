@@ -22,17 +22,23 @@ CA_DIR="$HOME/tizen-studio-data/samsung-ca"
 PROFILES="$HOME/tizen-studio-data/profile/profiles.xml"
 # The certificate password lives outside the repo. The p12 files it protects are
 # not in version control either, but a password in a git history is a habit worth
-# not forming.
+# not forming. Read only when the profile has to be built from them (below): a
+# profile made in Tizen Studio's Certificate Manager and named in BILI_PROFILE
+# needs none of this, and requiring it anyway had people commenting the profile
+# step out by hand (issue #4).
 PW_FILE="$HOME/.bilibili-tizen-cert-password"
-[ -f "$PW_FILE" ] || { echo "missing $PW_FILE — see CLAUDE.md"; exit 1; }
-PW=$(cat "$PW_FILE")
 # Everything below describes one particular television on one particular LAN, so
 # none of it is hardcoded any more: `tools/setup.sh` writes ~/.bilibili-tizen.conf
 # once. Device/network values can still be overridden per invocation from the
 # environment; the application ID comes from the package manifest so a renamed
 # app cannot be installed successfully and then launch an older package.
 CONF="${BILI_TIZEN_CONF:-$HOME/.bilibili-tizen.conf}"
+# The file assigns every BILI_* it knows, so sourcing it plainly let the file
+# overrule the environment — BILI_PROFILE=… zsh tools/deploy.sh signed and
+# installed with the file's profile. Put the environment's values back on top.
+ENV_BILI=$(typeset -p -m 'BILI_*' 2>/dev/null)
 [ -f "$CONF" ] && source "$CONF"
+eval "$ENV_BILI"
 
 PROFILE="${BILI_PROFILE:-SamsungBili}"
 TV_IP="${BILI_TV_IP:-}"
@@ -98,6 +104,26 @@ PY
 
 echo "== signing profile =="
 if ! grep -q "profile name=\"$PROFILE\"" "$PROFILES" 2>/dev/null; then
+  # Say which input is missing and what to do, instead of letting
+  # `security-profiles add` fail inside a >/dev/null under set -e.
+  need=("$PW_FILE" "$CERT_DIR/author.p12" "$CERT_DIR/distributor.p12"
+        "$CA_DIR/vd_tizen_dev_public2.crt" "$CA_DIR/vd_tizen_dev_author_ca.cer")
+  lack=()
+  for f in "${need[@]}"; do [ -f "$f" ] || lack+=("$f"); done
+  if [ ${#lack[@]} -gt 0 ]; then
+    echo "  没有签名档 $PROFILE，也建不出来，缺："
+    for f in "${lack[@]}"; do echo "    $f"; done
+    echo "  二选一："
+    echo "    · zsh tools/setup.sh —— 替这台电视签一套三星证书"
+    echo "    · 已经在 Tizen Studio 证书管理器里建好了签名档：在 $CONF"
+    echo "      里写 BILI_PROFILE=\"<签名档名字>\"（$PROFILES 里 profile name 那个）"
+    case "${lack[*]}" in (*"$CA_DIR"*)
+      echo "  CA 证书在 Tizen Studio 证书管理器的 org.tizen.common.cert_*.jar 里，res/ca/ 下面：" ;
+      echo "    mkdir -p $CA_DIR && unzip -j -o \"\$(find ~/tizen-studio -name 'org.tizen.common.cert_*.jar' | head -n 1)\" 'res/ca/*' -d $CA_DIR" ;;
+    esac
+    exit 1
+  fi
+  PW=$(cat "$PW_FILE")
   tizen security-profiles add -n "$PROFILE" -A \
     -a "$CERT_DIR/author.p12" -p "$PW" \
     -d "$CERT_DIR/distributor.p12" -dp "$PW" \

@@ -493,7 +493,15 @@ zsh tools/deploy.sh --selftest  # 同上，但构建会自己走一遍全流程�
 
 **电视地址、型号、DUID、网卡不再写死在脚本里** —— `setup.sh` 把它们写进
 `~/.bilibili-tizen.conf`（仓库外，权限 600），`deploy.sh` 每次读取，环境变量可以
-临时覆盖（`BILI_TV_IP=… zsh tools/deploy.sh`）。这么改是为了公开发布：原来的形态
+临时覆盖（`BILI_TV_IP=… zsh tools/deploy.sh`）。**这句覆盖 2026-10-20 才真的成立**：此前
+配置文件在环境变量之后 `source`，把它们全盖掉 —— `BILI_PROFILE=… zsh tools/deploy.sh` 照样用
+文件里的签名档签名、装上、启动。
+
+**自己在 Tizen Studio 证书管理器里建了签名档的人**，在配置文件里写 `BILI_PROFILE="<名字>"`
+就行，`deploy.sh` 不再要 `~/.bilibili-tizen-cert-password`（2026-10-20 起，只有签名档要从
+`setup.sh` 签的证书现建时才读它；缺什么会逐个列出来）。issue #4 那位此前只能把建签名档那段
+整个注释掉。三星 CA 证书不在 `setup.sh` 签的东西里，在证书管理器的
+`org.tizen.common.cert_*.jar` 的 `res/ca/` 下（这台 Mac 是 08-01 解到 `~/tizen-studio-data/samsung-ca` 的）。这么改是为了公开发布：原来的形态
 要求陌生人去改三个文件里的常量，而其中任何一个改错都表现成别的故障 —— 主机地址错
 是 sdb 静默超时，DUID 错是证书签得出来、装不上去。
 
@@ -569,8 +577,8 @@ JSON 就行。
 ```
 app/          客户端
   vendor/shaka-player.compiled.js   DASH 播放器；预编译，不需要打包工具
-  js/compat.js   量引擎有没有 flex gap，没有就给 <html> 加 legacy-flex-gap
-  css/legacy-layout.css  只在 legacy-flex-gap 下生效，用 margin / grid-gap 顶替 flex gap
+  js/compat.js   量引擎有没有 flex gap，没有就给 <html> 加 legacy-flex-gap；连 grid 都没有（Chromium 56 及以前）再加 legacy-no-grid
+  css/legacy-layout.css  只在这两个类下生效，用 margin / grid-gap 顶替 flex gap
   js/config.js   UA、首选画质、上报地址
   js/md5.js      TV 登录接口的签名摘要
   js/mpd.js      写出交给 Shaka 的 DASH 清单
@@ -636,6 +644,15 @@ docs/
 > 由 `css/legacy-layout.css` 用 margin 和 grid-gap 顶替。**`app.css` 里每加一个带 `gap`
 > 的 flex 容器，都要在 `legacy-layout.css` 里补一条**，否则老电视上子元素会挤在一起，
 > 而在这台电视上什么都看不出来。
+>
+> **⟶ 2026-10-20 再降到 3.0**（issue #4、#5：2017/2018 年的电视连装都装不上，有人手改
+> 版本号装过）。最老的引擎变成 **Chromium 47**（Tizen 3.0；4.0 是 56、5.0 是 63）：没有
+> CSS 变量（49）、没有 CSS grid（57）、sloppy 模式下没有 `let`（49）。`app/js` 当时扫过一遍，
+> 全是 ES5，只用到 Promise、`Element.animate`、`crypto.subtle` 这类 47 就有的；`app.css`
+> 没有 `var(--`（`style.css` 有，但那是 spike 留下的、`index.html` 不加载）。没有 grid 的
+> 引擎上 `compat.js` 再加一个 `legacy-no-grid`，卡片网格改用 margin（桌面上手动加这两个类，
+> 三种每行密度下卡片位置和现代布局逐像素一致）。Shaka 4.12.5 自带 Tizen 2/3/4 的 MSE 补丁。
+> **两代都没在真机上播过**，`engine:` 行末的 `布局=` 说这台走的是哪套。
 
 唯一的依赖是 `app/vendor/shaka-player.compiled.js`，以预编译包的形式入库。它不
 需要打包工具，而且它本身就是 ES5。

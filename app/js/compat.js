@@ -17,4 +17,12 @@
     if (!supported) {
         document.documentElement.className += " legacy-flex-gap";
     }
+    /* Chromium 56 and older (Tizen 4 and 3) have no grid at all, which the
+     * flex-gap fallback's card grid is built on. CSS.supports is old enough
+     * (Chromium 28) to ask, and does not claim grid on those engines. */
+    var grid = false;
+    try { grid = !!(window.CSS && CSS.supports && CSS.supports("display", "grid")); } catch (e) {}
+    if (!grid) {
+        document.documentElement.className += " legacy-no-grid";
+    }
 })();
