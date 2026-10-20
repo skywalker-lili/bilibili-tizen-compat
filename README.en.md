@@ -22,7 +22,7 @@ what you half-watched on the phone is under the cursor when the TV comes on.
 | ![Home](docs/screenshots/01-home.jpg) | ![Playback](docs/screenshots/03-player-danmaku.jpg) |
 | Three big cards a row, readable from the sofa; signed in, the top row is 「continue watching」 and the cursor starts on it | Danmaku drift right to left without overlapping, and pause and change speed with the video; scrubbing with thumbnail previews; up to 1080p H.265 when signed in, 4K with a 大会员 (premium) account |
 | ![Panel](docs/screenshots/04-panel.jpg) | ![Comments](docs/screenshots/05-comments.jpg) |
-| Press down while playing for the description, speed, parts / collection and related videos — **the video keeps running**, with the danmaku moved up above the panel; like / coin / favourite buttons and comments are here too | Comments and replies beside the video, which keeps playing |
+| Press down while playing for the panel — **the video keeps running**: danmaku on/off, like, coin, favourite, comments and speed in one row, a follow button by the uploader; parts, the collection (long ones folded into ranges of 50, listed on the right) and related videos. Back from a related video or the uploader's page returns to the video you were watching | Comments and replies beside the video, which keeps playing |
 | ![Settings](docs/screenshots/06-settings.jpg) | ![Search](docs/screenshots/02-search.jpg) |
 | Settings: autoplay, subtitles, danmaku, quality cap, clearing watch history, self-update, and cards per row to suit the TV and the sofa | Search, with the TV's own Chinese IME one button away |
 | ![Live](docs/screenshots/07-live.jpg) | ![Top bar](docs/screenshots/08-bar.jpg) |
@@ -162,13 +162,13 @@ then everything live on the site by popularity; inside a room, up and down chang
 room the way a TV changes channel. Signed out it is 720p, and there are no live
 danmaku yet. **Your own top bar**: in 设置, add or remove 直播, 动态, 我的, 稍后, 热门, 排行
 and any of the 30 zones, and put them in your own order (推荐 stays first, 搜索
-and 设置 last); the bar slides sideways with the focus when it does not fit. Long
-collections and multi-part uploads list their episodes in one sliding row in the
-playback panel.
+and 设置 last); the bar slides sideways with the focus when it does not fit. Multi-part
+uploads list their parts in one sliding row in the playback panel.
 
-Also: danmaku (off / sparse / standard / dense, in 设置);
-collections (合集 — a row of episodes in the panel, and the next episode plays
-when one ends); a quality cap (highest by default: 4K for 大会员 accounts) and
+Also: danmaku (off / sparse / standard / dense, in 设置; on/off in the panel);
+collections (合集 — tiled in the panel, folded into ranges of 50 past that with
+the range listed on the right, and the next episode plays when one ends);
+following uploaders (in the panel and on their page); a quality cap (highest by default: 4K for 大会员 accounts) and
 clearing this set's watch history; favourite folders and followed uploaders under 「我的」; comments (with
 replies) beside the running video; subtitles; like, coin and favourite (three
 buttons in the playback panel, as on the web page — 投币 asks how many coins in
