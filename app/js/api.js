@@ -793,15 +793,17 @@ var API = (function () {
             } else { onFail("此账号缺少可用于操作的登录凭证，请用电视二维码重新登录"); }
         },
 
-        videoCoin: function (aid, amount, onOk, onFail) {
+        /* `alsoLike`: the web page's 「同时点赞内容」, ticked there by default. */
+        videoCoin: function (aid, amount, onOk, onFail, alsoLike) {
             var key = Auth.accessKey(), csrf = Auth.csrf();
+            var like = alsoLike ? 1 : 0;
             if (key) {
                 postForm("https://app.bilibili.com/x/v2/view/coin/add",
                          Auth.signTv({ access_key: key, aid: aid, multiply: amount,
-                                       select_like: 0 }), null, onOk, onFail);
+                                       select_like: like }), null, onOk, onFail);
             } else if (Auth.jarIsOurs() && csrf) {
                 postForm(BASE + "/x/web-interface/coin/add",
-                         { aid: aid, multiply: amount, select_like: 0, csrf: csrf },
+                         { aid: aid, multiply: amount, select_like: like, csrf: csrf },
                          null, onOk, onFail);
             } else { onFail("此账号缺少可用于操作的登录凭证，请用电视二维码重新登录"); }
         },
@@ -1186,6 +1188,11 @@ var API = (function () {
                      * (…/bangumi/play/ep813154): their streams live behind the
                      * PGC playurl, and the UGC one answers -404 (10-20). */
                     redirect: String(d.redirect_url || ""),
+                    /* For the panel's three buttons. copyright 2 is a 转载,
+                     * which takes one coin, not two. */
+                    stat: { like: Number((d.stat || {}).like) || 0, coin: Number((d.stat || {}).coin) || 0,
+                            fav: Number((d.stat || {}).favorite) || 0 },
+                    copyright: Number(d.copyright) || 0,
                     pages: (d.pages || []).map(function (p) {
                         /* Per-part length, formatted here like every other
                          * duration in this file. It is seconds on a page and
@@ -1242,6 +1249,9 @@ var API = (function () {
          * read the failure text for it; one definition, so a change to the
          * text's shape has one place to break instead of three silent ones. */
         gone: function (why) { return String(why).indexOf("-404") >= 0; },
+
+        /* 12345 → "1.2万", the way every count in this file is written. */
+        countText: count,
 
         /* Whether a 番剧 / 影视 episode would play here, asked only to say why it
          * does not: this client has no PGC playback. `redirect` is view()'s

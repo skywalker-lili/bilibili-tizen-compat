@@ -33,7 +33,8 @@
 .legacy-flex-gap .library-head,
 .legacy-flex-gap .library-grid,
 .legacy-flex-gap .library-item,
-.legacy-flex-gap #live-top { gap: 0; }
+.legacy-flex-gap #live-top,
+.legacy-flex-gap .act-more { gap: 0; }
 
 .legacy-flex-gap #tabs > :not(.hidden) ~ :not(.hidden) { margin-left: 10px; }
 .legacy-flex-gap #account > :not(.hidden) ~ :not(.hidden) { margin-left: 14px; }
@@ -87,6 +88,8 @@
 .legacy-flex-gap .suggests > .suggest-label { width: calc(100% - 14px); }
 .legacy-flex-gap .acc-row { margin-right: -40px; margin-bottom: 0; }
 .legacy-flex-gap .acc-row > * { margin-right: 40px; margin-bottom: 40px; }
+.legacy-flex-gap .act-more { margin-right: -14px; }
+.legacy-flex-gap .act-more > * { margin-right: 14px; margin-bottom: 14px; }
 .legacy-flex-gap .opt-row { margin-right: -16px; margin-bottom: -16px; }
 .legacy-flex-gap .opt-row > * { margin-right: 16px; margin-bottom: 16px; }
 

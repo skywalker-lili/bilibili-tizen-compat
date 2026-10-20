@@ -163,11 +163,11 @@ try {
   /* 04 first, while the video is playing clean: the scrub below ends in a
    * seek, and desktop Chrome's H.265 decoder has failed right after one
    * (10-18: the panel came out over a black frame and 「网络不顺」). Focus on
-   * the danmaku row so it shows lit. */
+   * 点赞 so the three buttons (10-20) show lit. */
   await key(KEY.DOWN);
   await waitFor("面板", () => { const p = document.getElementById("options"); return p && !p.classList.contains("hidden"); }, 5000);
   await page.waitForTimeout(800);
-  await page.evaluate(() => { const c = document.querySelector("#opt-danmaku .opt.current") || document.querySelector("#opt-danmaku .opt"); if (c) { Nav.focus(c); } });
+  await page.evaluate(() => { const c = document.getElementById("panel-like"); if (c) { Nav.focus(c); } });
   await page.waitForTimeout(600);
   await shot("04-panel");
   await key(KEY.RETURN);

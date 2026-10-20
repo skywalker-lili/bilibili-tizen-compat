@@ -22,7 +22,7 @@ what you half-watched on the phone is under the cursor when the TV comes on.
 | ![Home](docs/screenshots/01-home.jpg) | ![Playback](docs/screenshots/03-player-danmaku.jpg) |
 | Three big cards a row, readable from the sofa; signed in, the top row is 「continue watching」 and the cursor starts on it | Danmaku drift right to left without overlapping, and pause and change speed with the video; scrubbing with thumbnail previews; up to 1080p H.265 when signed in, 4K with a 大会员 (premium) account |
 | ![Panel](docs/screenshots/04-panel.jpg) | ![Comments](docs/screenshots/05-comments.jpg) |
-| Press down while playing for the description, speed, danmaku, parts / collection and related videos — **the video keeps running**, with the danmaku moved up above the panel; like / coin / favourite and comments are here too | Comments and replies beside the video, which keeps playing |
+| Press down while playing for the description, speed, parts / collection and related videos — **the video keeps running**, with the danmaku moved up above the panel; like / coin / favourite buttons and comments are here too | Comments and replies beside the video, which keeps playing |
 | ![Settings](docs/screenshots/06-settings.jpg) | ![Search](docs/screenshots/02-search.jpg) |
 | Settings: autoplay, subtitles, danmaku, quality cap, clearing watch history, self-update, and cards per row to suit the TV and the sofa | Search, with the TV's own Chinese IME one button away |
 | ![Live](docs/screenshots/07-live.jpg) | ![Top bar](docs/screenshots/08-bar.jpg) |
@@ -132,7 +132,7 @@ zsh tools/deploy.sh     # check, sign, install, launch — about 15 seconds
 - Watch progress is reported back to bilibili (every 30 s), so the phone and the
   web can pick up where the TV left off — and vice versa.
 - Like, coin and favourite write to your bilibili account, and only when you pick
-  them on the TV; a coin cannot be taken back, so it asks once more.
+  them on the TV; a coin cannot be taken back, so you pick how many first.
 - The default sign-in is the **TV login** route, signed with the official TV
   client's appkey. That is what makes multiple accounts and progress reporting
   possible; it also means your client presents itself to bilibili as the official
@@ -166,12 +166,13 @@ and 设置 last); the bar slides sideways with the focus when it does not fit. L
 collections and multi-part uploads list their episodes in one sliding row in the
 playback panel.
 
-Also: danmaku (off / sparse / standard / dense, in 设置 or the playback panel);
+Also: danmaku (off / sparse / standard / dense, in 设置);
 collections (合集 — a row of episodes in the panel, and the next episode plays
 when one ends); a quality cap (highest by default: 4K for 大会员 accounts) and
 clearing this set's watch history; favourite folders and followed uploaders under 「我的」; comments (with
-replies) beside the running video; subtitles; like, coin and favourite (hold OK
-on a card, or the buttons in the playback panel; a coin asks once more); and a
+replies) beside the running video; subtitles; like, coin and favourite (three
+buttons in the playback panel, as on the web page — 投币 asks how many coins in
+the row below and likes too; holding OK on a card still works); and a
 「设置」 tab — autoplay next, subtitles on/off, and cards per row (3 / 4 / 5, to
 suit how big the TV is and how far the sofa). These come from
 [PR #2](https://github.com/titlog/bilibili-tizen/pull/2).

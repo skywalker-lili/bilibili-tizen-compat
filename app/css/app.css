@@ -251,6 +251,16 @@ body.density-5 .card-info-date { display: block; width: 100%; margin: 2px 0 0; f
 
 #panel-actions { margin: 22px 0 6px; }
 #panel-actions .btn { font-size: 24px; padding: 10px 24px; }
+/* Done: liked, coined, in a folder — lit the way the web page lights its icons. */
+#panel-actions .btn.act.on { color: #ff6699; border-color: rgba(255,102,153,0.55);
+    background: rgba(255,102,153,0.12); }
+#panel-actions .btn.act.on.focused { border-color: #fff; }
+/* 投币's count and 收藏's folders, opened under the buttons in place. */
+.act-more { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; margin: 14px 0 6px; }
+.act-more .btn { font-size: 22px; padding: 8px 22px; }
+.act-more .btn.on { color: #ff6699; border-color: rgba(255,102,153,0.55); }
+.act-more .btn.on.focused { border-color: #fff; }
+.act-hint { font-size: 22px; color: #8b959e; }
 
 #video-actions {
     position: absolute; top: 0; right: 0; bottom: 0; left: 0; z-index: 40;

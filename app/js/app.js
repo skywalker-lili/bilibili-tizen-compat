@@ -402,15 +402,6 @@
                '</div>';
     }
 
-    function cardActionLabel(v) {
-        var key = activeAccountId() + ":" + (v.bvid || "");
-        var s = interactionCache[key];
-        if (!s) { return "赞 / 币 / 收藏"; }
-        return (s.liked ? "已赞" : "赞") + " · " +
-            (s.coins ? "币" + s.coins : "投币") + " · " +
-            (s.favoured ? "已藏" : "收藏");
-    }
-
     function bindCardAction(card, video, folderId) {
         /* Like / coin / favourite are for videos; a live room has none of them. */
         if (video && video.live) { return; }
@@ -426,9 +417,10 @@
             liked: view.liked, coins: view.coins,
             favoured: !!(view.folders && view.folders.some(function (f) { return f.selected; }))
         };
-        if (playing && playing.detail && playing.detail.bvid === view.video.bvid) {
-            var panel = el("panel-action");
-            if (panel) { panel.textContent = cardActionLabel(view.video); }
+        /* The panel's own copy of this video goes stale; it re-reads on next paint. */
+        if (pa && pa.key === view.accountId + ":" + view.video.bvid) {
+            pa = null;
+            if (optionsOpen) { paintPanelActions(); loadPanelActions(); }
         }
     }
 
@@ -450,7 +442,7 @@
                 mineView.kind === "videos" && mineView.id === view.changedFolderId) {
             renderMineLibrary(false);
         } else if (prior && prior.offsetParent !== null) { Nav.focus(prior); }
-        else if (playing && optionsOpen) { Nav.reset("#panel-action"); }
+        else if (playing && optionsOpen) { Nav.reset("#panel-like"); }
         else { Nav.reset("#screen .card"); }
     }
 
@@ -643,6 +635,252 @@
             if (!actionCurrent(view)) { return; }
             view.loading = false; view.error = "视频资料读取失败：" + why;
             paintActionMenu("action-close");
+        });
+    }
+
+    /* ---------------- 点赞 / 投币 / 收藏 in the play panel (2026-10-20) ----------------
+     *
+     * Three buttons, as on the web page. The viewer: 「能不能用三个按钮来表示？现在用
+     * 一个弹窗、二次弹窗，不好看呀！交互也不顺畅，就和网页的三个按钮逻辑保持一致就好」.
+     * 点赞 toggles. 投币 opens 投 1 枚 / 投 2 枚 in the row under the buttons, and
+     * likes as well, as the web page's 「同时点赞内容」 (ticked by default) does —
+     * picking the count is the one confirmation, as the web page asks once. 收藏
+     * toggles the account's folder when it has one, and opens the folders in that
+     * row when it has several. Lit buttons and counts say what was done; success
+     * gets no toast. The long-press menu on cards is unchanged. */
+    var pa = null;   /* this video's: key, aid, liked, coins, folders, loading, loaded, busy, more, d */
+
+    function panelActState() {
+        if (!playing || !playing.detail) { return null; }
+        var key = activeAccountId() + ":" + playing.detail.bvid;
+        if (!pa || pa.key !== key) {
+            pa = { key: key, aid: 0, liked: null, coins: null, folders: null, loading: false,
+                   loaded: false, busy: false, more: "", d: { like: 0, coin: 0, fav: 0 } };
+        }
+        return pa;
+    }
+
+    function favouredOf(s) {
+        return !!(s.folders && s.folders.some(function (f) { return f.selected; }));
+    }
+
+    function coinLimit() {
+        return playing && playing.detail && playing.detail.copyright === 2 ? 1 : 2;
+    }
+
+    function setLit(node, on) {
+        node.className = node.className.replace(/(^|\s)on(?=\s|$)/g, "") + (on ? " on" : "");
+    }
+
+    function paintPanelActions(focusId) {
+        var s = panelActState();
+        if (!s) { return; }
+        var st = playing.detail.stat || null;
+        function num(key) { return st ? " " + API.countText(Math.max(0, st[key] + s.d[key])) : ""; }
+        var like = el("panel-like"), coin = el("panel-coin"), fav = el("panel-fav");
+        like.textContent = (s.liked ? "已点赞" : "点赞") + num("like");
+        coin.textContent = (s.coins ? "已投币" : "投币") + num("coin");
+        fav.textContent = (favouredOf(s) ? "已收藏" : "收藏") + num("fav");
+        setLit(like, !!s.liked);
+        setLit(coin, !!s.coins);
+        setLit(fav, favouredOf(s));
+        like.onselect = pressLike;
+        coin.onselect = pressCoin;
+        fav.onselect = pressFav;
+        paintActMore();
+        if (focusId && el(focusId)) { Nav.focus(el(focusId)); }
+    }
+
+    function paintActMore() {
+        var box = el("panel-act-more"), s = pa, html = "";
+        if (!s || !s.more || !playing || s.key !== activeAccountId() + ":" + playing.detail.bvid) {
+            box.className = "act-more hidden";
+            box.innerHTML = "";
+            return;
+        }
+        if (s.more === "coin") {
+            html += '<span class="act-hint">投出去不能撤回' + (s.liked === false ? "，会同时点赞" : "") + '</span>';
+            var left = coinLimit() - (s.coins || 0);
+            for (var n = 1; n <= Math.min(2, left); n++) {
+                html += '<div class="btn ghost focusable" id="act-coin-' + n + '">投 ' + n + ' 枚</div>';
+            }
+        } else {
+            for (var i = 0; i < s.folders.length; i++) {
+                var f = s.folders[i];
+                html += '<div class="btn ghost focusable' + (f.selected ? " on" : "") + '" id="act-fav-' + i + '">' +
+                        (f.selected ? "★ " : "☆ ") + esc(f.title) + '</div>';
+            }
+        }
+        box.innerHTML = html;
+        box.className = "act-more";
+        for (var c = 1; c <= 2; c++) {
+            (function (count) {
+                var b = el("act-coin-" + count);
+                if (b) { b.onselect = function () { giveCoins(count); }; }
+            })(c);
+        }
+        if (s.more === "fav") {
+            for (var j = 0; j < s.folders.length; j++) {
+                (function (index) {
+                    el("act-fav-" + index).onselect = function () { toggleFolder(index); };
+                })(j);
+            }
+        }
+    }
+
+    /* The ring onto the opened row's first choice. */
+    function focusActMore() {
+        var first = el("panel-act-more").querySelector(".focusable");
+        if (first) { Nav.focus(first); }
+    }
+
+    /* Back out of an open choice row: true when there was one. */
+    function closeActMore() {
+        if (!pa || !pa.more) { return false; }
+        var back = pa.more === "coin" ? "panel-coin" : "panel-fav";
+        pa.more = "";
+        paintActMore();
+        if (el(back)) { Nav.focus(el(back)); }
+        return true;
+    }
+
+    function rememberPanel(s) {
+        interactionCache[s.key] = { liked: s.liked, coins: s.coins, favoured: favouredOf(s) };
+    }
+
+    /* The three states, once per video and account, when the panel first opens
+     * with an aid in hand (absorbMeta asks again when view() brings one). */
+    function loadPanelActions() {
+        var s = panelActState();
+        if (!s || s.loaded || s.loading) { return; }
+        if (!Auth.isLoggedIn() || !API.videoActionReady()) { return; }
+        var me = Accounts.active(), aid = Number(playing.detail.aid) || 0;
+        if (!me || !me.mid || !aid) { return; }
+        s.loading = true;
+        s.aid = aid;
+        var left = 3;
+        var tag = videoTag(playing.detail);
+        function done() {
+            if (pa !== s || --left) { return; }
+            s.loading = false;
+            s.loaded = true;
+            rememberPanel(s);
+            report("action", tag + " 状态：点赞=" + (s.liked === null ? "?" : s.liked ? "已赞" : "没赞") +
+                   " 投币=" + (s.coins === null ? "?" : s.coins + "/" + coinLimit()) +
+                   " 收藏夹 " + (s.folders ? s.folders.length + " 个、在 " +
+                       s.folders.filter(function (f) { return f.selected; }).length + " 个里" : "?"));
+            if (optionsOpen) { paintPanelActions(); }
+        }
+        function failed(what) {
+            return function (why) { report("action", what + "状态 " + why); done(); };
+        }
+        API.videoLikeState(aid, function (v) { s.liked = v; done(); }, failed("点赞"));
+        API.videoCoinState(aid, function (v) { s.coins = v; done(); }, failed("投币"));
+        API.favoriteFolders(me.mid, function (v) { s.folders = v; done(); }, failed("收藏夹"), aid);
+    }
+
+    /* What every press checks first; each answer is a toast, never a dialog. */
+    function actReady(s) {
+        if (!s) { return false; }
+        if (!Auth.isLoggedIn()) { toast("先在「我的」扫码登录，才能点赞、投币和收藏"); return false; }
+        if (!API.videoActionReady()) { toast("这个账号是网页扫码登录的，提交不了，请用电视二维码重新登录"); return false; }
+        if (s.busy) { toast("正在提交，稍等"); return false; }
+        if (!s.loaded) {
+            loadPanelActions();
+            toast(s.loading ? "正在读取状态，稍等一下再按" : "还没拿到这个视频的编号，稍等一下再按");
+            return false;
+        }
+        return true;
+    }
+
+    function pressLike() {
+        var s = panelActState();
+        if (!actReady(s)) { return; }
+        if (s.liked === null) { toast("没读到点赞状态，先不提交"); return; }
+        var want = !s.liked;
+        s.busy = true;
+        API.videoLike(s.aid, want, function () {
+            if (pa !== s) { return; }
+            s.busy = false;
+            s.liked = want;
+            s.d.like += want ? 1 : -1;
+            report("action", (want ? "点赞了 " : "取消点赞 ") + videoTag(playing.detail));
+            rememberPanel(s);
+            if (optionsOpen) { paintPanelActions(); }
+        }, function (why) {
+            if (pa !== s) { return; }
+            s.busy = false;
+            report("action", "like 失败 " + why);
+            toast("点赞没成功：" + why);
+        });
+    }
+
+    function pressCoin() {
+        var s = panelActState();
+        if (!actReady(s)) { return; }
+        if (s.coins === null) { toast("没读到投币状态，先不提交"); return; }
+        if (coinLimit() - s.coins <= 0) { toast("这个视频已经投过 " + s.coins + " 枚了"); return; }
+        if (s.more === "coin") { closeActMore(); return; }
+        s.more = "coin";
+        paintActMore();
+        focusActMore();
+    }
+
+    function giveCoins(n) {
+        var s = pa;
+        if (!s || s.busy) { return; }
+        var alsoLike = s.liked === false;
+        s.busy = true;
+        API.videoCoin(s.aid, n, function () {
+            if (pa !== s) { return; }
+            s.busy = false;
+            s.coins += n;
+            s.d.coin += n;
+            if (alsoLike) { s.liked = true; s.d.like += 1; }
+            report("action", "投了 " + n + " 枚" + (alsoLike ? "（同时点赞）" : "") + " " + videoTag(playing.detail));
+            s.more = "";
+            rememberPanel(s);
+            if (optionsOpen) { paintPanelActions("panel-coin"); }
+            toast("投币成功");
+        }, function (why) {
+            if (pa !== s) { return; }
+            s.busy = false;
+            report("action", "coin 失败 " + why);
+            toast("投币没成功：" + why);
+        }, alsoLike);
+    }
+
+    function pressFav() {
+        var s = panelActState();
+        if (!actReady(s)) { return; }
+        if (!s.folders) { toast("没读到收藏夹，先不提交"); return; }
+        if (!s.folders.length) { toast("这个账号还没有收藏夹"); return; }
+        if (s.folders.length === 1) { toggleFolder(0, "panel-fav"); return; }
+        if (s.more === "fav") { closeActMore(); return; }
+        s.more = "fav";
+        paintActMore();
+        focusActMore();
+    }
+
+    function toggleFolder(i, focusId) {
+        var s = pa;
+        if (!s || s.busy || !s.folders || !s.folders[i]) { return; }
+        var f = s.folders[i], add = !f.selected, before = favouredOf(s);
+        s.busy = true;
+        API.videoFavorite(s.aid, f.id, add, function () {
+            if (pa !== s) { return; }
+            s.busy = false;
+            f.selected = add;
+            if (favouredOf(s) !== before) { s.d.fav += add ? 1 : -1; }
+            report("action", (add ? "收藏到「" : "从「") + f.title + (add ? "」 " : "」移出 ") + videoTag(playing.detail));
+            invalidateFavoriteLibrary();
+            rememberPanel(s);
+            if (optionsOpen) { paintPanelActions(focusId || "act-fav-" + i); }
+        }, function (why) {
+            if (pa !== s) { return; }
+            s.busy = false;
+            report("action", "favorite 失败 " + why);
+            toast("收藏没成功：" + why);
         });
     }
 
@@ -1983,6 +2221,11 @@
                  label: playing.timedLabel || "", shown: !!playing.shown };
     };
     window.__stForgetRefusal = function () { webRefusedAt = 0; };
+    /* The panel's three buttons: what was read, without pressing anything. */
+    window.__stPanelActs = function () {
+        return pa ? { loaded: pa.loaded, loading: pa.loading, liked: pa.liked, coins: pa.coins,
+                      folders: pa.folders ? pa.folders.length : -1 } : null;
+    };
 
     function watchForWake() {
         /* Nothing is reported when the set goes away: the POST would be dialling
@@ -4431,28 +4674,6 @@
         }
     }
 
-    /* 弹幕 in the panel: the same four levels as the settings page, as chips
-     * like the speed row. Choosing keeps the panel open. */
-    function paintDanmakuRow() {
-        var cur = danmakuLevel(), html = "";
-        for (var i = 0; i < DM_LEVELS.length; i++) {
-            html += '<div class="opt focusable' + (DM_LEVELS[i] === cur ? " current" : "") +
-                    '" data-dm="' + DM_LEVELS[i] + '">' + DM_NAMES[DM_LEVELS[i]] + "</div>";
-        }
-        el("opt-danmaku").innerHTML = html;
-        var chips = document.querySelectorAll("#opt-danmaku .opt");
-        for (var j = 0; j < chips.length; j++) {
-            (function (node) {
-                node.onselect = function () {
-                    var v = node.getAttribute("data-dm");
-                    setDanmakuLevel(v);
-                    paintDanmakuRow();
-                    Nav.focus(document.querySelector('#opt-danmaku .opt[data-dm="' + v + '"]'));
-                };
-            })(chips[j]);
-        }
-    }
-
     /* 合集 (2026-10-18). The same chips as the parts, one per episode, every
      * one of them (the parts row's reasoning: a series long enough to need a
      * list is exactly the one a cap would cut). Choosing one plays that video;
@@ -4564,16 +4785,15 @@
             stopPlayback(function () { openUp(mid, name, face); });
         };
         el("panel-desc").textContent = (d.desc || "").slice(0, 400);
-        el("panel-action").textContent = cardActionLabel(d);
-        el("panel-action").onselect = function () {
-            if (playing) { openActionMenu(playing.detail, 0); }
-        };
+        paintPanelActions();
+        loadPanelActions();
         el("panel-comments").onselect = openComments;
 
         paintParts();
         paintSeason();
         paintSpeed();
-        paintDanmakuRow();
+        /* No 弹幕 row since 2026-10-20 (the viewer: 「弹幕的设置入口，就保留在统一设置的
+         * 那个入口」) — it is a setting of this television, not of one video. */
 
         /* Related videos live in the panel now, so "what else" never costs the
          * viewer their place in the video. All of them, not the first sixteen:
@@ -4609,6 +4829,8 @@
     function closeOptions() {
         if (!optionsOpen) { return; }
         optionsOpen = false;
+        if (pa) { pa.more = ""; }
+        paintActMore();
         document.body.className = document.body.className.replace(/\s*options-open/g, "");
         el("options").className = "hidden scroll";
         /* The thumbnails go with the screen: openOptions repaints from the list
@@ -5623,6 +5845,8 @@
         if (optionsOpen) {
             paintParts();
             paintSeason();
+            paintPanelActions();
+            loadPanelActions();
             el("panel-desc").textContent = (full.desc || "").slice(0, 400);
             var meta = el("panel-meta").querySelector(".panel-meta-rest");
             if (meta) {
@@ -6490,7 +6714,7 @@
         }
         if (pendingNext) { return handleNextKeys(k); }
         if (optionsOpen) {
-            if (k === Nav.KEY.RETURN) { closeOptions(); return true; }
+            if (k === Nav.KEY.RETURN) { if (!closeActMore()) { closeOptions(); } return true; }
             /* Up from the first row leaves the panel, mirroring the down key
              * that opened it — otherwise return is the only way out and there
              * is nothing on screen that says so. */

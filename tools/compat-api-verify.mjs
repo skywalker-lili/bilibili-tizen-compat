@@ -121,6 +121,13 @@ assert.equal(url(request).pathname, "/x/v2/view/coin/add");
 assert.equal(form(request).get("multiply"), "2");
 assert.equal(form(request).get("select_like"), "0");
 respond({ code: 0, data: {} });
+/* The panel's 投币 likes too, as the web page's ticked-by-default box does. */
+result((ok, fail) => API.videoCoin(99, 1, ok, fail, true));
+request = take();
+assert.equal(url(request).pathname, "/x/v2/view/coin/add");
+assert.equal(form(request).get("multiply"), "1");
+assert.equal(form(request).get("select_like"), "1");
+respond({ code: 0, data: {} });
 result((ok, fail) => API.videoFavorite(99, 12, false, ok, fail));
 request = take();
 assert.equal(url(request).pathname, "/medialist/gateway/coll/resource/deal");

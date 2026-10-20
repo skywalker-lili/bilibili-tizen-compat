@@ -255,6 +255,20 @@ var SelfTest = (function () {
             if (!document.getElementById("panel-title").textContent) { return "面板标题为空"; }
             return null;
         }],
+        /* Read, never pressed: a coin cannot be taken back (2026-10-20). */
+        ["面板里点赞、投币、收藏三个按钮，状态读出来了", 500, function () {
+            if (!visible("panel-like") || !visible("panel-coin") || !visible("panel-fav")) {
+                return "三个按钮不全";
+            }
+            if (document.getElementById("opt-danmaku")) { return "面板里又出现了弹幕那一排"; }
+            if (!Auth.isLoggedIn()) { post("跳过：没登录，读不了点赞状态"); return null; }
+            var a = window.__stPanelActs && window.__stPanelActs();
+            if (!a || !a.loaded) { return WAIT; }
+            post("面板：" + document.getElementById("panel-like").textContent + " / " +
+                 document.getElementById("panel-coin").textContent + " / " +
+                 document.getElementById("panel-fav").textContent + "（收藏夹 " + a.folders + " 个）");
+            return a.liked === null || a.coins === null || a.folders < 0 ? "有一项状态没读到" : null;
+        }, 8000, "8 秒了点赞、投币、收藏的状态还没读出来"],
         /* 播放速度 goes through Shaka's trickPlay, not the element — written to
          * the element it reverts at the first stall. What is checked is the
          * player's own answer and the badge that tells the viewer. Put back to
