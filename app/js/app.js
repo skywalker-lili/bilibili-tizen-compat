@@ -684,6 +684,17 @@
         setLit(like, !!s.liked);
         setLit(coin, !!s.coins);
         setLit(fav, favouredOf(s));
+        /* 弹幕 on/off ahead of them (2026-10-20). The level stays the settings
+         * page's: off and back on returns to 少 / 标准 / 多, whichever it was. */
+        var dmOn = danmakuLevel() !== "off", dmBtn = el("panel-dm");
+        dmBtn.textContent = "弹幕 " + (dmOn ? "开" : "关");
+        setLit(dmBtn, dmOn);
+        dmBtn.onselect = function () {
+            var back = Settings.get("danmakuOnLevel", "normal");
+            if (DM_LEVELS.indexOf(back) < 1) { back = "normal"; }
+            setDanmakuLevel(danmakuLevel() === "off" ? back : "off");
+            paintPanelActions("panel-dm");
+        };
         like.onselect = pressLike;
         coin.onselect = pressCoin;
         fav.onselect = pressFav;
@@ -1167,6 +1178,10 @@
      * that cannot play goes back to the one it was picked from, toast and all,
      * rather than out to the grid — the same complaint as 返回 had. */
     function failOut() {
+        if (chargeOnly()) {
+            report("player", "播放失败的是充电专属视频 " + videoTag(playing.detail) + "，没充电拿不到完整版");
+            toast("这是 UP 主的充电专属视频，给 UP 主充电之后才能看");
+        }
         if (playing && backStack.length) { backFromPlayer(); return; }
         stopPlayback();
     }
@@ -2793,6 +2808,8 @@
     }
     function setDanmakuLevel(v) {
         Settings.set("danmaku", v);
+        /* What the panel's on/off switch turns back on to. */
+        if (v !== "off") { Settings.set("danmakuOnLevel", v); }
         if (danmakuRenderer()) { dm.density(v); }
         if (v === "off") { el("danmaku").className = "hidden"; }
         else if (playing && playing.danmakuStarted) { el("danmaku").className = ""; }
@@ -3832,8 +3849,19 @@
         }
         API.playurlDashStrong(aid, cid, qn,
             function (d) { end(); onOk(d); },
-            function (why) { end(); onFail(why); },
+            function (why) {
+                end();
+                /* 87007 is 充电专属 (10-20, BV19GM36GEno: is_upower_exclusive). */
+                if (/code 87007\b/.test(String(why)) && playing && playing.cid === cid) { playing.upowerOnly = true; }
+                onFail(why);
+            },
             Player.badFilesFor(cid), webDash || null);
+    }
+
+    /* Why a video would not play, when bilibili has said so in a form a viewer
+     * can act on — every 「播放失败」 exit asks this before it leaves. */
+    function chargeOnly() {
+        return !!(playing && (playing.upowerOnly || (playing.detail && playing.detail.upowerOnly)));
     }
 
     /* When a web token was last refused, on any video (C, 2026-10-20). On 10-20
@@ -4809,8 +4837,14 @@
             el("opt-related").innerHTML = '<div class="empty">正在加载相关视频…</div>';
         }
 
-        Nav.reset("#options .opt.current") ;
-        if (!Nav.current()) { Nav.reset("#options .opt"); }
+        /* The episode being watched when there is a list of them, else the
+         * row's first button. Spelled out since speed moved into the top row
+         * (2026-10-20): its current chip would win `#options .opt.current`. */
+        var firstFocus = ["#opt-parts .opt.current", "#opt-season .opt.current", "#panel-dm"];
+        for (var ff = 0; ff < firstFocus.length; ff++) {
+            var ffNode = document.querySelector(firstFocus[ff]);
+            if (ffNode && ffNode.offsetParent !== null) { Nav.focus(ffNode); break; }
+        }
     }
 
     /* True when no other focusable in the panel sits above this one — the
@@ -5836,6 +5870,10 @@
         /* aid may already have been filled in by withAid() on the 403 path; a
          * full view() carries it too, so nothing is lost. */
         session.detail = full;
+        if (session === playing && session.shown && chargeOnly() && !session.chargeNoted) {
+            session.chargeNoted = true;
+            toast("这是 UP 主的充电专属视频，没充电只能看试看的一段");
+        }
         session.metaState = "done";
         session.metaWhy = "";
         refreshPartLabel();
@@ -6235,6 +6273,12 @@
                 report("player", (playing.timedLabel || "到画面") + " " + sincePress + Player.timings() +
                        (playing.prefetchNote ? " | " + playing.prefetchNote : ""));
                 playing.prefetchNote = "";
+            }
+            /* A 充电专属 video that plays is its 试看 clip: say so once, or its
+             * end reads as the app cutting out (10-20). */
+            if (chargeOnly() && !playing.chargeNoted) {
+                playing.chargeNoted = true;
+                toast("这是 UP 主的充电专属视频，没充电只能看试看的一段");
             }
             loadMetaForPlaying();
             startSubtitles();

@@ -261,6 +261,10 @@ body.density-5 .card-info-date { display: block; width: 100%; margin: 2px 0 0; f
 .act-more .btn.on { color: #ff6699; border-color: rgba(255,102,153,0.55); }
 .act-more .btn.on.focused { border-color: #fff; }
 .act-hint { font-size: 22px; color: #8b959e; }
+/* Speed, at the end of the button row (2026-10-20). */
+.speed-row { display: flex; align-items: center; gap: 12px; margin-left: 8px; }
+.speed-chips { display: flex; gap: 10px; }
+#panel-actions .opt { font-size: 24px; padding: 8px 18px; }
 
 #video-actions {
     position: absolute; top: 0; right: 0; bottom: 0; left: 0; z-index: 40;
@@ -318,11 +322,16 @@ body.density-5 .card-info-date { display: block; width: 100%; margin: 2px 0 0; f
 
 /* ---------------- toast ---------------- */
 
+/* In the middle of the screen, not along the bottom (2026-10-20, the viewer:
+   「这种文字提示，你就在屏幕中央提示……在屏幕下方，有时候注意不到」 — the 番剧
+   region-lock notice was missed down there). Above the panel and the side views. */
 #toast {
-    position: absolute; left: 50%; bottom: 80px; transform: translateX(-50%);
-    background: rgba(0,0,0,0.88); color: #fff;
-    font-size: 26px; padding: 18px 40px; border-radius: 10px;
-    max-width: 1200px;
+    position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+    z-index: 60;
+    background: rgba(15,20,25,0.94); color: #fff;
+    border: 2px solid rgba(255,102,153,0.6);
+    font-size: 32px; line-height: 1.45; padding: 28px 56px; border-radius: 14px;
+    max-width: 1200px; text-align: center;
 }
 
 /* ---------------- login / mine ---------------- */
@@ -685,6 +694,9 @@ body.density-5 .library-item { width: 344px; }
  * twenty-odd lines, and getting from the related videos back up to the
  * uploader took that many presses of 上 — the selftest ran out at 24. */
 .opt-row.hscroll { flex-wrap: nowrap; overflow: hidden; }
+/* ⟶ 2026-10-20 the 合集 went back to tiles, four to a row (the viewer: 「不要放在
+ * 一行展示，就一直平铺展示这样更直观」): 4 × 436 + 3 × 16 = 1792. 分P stays a row. */
+#opt-season .opt { width: 436px; max-width: none; }
 .opt.current .opt-p, .opt.current .opt-dur { color: rgba(255,255,255,0.8); }
 .opt.focused { border-color: #ff6699; }
 

@@ -1193,6 +1193,10 @@ var API = (function () {
                     stat: { like: Number((d.stat || {}).like) || 0, coin: Number((d.stat || {}).coin) || 0,
                             fav: Number((d.stat || {}).favorite) || 0 },
                     copyright: Number(d.copyright) || 0,
+                    /* 充电专属: only the uploader's 充电 members get the whole
+                     * video; everyone else is served a 试看 clip, or nothing
+                     * (BV19GM36GEno, 10-20: the app endpoint answers 87007). */
+                    upowerOnly: !!d.is_upower_exclusive && !d.is_upower_play,
                     pages: (d.pages || []).map(function (p) {
                         /* Per-part length, formatted here like every other
                          * duration in this file. It is seconds on a page and

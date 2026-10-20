@@ -93,13 +93,17 @@
         <div id="panel-title"></div>
         <div id="panel-meta"></div>
         <div id="panel-desc"></div>
-        <!-- Three buttons, as on the web page (2026-10-20): 点赞 toggles, 投币
-             and 收藏 open their choice in the row under them, not in a popup. -->
+        <!-- One row (2026-10-20, the viewer's layout): 弹幕 on/off, then the
+             three buttons as on the web page — 点赞 toggles, 投币 and 收藏 open
+             their choice in the row under them, not in a popup — 看评论, and the
+             speed chips. -->
         <div class="actions" id="panel-actions">
+            <div class="btn ghost focusable act" id="panel-dm">弹幕</div>
             <div class="btn ghost focusable act" id="panel-like">点赞</div>
             <div class="btn ghost focusable act" id="panel-coin">投币</div>
             <div class="btn ghost focusable act" id="panel-fav">收藏</div>
             <div class="btn ghost focusable" id="panel-comments">看评论</div>
+            <div class="speed-row"><span class="act-hint">倍速</span><div class="speed-chips" id="opt-speed"></div></div>
         </div>
         <div class="act-more hidden" id="panel-act-more"></div>
     </div>
@@ -111,11 +115,7 @@
          unless view() says there is one. -->
     <div class="opt-group hidden" id="opt-season-group">
         <div class="opt-label" id="opt-season-label">合集</div>
-        <div class="opt-row hscroll" id="opt-season"></div>
-    </div>
-    <div class="opt-group" id="opt-speed-group">
-        <div class="opt-label">播放速度</div>
-        <div class="opt-row" id="opt-speed"></div>
+        <div class="opt-row" id="opt-season"></div>
     </div>
     <div class="opt-group" id="opt-related-group">
         <div class="opt-label">相关推荐</div>
