@@ -860,6 +860,8 @@
             clear: function () { items = []; shown = 0; el(boxId).innerHTML = ""; },
             total: function () { return items.length; },
             shown: function () { return shown; },
+            /* Paint up to this many cards — to put the ring on a deep one. */
+            grow: function (upto) { grow(upto); },
             /* The focus-nears-the-end trigger, the same shape the feeds use.
              * Nothing is fetched here — the list has been in hand since playback
              * started; what is being paced is thumbnails, not requests. */
@@ -885,14 +887,62 @@
      * viewer at the top of the grid with the ring off screen. */
     var nextupGrid = cardPager("nextup-related", function (v) {
         if (v.bvid) { playedInChain[v.bvid] = 1; }
+        backStack = [];   /* the video behind the chooser has ended; nothing to return to */
         playVideo(v, true);
     });
     /* Picking from the panel: same `fromPanel` reason, and the panel has to come
-     * down first or the new video starts underneath it. */
+     * down first or the new video starts underneath it.
+     *
+     * And 返回 from the video picked comes back here (2026-10-20, the viewer:
+     * 「从相关推荐点进去之后再按返回，应该回到这个相关推荐，而不是一下子跳回到
+     * 首页」): the video being left, where it was, and which card was picked
+     * go on `backStack`, and backFromPlayer() replays it from that second with
+     * the panel open and the ring on that card. */
     var panelGrid = cardPager("opt-related", function (v) {
+        if (playing && playing.detail) {
+            backStack.push({ detail: playing.detail, cid: playing.cid,
+                             at: Player.hasPosition() ? Player.position() : lastKnownPosition,
+                             pick: (playing.detail.related || []).indexOf(v) });
+            if (backStack.length > BACK_MAX) { backStack.shift(); }
+        }
         closeOptions();
         playVideo(v, true);
     });
+    var backStack = [], BACK_MAX = 10, returning = null;
+
+    /* 返回 while a video plays: one step back along the related picks, or out
+     * to the grid when there were none. */
+    function backFromPlayer() {
+        var prev = backStack.pop();
+        if (!prev) { stopPlayback(); return; }
+        report("player", "返回：回到 " + videoTag(prev.detail) + " 的 " + fmt(prev.at) + "，打开相关推荐");
+        returning = prev;
+        play(prev.detail, prev.cid);
+        /* At once, not on the first frame: the list is in hand (it rides on the
+         * detail), and opening it a second or two later read as the panel
+         * jumping up under a video that had already started (the viewer,
+         * 10-20). The video loads in the strip above it. */
+        reopenRelated(prev.pick);
+    }
+
+    /* The exits that say 「播放失败」: a video picked from the related list
+     * that cannot play goes back to the one it was picked from, toast and all,
+     * rather than out to the grid — the same complaint as 返回 had. */
+    function failOut() {
+        if (playing && backStack.length) { backFromPlayer(); return; }
+        stopPlayback();
+    }
+
+    /* The returned-to video's panel, the ring on the card that was picked. */
+    function reopenRelated(pick) {
+        openOptions();
+        var d = playing && playing.detail;
+        if (!d || !d.related || pick < 0 || pick >= d.related.length) { return; }
+        var cols = gridColumns();
+        panelGrid.grow((Math.floor(pick / cols) + 2) * cols);
+        var card = document.querySelector('#opt-related .card[data-i="' + pick + '"]');
+        if (card) { Nav.focus(card); }
+    }
 
     /* The two histories, folded into one run of cards in time order.
      *
@@ -3561,7 +3611,7 @@
 
     function playVideo(v, fromPanel) {
         pressAt = new Date().getTime();
-        if (!fromPanel) { rememberPosition(); }
+        if (!fromPanel) { rememberPosition(); backStack = []; }
         if (v.live) { openLive(v); return; }
 
         /* A card from bilibili's own history carries where the phone got to.
@@ -4772,6 +4822,9 @@
             var finished = pendingNext.from;
             cancelNext();
             playing = finished || null;
+            /* A video reached from a related pick ended: 返回 goes back to the
+             * one it was picked from, as it would have mid-play. */
+            if (playing && backStack.length) { backFromPlayer(); return true; }
             stopPlayback();
             return true;
         }
@@ -4783,6 +4836,7 @@
         var next = pendingNext;
         cancelNext();
         if (!next) { return; }
+        backStack = [];   /* the chain moved on by itself; 返回 now means the grid */
         playedInChain[next.detail.bvid] = 1;
         play(next.detail, next.cid);
     }
@@ -4966,6 +5020,14 @@
             fromPhone = true;
         }
         handoff = null;
+        /* Back from a related pick: exactly where it was left, even under the
+         * 30 seconds Resume keeps. backFromPlayer reopens the panel. */
+        if (returning && returning.detail === detail && returning.cid === cid) {
+            startMs = returning.at || 0;
+            fromPhone = false;
+            playing.returnPick = returning.pick;
+        }
+        returning = null;
 
         lastKnownPosition = startMs;
         lastKnownDuration = 0;      /* the previous video's length is not this one's */
@@ -5109,7 +5171,7 @@
                 playing.subtitleTracks = r.subtitles || [];
             }
             if (r && r.cid === cid && r.positionMs >= 30000 &&
-                    r.positionMs > playing.startMs) {
+                    r.positionMs > playing.startMs && playing.returnPick === undefined) {
                 playing.startMs = r.positionMs;
                 lastKnownPosition = r.positionMs;
                 playing.fromPhone = false;
@@ -5257,7 +5319,7 @@
             } else {
                 toast("播放失败：拿不到播放地址（" + whyText.slice(0, 60) + "）");
             }
-            stopPlayback();
+            failOut();
         }
 
         /* The lesson's fourth request. Only with an access_key: the app
@@ -5532,7 +5594,7 @@
                    (playing !== session ? "，而且会话已经没了" : ""));
             if (playing !== session) { return; }
             toast("播放失败：" + w2);
-            stopPlayback();
+            failOut();
         });
     }
 
@@ -5792,6 +5854,7 @@
         el("pause-glyph").className = "hidden";
         cancelNext();
         playedInChain = {};
+        backStack = [];
         Player.stop();
         playing = null;
         clearSubtitles();
@@ -6257,7 +6320,7 @@
                             if (playing !== session3) { report("player", "原地重启的 playurl 回来时会话已经没了，丢弃"); return; }
                             report("player", "原地重启：重取 playurl 失败（" + w3 + "），退出");
                             toast("播放错误：" + data);
-                            stopPlayback();
+                            failOut();
                         });
                     } else if (playing.urls && playing.urls.length &&
                                !playing.refused) {
@@ -6267,13 +6330,13 @@
                                                lastKnownPosition);
                     } else {
                         toast("播放错误：" + data);
-                        stopPlayback();
+                        failOut();
                     }
                     return;
                 }
                 report("player", "原地重启后仍然出错，退出：" + data);
                 toast("播放错误：" + data);
-                stopPlayback();
+                failOut();
                 return;
             }
             /* Only progressive has anywhere to downgrade *to*. Fired on a video
@@ -6387,7 +6450,7 @@
             toast(refused
                 ? "视频流被拒绝（403）——可能是临时限流，过几分钟再试，或换一个视频"
                 : "播放错误：" + data);
-            stopPlayback();
+            failOut();
         }
     });
 
@@ -6476,7 +6539,7 @@
                 openOptions(); return true;
             case Nav.KEY.RETURN:
                 if (scrub) { cancelScrub(); return true; }
-                stopPlayback(); return true;
+                backFromPlayer(); return true;
             case Nav.KEY.EXIT:
                 return false;   /* let Nav close the app */
             default:
@@ -6490,7 +6553,7 @@
         if (imeOpen) { closeIme(false); return; }
         if (actionView) { closeActionMenu(); return; }
         if (commentsView) { leaveCommentReplies(); return; }
-        if (playing) { stopPlayback(); return; }
+        if (playing) { backFromPlayer(); return; }
         Auth.cancelLogin();
         /* Backing out of "add an account" belongs on the switcher, not on the
          * home feed — the viewer was one press into a two-press errand. */

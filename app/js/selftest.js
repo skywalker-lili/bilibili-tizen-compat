@@ -195,6 +195,8 @@ var SelfTest = (function () {
      * For the waits whose length is the network's, not the app's. */
     var WAIT = {};
 
+    var rel = {};   /* the related pick that 返回 has to come back from */
+
     var steps = [
         ["首页加载出卡片", 3500, function () {
             return count("#screen .card") > 0 ? null : "网格里没有任何卡片";
@@ -355,6 +357,37 @@ var SelfTest = (function () {
             return cards > 6 ? null
                 : "焦点走进相关推荐深处了，网格却没有接着长（还是 " + cards + " 张）";
         }],
+        /* 返回 from a related pick comes back to the video it was picked from,
+         * at that second, with the panel open on that card — not out to the
+         * grid (2026-10-20, the viewer). */
+        ["面板里点开一个相关推荐", 300, function () {
+            var f = Nav.current(), box = document.getElementById("opt-related");
+            if (!f || !box || !box.contains(f) || f.getAttribute("data-i") === null) {
+                f = document.querySelector("#opt-related .card");
+                if (!f) { return "面板里没有相关推荐可点"; }
+                Nav.focus(f);
+            }
+            rel.title = document.getElementById("player-title").textContent;
+            rel.pick = Number(f.getAttribute("data-i"));
+            key(KEY.ENTER);
+            return null;
+        }],
+        ["相关推荐那个视频出画面", 1000, function () {
+            if (visible("shell")) { return "点开的相关推荐退回了首页"; }
+            if (visible("player-loading")) { return WAIT; }
+            var t = document.getElementById("player-title").textContent;
+            return t && t !== rel.title && document.getElementById("player-pos").textContent !== "0:00"
+                ? null : WAIT;
+        }, 20000, "20 秒了点开的相关推荐还没在放（放不了的话会回到原来的视频）"],
+        ["返回键回到原来那个视频", 300, function () { key(KEY.RETURN); return null; }],
+        ["回到原来的视频，面板开着，焦点在点过的那张", 1000, function () {
+            if (visible("shell")) { return "返回键退回了首页"; }
+            if (document.getElementById("player-title").textContent !== rel.title) { return WAIT; }
+            if (!visible("options")) { return WAIT; }
+            var f = Nav.current(), box = document.getElementById("opt-related");
+            return f && box && box.contains(f) && Number(f.getAttribute("data-i")) === rel.pick ? null
+                : "面板开了，焦点却不在点过的第 " + (rel.pick + 1) + " 张上";
+        }, 20000, "20 秒了还没回到原来那个视频的相关推荐"],
         ["返回键收起面板", 700, function () {
             key(KEY.RETURN);
             return null;

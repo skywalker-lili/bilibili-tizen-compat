@@ -718,6 +718,9 @@ body.density-5 .library-item { width: 344px; }
     display: flex; flex-direction: column; align-items: center; justify-content: center;
     gap: 32px; background: #0f1419;
 }
+/* With the panel up — 返回 from a related pick opens it before the video has
+   loaded — the spinner belongs to the strip above it, not behind it. */
+.options-open #player-loading { height: 46%; }
 #loading-title { font-size: 30px; color: #9aa4ad; max-width: 1200px; text-align: center; }
 /* The self-rescue heartbeat. Empty (and invisible) in the normal case; the
    ladder writes here while it works so a long recovery cannot be mistaken
