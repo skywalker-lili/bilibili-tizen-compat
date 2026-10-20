@@ -1243,6 +1243,21 @@ var API = (function () {
          * text's shape has one place to break instead of three silent ones. */
         gone: function (why) { return String(why).indexOf("-404") >= 0; },
 
+        /* Whether a 番剧 / 影视 episode would play here, asked only to say why it
+         * does not: this client has no PGC playback. `redirect` is view()'s
+         * …/bangumi/play/ep813154 (or ss…). onAnswer(null) means bilibili would
+         * serve it; otherwise its own reason, e.g. 「抱歉您所在地区不可观看！」
+         * — what this network was told for 风骚律师 on 2026-10-20. */
+        pgcAvailability: function (redirect, cid, onAnswer) {
+            var m = /\/bangumi\/play\/(ep|ss)(\d+)/.exec(String(redirect || ""));
+            if (!m) { onAnswer("不是番剧链接"); return; }
+            var url = BASE + "/pgc/player/web/playurl?" + (m[1] === "ep" ? "ep_id=" : "season_id=") + m[2] +
+                      (cid ? "&cid=" + cid : "") + "&qn=16&fnval=16&fnver=0&fourk=1";
+            getJson(url, function () { onAnswer(null); }, function (why) {
+                onAnswer(String(why).replace(/^code -?\d+\s*/, "") || String(why));
+            });
+        },
+
         related: function (bvid, onOk, onFail) {
             getJson(BASE + "/x/web-interface/archive/related?bvid=" + bvid, function (d) {
                 onOk((d || []).map(normalise));

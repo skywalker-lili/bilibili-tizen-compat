@@ -5214,9 +5214,16 @@
                  * and sent back to the grid, which read as a crash. */
                 API.view(deadBvid, function (full) {
                     if (full && /\/bangumi\/play\//.test(full.redirect || "")) {
-                        toast("这是番剧或影视区的正片，这个应用还放不了");
-                        report("player", "playurl -404：这个稿件跳到番剧页（" + full.redirect +
-                               "），番剧走的是另一套播放接口，这个应用没接");
+                        /* Say bilibili's own reason when there is one: 「这个应用
+                         * 还放不了」 read as the app's fault, while from this
+                         * network the episode is region-locked for every client
+                         * (2026-10-20, -10403). One request, after a failure. */
+                        API.pgcAvailability(full.redirect, cid, function (why) {
+                            toast(why ? "这是番剧或影视区的正片，B 站说：" + why
+                                      : "这是番剧或影视区的正片，这个应用还放不了");
+                            report("player", "playurl -404：这个稿件跳到番剧页（" + full.redirect +
+                                   "），番剧接口" + (why ? "答：" + why : "说这里能放，但这个应用没接番剧播放"));
+                        });
                         return;
                     }
                     toast("这个视频已经被删除或下架了");
