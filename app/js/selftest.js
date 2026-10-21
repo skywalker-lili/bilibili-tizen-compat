@@ -958,6 +958,15 @@ var SelfTest = (function () {
             return changed && retained && shown && Settings.get("autoplayNext", true) === before
                 ? null : "开关切换、重进设置或恢复原偏好失败";
         }],
+        /* 2026-10-21. Only that the section is there and says what it should;
+         * uploading is --diag's job, and this build has nowhere to send to. */
+        ["诊断日志：开关、上传按钮在，写着这台电视的编号", 300, function () {
+            var btn = document.getElementById("btn-diag"), st = document.getElementById("diag-status");
+            if (!btn || !document.getElementById("btn-diag-upload") || !st) { return "设置页里没有诊断日志那一节"; }
+            if (btn.textContent !== "诊断日志：" + (Diag.enabled() ? "开" : "关")) { return "开关上写的是「" + btn.textContent + "」"; }
+            return !Diag.enabled() || /编号 [A-Z2-9]{4}-[A-Z2-9]{4}/.test(st.textContent) ? null
+                : "状态行里没有编号：" + st.textContent;
+        }],
         ["退出设置回到推荐", 300, function () {
             key(KEY.RETURN);
             return document.querySelector('#tabs .tab.active[data-screen="rcmd"]') ? null : "没有回到推荐";
@@ -1721,10 +1730,73 @@ var SelfTest = (function () {
         }]
     ];
 
+    /* ---------------- 诊断日志上传（deploy.sh --diag, 2026-10-21） ----------------
+     *
+     * The upload path on the television itself: through 设置 the way a viewer
+     * presses it, then the automatic one an incident starts, against whatever
+     * BILI_DIAG_TO named (tools/diag-local.mjs by default). The toggle is
+     * turned off and on again, and left as it was found. */
+    var dg = {};
+    function diagStatus() { var n = document.getElementById("diag-status"); return n ? n.textContent : ""; }
+    var diagSteps = [
+        ["首页加载出卡片", 500, function () {
+            return count("#feed-grid .card") > 1 ? null : WAIT;
+        }, 20000, "20 秒了首页还没有卡片"],
+        ["进设置，诊断日志开着、有接收地址", 300, function () {
+            Nav.focus(document.querySelector('#tabs .tab[data-screen="settings"]'));
+            key(KEY.ENTER);
+            dg.wasOn = Diag.enabled();
+            if (!dg.wasOn) { Diag.setEnabled(true); }
+            var st = Diag.status();
+            if (!st.configured) { return "这个构建没有接收地址（deploy.sh --diag 应该写进了 DIAG_TO）"; }
+            post("诊断日志：编号 " + st.device + "，缓冲里 " + st.lines + " 行");
+            return null;
+        }],
+        ["按「上传诊断日志」", 300, function () {
+            Nav.focus(document.getElementById("btn-diag-upload"));
+            key(KEY.ENTER);
+            return null;
+        }],
+        ["状态行写出编号", 500, function () {
+            var m = /已上传（编号 ([a-z2-9]{8})）/.exec(diagStatus());
+            if (!m) { return /没传上/.test(diagStatus()) ? "没传上：" + diagStatus() : WAIT; }
+            dg.manualId = m[1];
+            post("手动上传：编号 " + m[1]);
+            return null;
+        }, 25000, function () { return "25 秒了状态行还是「" + diagStatus() + "」"; }],
+        ["开关关掉：不记录，再打开", 300, function () {
+            var btn = document.getElementById("btn-diag");
+            Nav.focus(btn);
+            key(KEY.ENTER);
+            if (Diag.enabled() || btn.textContent !== "诊断日志：关") { return "按了没关上"; }
+            if (diagStatus().indexOf("已关闭") !== 0) { return "关了之后状态行是「" + diagStatus() + "」"; }
+            if (Diag.status().lines !== 0) { return "关了之后缓冲里还有 " + Diag.status().lines + " 行"; }
+            key(KEY.ENTER);
+            return Diag.enabled() ? null : "再按没打开";
+        }],
+        ["出一次事：8 秒后自动上传", 300, function () {
+            dg.before = (Diag.status().last || {}).id;
+            Diag.incident("自测：造的一次出事");
+            return null;
+        }],
+        ["自动上传有了新编号", 1000, function () {
+            var last = Diag.status().last || {};
+            if (last.id && last.id !== dg.before && !last.manual) { post("自动上传：编号 " + last.id); return null; }
+            if (last.ok === false && !last.manual) { return "没传上：" + last.why; }
+            return WAIT;
+        }, 30000, "30 秒了自动上传还没有结果"],
+        ["收尾：开关放回原样，退出设置", 300, function () {
+            if (Diag.enabled() !== dg.wasOn) { Diag.setEnabled(dg.wasOn); }
+            key(KEY.RETURN);
+            return null;
+        }]
+    ];
+
     function run() {
         var i = 0, failures = 0;
         if (SELFTEST === "dmperf") { steps = dmperfSteps; }
         if (SELFTEST === "tokenswap") { steps = swapSteps; }
+        if (SELFTEST === "diag") { steps = diagSteps; }
         post("开始");
         function next() {
             if (i >= steps.length) {

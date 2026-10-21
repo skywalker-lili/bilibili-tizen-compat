@@ -55,6 +55,8 @@ zsh tools/deploy.sh             # 终端 2：检查、签名、安装、启动�
 zsh tools/deploy.sh --selftest  # 同上，构建自己走一遍全流程并上报（约 4 分钟，会自己放视频）
 zsh tools/deploy.sh --tokenswap # 只测「播放中 web 令牌被拒 → 换强令牌」（约 1 分钟，给 CDN 一个坏请求）
 zsh tools/deploy.sh --dmperf    # 弹幕帧耗时
+zsh tools/deploy.sh --diag      # 诊断日志上传：设置里手动传一次、造一次出事自动传（先开 node tools/diag-local.mjs）
+node tools/diag-logs.mjs        # 读别人电视传上来的诊断日志（--device 编号 / <id>）
 zsh tools/release.sh            # 给陌生人的发布包 → dist/
 ```
 
@@ -64,7 +66,7 @@ zsh tools/release.sh            # 给陌生人的发布包 → dist/
   `BILI_PROFILE="<名字>"`。→ `docs/部署与发布.md`
 - `deploy.sh` 把开发机地址写进 `config.js` 的 `REPORT_TO`、按需写 `SELFTEST`，打完包、任何退出都改回去 ——
   **地址和 `SELFTEST=true` 都不能进提交**。换了网络要重新部署，否则电视往旧地址报。
-- **测试构建不能留在电视上**：`--selftest` / `--tokenswap` / `--dmperf` 跑完马上 `zsh tools/deploy.sh` 装回正常构建。
+- **测试构建不能留在电视上**：`--selftest` / `--tokenswap` / `--dmperf` / `--diag` 跑完马上 `zsh tools/deploy.sh` 装回正常构建。
 - 应用编号 `BiliTvApp0.Bilibili`；签名档 / 证书目录叫 `BiliSpike` 是证书的名字，和编号无关。
 - 分发证书大约 **2027-08 过期**，重签：`node tools/samsung-cert.mjs`。这一代电视必须用三星签发的
   分发证书，Tizen 自带的一律 `Invalid certificate chain`。证书、密码都在仓库外。→ `docs/部署与发布.md`
@@ -94,6 +96,11 @@ zsh tools/release.sh            # 给陌生人的发布包 → dist/
 - 每条播放日志都带 bvid 和一段标题；流地址只打能区分情况的字段（`summariseStreamUrl`），`upsig`/`hdnts` 是凭证。
 - 判别实验常驻：AVPlay 失败时 `probe:`（XHR 再要一次：403 是被拒、206 是 AVPlay 的问题）；DASH 卡住时
   `判别探测`、`分段请求 发出/回来/在飞`、`传输形状`。日志对照表在 `docs/调试与日志.md`。
+- **别人的电视**（2026-10-21 起，`diag.js`）：出事（播放全部失败、页面加载失败、js 报错、更新包被标坏……调 `trouble()` /
+  `Diag.incident()` 的地方）时把最近 600 行传到 `server/diag-worker.mjs`（Cloudflare Worker + D1，挂自己的域名，`workers.dev`
+  在大陆被墙），设置里能手动传、能关，默认开。`node tools/diag-logs.mjs --device <设置页里的编号>` 读。**往 `report()` 里放标题、
+  用户名、UP 主名、收藏夹名、搜索词，一律包 `Diag.priv()`**（`diag-verify` 卡着 `.title` / `.uname` / `.author`），mid、签名参数
+  由 `scrub()` 兜底。新的失败出口用 `trouble(文字)` 而不是 `toast()`。开发构建不往那里传（除非 `BILI_DIAG_TO`）。→ `server/README.md`
 - 无人值守：`--selftest` 派发和遥控器一样的按键走全流程（现在 123 步），最后一行 `SELFTEST 结束，全部通过 / N 步失败`。
   **能靠按键复现的 bug，就给它加一步。** 等网络的步骤返回 `WAIT` 轮询，不写死等待；每次放的视频是推荐流里随手拿的，
   一步失败先看是不是只对那一部片子成立。
@@ -215,12 +222,14 @@ app/          客户端
   js/player.js   两条路：渐进式走 AVPlay，DASH 走 Shaka
   js/boot.js     启动时跑哪份代码（安装包的，还是下载过、验过签名的新版本）；自更新的信任根，永远不随更新下发
   js/update.js   查新版本、下载、验签名、存起来；本身随更新下发
+  js/diag.js     诊断日志：记一圈去掉身份的日志，出事或手动时传给开发者；接收地址在这里（config.js 不随更新下发）
   js/danmaku.js  弹幕：取、解析、按轨道画
   js/resume.js   每个视频看到哪了 —— 按账号隔离，也按分 P 记录
   js/settings.js 跨会话保留的偏好（属于这台电视，不属于某个人）
   js/app.js      各屏幕与路由
   js/selftest.js 设备上的自动走查，非 --selftest 构建里关闭
 spike/        当初摸清平台事实的工装；不参与发布
+server/       诊断日志的接收端：Cloudflare Worker + D1 的表结构，部署步骤在 server/README.md
 tools/
   setup.sh            只跑一次：把电视地址/证书写进仓库外的 ~/.bilibili-tizen.conf
   deploy.sh           一条命令完成构建 + 安装 + 启动
@@ -241,6 +250,10 @@ tools/
   readme-shots.mjs    README 的截图（首页、搜索、弹幕、面板、设置、直播、顶栏；SHOTS=01,02 只拍几张；桌面浏览器、未登录、
                       会连哔哩哔哩，跑一次就好），先出到 dist/readme-shots 挑过再放进 docs/screenshots
   update-key.mjs      生成签名钥匙（只在换钥匙时用；--show 查对不对得上）
+  diag-verify.mjs     诊断日志：去隐私、什么时候传什么时候不传、worker 收什么拒什么（node:sqlite 冒充 D1）、app.js 里没包的标题；卡发布
+  diag-logs.mjs       读接收端里的诊断日志（令牌在 ~/.bilibili-tizen-diag-token）
+  diag-local.mjs      本机冒充接收端（:8097），给 deploy.sh --diag 用
+  d1-sqlite.mjs       上面两个用的 D1 替身
   danmaku-verify.mjs  弹幕：解析、去重、轨道不重叠；--browser 在桌面浏览器里量帧耗时；卡发布（node 那部分）
                       （电视上的帧耗时用 deploy.sh --dmperf 量，见「弹幕」）
   devserver.mjs       在开发机上跑 playurl/清单那套，不碰电视

@@ -60,6 +60,12 @@ git show HEAD:app/js/config.js | grep -q '^var REPORT_TO = "";' \
   || { echo "  HEAD 的 config.js 里 REPORT_TO 不是空的 —— 拒绝发布"; exit 1; }
 git show HEAD:app/js/config.js | grep -q '^var SELFTEST = false;' \
   || { echo "  HEAD 的 config.js 里 SELFTEST 不是 false —— 拒绝发布"; exit 1; }
+git show HEAD:app/js/config.js | grep -q '^var DIAG_TO = "";' \
+  || { echo "  HEAD 的 config.js 里 DIAG_TO 不是空的 —— 拒绝发布"; exit 1; }
+# Without a receiving address the diagnostics this release exists to carry go
+# nowhere, silently: 设置 would say 已开启 and nothing would ever arrive.
+git show HEAD:app/js/diag.js | grep -q '^    var ENDPOINT = "https://[^"]*";' \
+  || { echo "  HEAD 的 diag.js 里 ENDPOINT 不是 https 地址 —— 拒绝发布"; exit 1; }
 
 zsh "$ROOT/tools/check.sh" || { echo "  refuse to release"; exit 1; }
 
@@ -129,6 +135,8 @@ if not re.search(r'^var REPORT_TO = "";', cfg, re.M):
     problems.append("config.js: REPORT_TO is not empty")
 if not re.search(r'^var SELFTEST = false;', cfg, re.M):
     problems.append("config.js: SELFTEST is not false")
+if not re.search(r'^var DIAG_TO = "";', cfg, re.M):
+    problems.append("config.js: DIAG_TO is not empty")
 
 def certs(xml):
     for b64 in re.findall(r"<X509Certificate>\s*(.*?)\s*</X509Certificate>", xml, re.S):
@@ -156,7 +164,7 @@ if problems:
     for p in problems:
         print("  !! " + p)
     sys.exit(1)
-print("  %d files, REPORT_TO empty, SELFTEST off, no personal certificate" % len(names - signatures))
+print("  %d files, REPORT_TO empty, SELFTEST off, DIAG_TO empty, no personal certificate" % len(names - signatures))
 PY
 
 echo "== done =="

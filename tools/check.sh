@@ -36,6 +36,10 @@ node "$ROOT/tools/legacy-css-verify.mjs" || exit 1
 # here: the public key is real, boot.js agrees with config.xml about the version,
 # and every way of tampering with an update is refused for its own reason.
 node "$ROOT/tools/update-verify.mjs" >/dev/null || { echo "  self-update verification failed (node tools/update-verify.mjs)"; exit 1; }
+# Diagnostics leave the television: a title or a name in what is sent looks
+# exactly like a working upload, and an upload that never happens looks like a
+# set with no problems. Both ends are run here, the worker on node:sqlite.
+node "$ROOT/tools/diag-verify.mjs" >/dev/null || { echo "  diagnostics upload regressed (node tools/diag-verify.mjs)"; exit 1; }
 # 弹幕: parsing, dedupe and lane allocation. A lane bug does not throw — it draws
 # comments on top of each other, or none at all.
 node "$ROOT/tools/danmaku-verify.mjs" >/dev/null || { echo "  danmaku parsing or lanes regressed"; exit 1; }

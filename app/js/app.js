@@ -51,6 +51,10 @@
     var reportEverOk = false;   /* a collector has answered at least once this run */
 
     function report(kind, detail) {
+        /* Every line also goes to the diagnostics ring (diag.js), scrubbed
+         * there; what Diag.priv() wrapped reaches the collector unmarked. */
+        Diag.record(kind, detail);
+        detail = Diag.plain(detail);
         if (!REPORT_TO) { return; }
         var now = new Date().getTime();
         if (reportMisses >= 5) {
@@ -92,6 +96,7 @@
          * names no file. */
         var file = typeof Boot !== "undefined" ? Boot.scriptName(src) : String(src).split("/").pop();
         report("js error", msg + " @" + file + ":" + line);
+        Diag.incident("js 错误：" + msg + " @" + file + ":" + line);
         return false;
     };
     /* Quotes matter: several call sites interpolate into attributes, and search
@@ -112,9 +117,19 @@
         toastTimer = setTimeout(function () { toastEl.className = "hidden"; }, 4000);
     }
 
+    /* A toast that tells the viewer something failed. Toasts also confirm
+     * things (已点赞, 登录成功) and guide (先输入关键词), so the failures are
+     * named here rather than inferred from toast(): each one sends the recent
+     * log to the developer (diag.js), with these words as the reason. */
+    function trouble(text) {
+        toast(text);
+        Diag.incident(text);
+    }
+
     /* Errors used to be terminal: the only escape from "加载失败" was to switch
      * tab and come back. */
     function showError(message, retry) {
+        Diag.incident(message);
         screenEl.innerHTML = '<div class="empty">' + esc(message) +
             '<div class="actions" style="justify-content:center;margin-top:32px">' +
             '<div class="btn focusable" id="btn-retry">重试</div></div></div>';
@@ -222,10 +237,10 @@
                   : (Auth.jarIsOurs() ? "cookie jar" : "无凭证");
         API.nav(function (me) {
             report("account", Accounts.count() + " 个账号，当前 route=" + route +
-                   "，服务器" + (me.isLogin ? ("认得 " + me.uname) : "不认这个会话"));
+                   "，服务器" + (me.isLogin ? ("认得 " + Diag.priv(me.uname)) : "不认这个会话"));
             if (!me.isLogin) { return; }
             if (!Accounts.describe(acc.id, me)) {
-                report("account", "服务器答的是 mid=" + me.mid + " " + me.uname +
+                report("account", "服务器答的是 mid=" + me.mid + " " + Diag.priv(me.uname) +
                        "，而活动账号 " + acc.id + " 是 mid=" + acc.mid +
                        " —— 这次请求没带上这个账号的会话，身份不采信");
                 return;
@@ -268,7 +283,7 @@
             if (i >= steps.length) { return; }
             API.nav(function (me) {
                 report("whoami", where + " " + steps[i][0] + " → isLogin=" + me.isLogin +
-                       " mid=" + me.mid + " uname=" + (me.uname || "-") +
+                       " mid=" + me.mid + " uname=" + Diag.priv(me.uname || "-") +
                        /* Only on the arm that carries the session — the other
                         * two are anonymous by construction and would print an
                         * absence that means nothing. */
@@ -295,7 +310,7 @@
         var list = Accounts.all(), out = [];
         for (var i = 0; i < list.length; i++) {
             var a = list[i], s = a.session || {};
-            out.push(a.id + " mid=" + (a.mid || 0) + " " + (a.uname || "-") +
+            out.push(a.id + " mid=" + (a.mid || 0) + " " + Diag.priv(a.uname || "-") +
                      " 凭证=" + (s.SESSDATA ? fingerprint(s.SESSDATA)
                                             : (s.viaCookieJar ? "在 jar 里" : "无")));
         }
@@ -322,7 +337,7 @@
 
         var acc = Accounts.active();
         if (acc && Accounts.needsRelogin(acc)) {
-            toast("这个账号的登录凭证已经不在了，需要重新扫码");
+            trouble("这个账号的登录凭证已经不在了，需要重新扫码");
             renderLogin(acc.id);
             return;
         }
@@ -852,7 +867,7 @@
             if (pa !== s) { return; }
             s.busy = false;
             report("action", "like 失败 " + why);
-            toast("点赞没成功：" + why);
+            trouble("点赞没成功：" + why);
         });
     }
 
@@ -888,7 +903,7 @@
             if (pa !== s) { return; }
             s.busy = false;
             report("action", "coin 失败 " + why);
-            toast("投币没成功：" + why);
+            trouble("投币没成功：" + why);
         }, alsoLike);
     }
 
@@ -917,14 +932,14 @@
             s.busy = false;
             f.selected = add;
             if (favouredOf(s) !== before) { s.d.fav += add ? 1 : -1; }
-            report("action", (add ? "收藏到「" : "从「") + f.title + (add ? "」 " : "」移出 ") + tag);
+            report("action", (add ? "收藏到「" : "从「") + Diag.priv(f.title) + (add ? "」 " : "」移出 ") + tag);
             rememberPanel(s);
             if (optionsOpen) { paintPanelActions(); }
         }, function (why) {
             if (pa !== s) { return; }
             s.busy = false;
             report("action", "favorite 失败 " + why);
-            toast("收藏没成功：" + why);
+            trouble("收藏没成功：" + why);
         });
     }
 
@@ -988,7 +1003,7 @@
             followBusy = false;
             followKnown[key] = want;
             followVer[key] = (followVer[key] || 0) + 1;
-            report("action", (want ? "关注了 UP 主 " : "取消关注 UP 主 ") + mid);
+            report("action", (want ? "关注了 UP 主 " : "取消关注 UP 主 ") + Diag.priv(mid));
             /* 我的 → 关注的 UP 主 is a cached list; it is wrong now. */
             for (var k in mineLibraryCache) {
                 if (mineLibraryCache.hasOwnProperty(k) && /:following:/.test(k)) { delete mineLibraryCache[k]; }
@@ -997,7 +1012,7 @@
         }, function (why) {
             followBusy = false;
             report("action", "关注失败 " + why);
-            toast((want ? "关注" : "取消关注") + "没成功：" + why);
+            trouble((want ? "关注" : "取消关注") + "没成功：" + why);
         });
     }
 
@@ -1534,7 +1549,7 @@
         else { loadFeed(kind, restore); }
     }
     function openUp(mid, name, face) {
-        if (!mid) { toast("拿不到这位 UP 主的资料"); return; }
+        if (!mid) { trouble("拿不到这位 UP 主的资料"); return; }
         /* Any way in but the panel's starts with nothing to go back to; the
          * panel sets its return after this call. A stale one replayed a video
          * from hours before when the page was reached again from 我的 (review,
@@ -1753,10 +1768,10 @@
                " | 第一条的字段：" + keys.join(",") +
                " | 映射结果 bvid=" + (v.bvid || "无") + " aid=" + (v.aid || 0) +
                " cid=" + (v.cid || "无") + " 时长=" + (v.duration || "无") +
-               " 作者=" + (v.author || "无") + " 播放=" + (v.play || "无") +
+               " 作者=" + Diag.priv(v.author || "无") + " 播放=" + (v.play || "无") +
                " 看过=" + Math.round((v.seen || 0) * 100) + "%" +
                " 加入=" + (v.at || 0) + " state=" + v.state +
-               " 标题=" + String(v.title || "").slice(0, 20));
+               " 标题=" + Diag.priv(String(v.title || "").slice(0, 20)));
     }
 
     /* 直播 (2026-10-18). The first page puts the people this account follows
@@ -2871,7 +2886,7 @@
              * 确认, and the positions shift underneath between rounds, so the
              * second press lands on a different account than the one counted.
              * 完成 is how it ends. */
-            report("account", "移除了 " + id + "（" + label + "），还剩 " +
+            report("account", "移除了 " + id + "（" + Diag.priv(label) + "），还剩 " +
                    Accounts.count() + " 个");
             /* Whether or not the removed account was the active one, the cached
              * feeds may be theirs — remove() promotes somebody else. */
@@ -3070,6 +3085,13 @@
             '<div class="me-sub" id="update-status" style="margin-top:24px"></div>' +
             '<div class="me-sub" style="margin-top:12px">新版本从这个项目的 GitHub 仓库下载，带签名，验过才用，下次打开应用时生效；' +
             '新版本启动不起来会自动退回装的这一版。</div>' +
+            '<div class="section">诊断日志</div>' +
+            '<div class="actions"><div class="btn focusable" id="btn-diag"></div>' +
+            '<div class="btn focusable" id="btn-diag-upload">上传诊断日志</div></div>' +
+            '<div class="me-sub" id="diag-status" style="margin-top:24px"></div>' +
+            '<div class="me-sub" style="margin-top:12px">视频放不了、页面加载失败、应用出错时，把最近的运行日志传给开发者查原因；' +
+            '别的问题可以按「上传诊断日志」手动传。不含账号、用户名、视频标题和搜索词，含视频的 BV 号和电视的系统版本。' +
+            '到 GitHub 报问题时附上这台电视的编号。</div>' +
             '<div class="section">浏览</div>' +
             '<div class="actions"><div class="btn focusable" id="btn-density"></div></div>' +
             '<div class="me-sub" style="margin-top:24px">离电视远就选 3 个，标题看得清；坐得近或屏幕小，4 个、5 个能一屏看到更多。</div>' +
@@ -3135,6 +3157,36 @@
             var view = viewToken;
             Update.check(function () { if (stillViewing(view)) { paintUpdate(); } });
             paintUpdate();
+        };
+
+        /* Diagnostics (diag.js): on or off, this set's code to quote in an
+         * issue, and what the last upload did — the answer to pressing the
+         * button is this line changing, not a toast. */
+        var diagBtn = el("btn-diag"), diagStatus = el("diag-status");
+        function paintDiag() {
+            var st = Diag.status();
+            diagBtn.textContent = "诊断日志：" + (st.enabled ? "开" : "关");
+            if (!st.enabled) { diagStatus.textContent = "已关闭：什么都不记录，也不上传"; return; }
+            var parts = ["这台电视的编号 " + st.device];
+            if (!st.configured) { parts.push("这个版本没有接收地址，不会上传"); }
+            if (st.sending) { parts.push("正在上传…"); }
+            else if (st.last) {
+                parts.push(new Date(st.last.at).toTimeString().slice(0, 5) +
+                           (st.last.ok ? " 已上传（编号 " + st.last.id + "）" : " 没传上：" + st.last.why));
+            }
+            diagStatus.textContent = parts.join(" · ");
+        }
+        paintDiag();
+        diagBtn.onselect = function () {
+            Diag.setEnabled(!Diag.enabled());
+            paintDiag();
+            report("settings", "诊断日志=" + (Diag.enabled() ? "开" : "关"));
+        };
+        el("btn-diag-upload").onselect = function () {
+            var view = viewToken;
+            if (!Diag.enabled()) { diagStatus.textContent = "诊断日志关着，先把它打开"; return; }
+            Diag.upload(function () { if (stillViewing(view)) { paintDiag(); } });
+            paintDiag();
         };
 
         barPick = null;
@@ -3292,7 +3344,7 @@
         function fail(why) {
             if (!stillViewing(token) || activeAccountId() !== accId) { return; }
             report("mine", kind + " 读取失败 " + why);
-            if (cache && cache.items.length) { toast("加载下一页失败：" + why); return; }
+            if (cache && cache.items.length) { trouble("加载下一页失败：" + why); return; }
             delete mineLibraryCache[key];
             el("mine-library").innerHTML = '<div class="empty">读取失败：' + esc(why) + '</div>' +
                 '<div class="actions"><div class="btn focusable" id="mine-retry">重试</div></div>';
@@ -3387,7 +3439,7 @@
              * television has the same as what my phone shows" is the only
              * question this log line ever gets asked. */
             report("history", "服务端历史 " + hist.raw + " 条，可打开的 " + hist.items.length +
-                " 条" + (hist.items.length ? "，最新一条：" + hist.items[0].title.slice(0, 24) : ""));
+                " 条" + (hist.items.length ? "，最新一条：" + Diag.priv(hist.items[0].title.slice(0, 24)) : ""));
 
             /* Repainting moves the ground under whoever is already looking. The
              * card under the ring is found again by bvid, because its position
@@ -4079,7 +4131,7 @@
         }, function (why) {
             if (!stillViewing(token)) { return; }
             cancelOpening();
-            toast("打开失败：" + why);
+            trouble("打开失败：" + why);
         });
     }
 
@@ -4156,7 +4208,7 @@
             room.urls = p.urls;
             room.qnName = p.qnName;
             var url = p.urls[room.tries % p.urls.length];
-            report("live", "开 " + v.roomid + "（" + v.author + "）" + p.qnName + " " + p.codec +
+            report("live", "开 " + v.roomid + "（" + Diag.priv(v.author) + "）" + p.qnName + " " + p.codec +
                    (p.signed ? "，带账号" : "，不带账号") + "，可选 " + p.accept.join("/") +
                    "，主机 " + (url.split("/")[2] || "?") + (why ? "（" + why + "）" : ""));
             paintLiveUi();
@@ -4165,7 +4217,7 @@
             if (liveRoom !== room || token !== room.token) { return; }
             report("live", "房间 " + v.roomid + " 取不到流：" + whyNot);
             stopLive();
-            toast("这个直播间现在放不了：" + whyNot);
+            trouble("这个直播间现在放不了：" + whyNot);
         });
     }
 
@@ -4192,7 +4244,7 @@
             if (room.okTimer) { clearTimeout(room.okTimer); room.okTimer = null; }
             if (++room.tries > 3) {
                 stopLive();
-                toast("直播断了，重新连了三次也没接上");
+                trouble("直播断了，重新连了三次也没接上");
                 return;
             }
             Player.stop();
@@ -4706,7 +4758,7 @@
                 session.detail.aid = d.aid;
                 openComments();
             }, function (why) {
-                if (playing === session) { toast("评论暂时无法打开：" + why); }
+                if (playing === session) { trouble("评论暂时无法打开：" + why); }
             });
             return;
         }
@@ -4950,7 +5002,7 @@
     function playSeasonEpisode(s, i) {
         var ep = s && s.episodes[i];
         if (!ep || !playing || ep.bvid === playing.detail.bvid) { return; }
-        report("season", "合集「" + s.title + "」选第 " + (i + 1) + " 集 " + ep.bvid);
+        report("season", "合集「" + Diag.priv(s.title) + "」选第 " + (i + 1) + " 集 " + ep.bvid);
         play(seasonEpisodeDetail(ep), ep.cid);
     }
 
@@ -4995,7 +5047,7 @@
         var at = L.at, html = "";
         var span = L.unit === "P" ? "P" + (from + 1) + "–P" + to : "第 " + (from + 1) + "–" + to + " 集";
         episodeView = { kind: kind, range: r };
-        report(kind === "parts" ? "parts" : "season", L.name + "「" + L.title + "」打开 " + span + " 的列表（共 " +
+        report(kind === "parts" ? "parts" : "season", L.name + "「" + Diag.priv(L.title) + "」打开 " + span + " 的列表（共 " +
                L.count + " " + L.unit + "，正在看 " + (at >= 0 ? L.no(at) : "?") + "）");
         for (var i = from; i < to; i++) {
             html += '<div class="comment-item ep-item focusable' + (i === at ? " current" : "") + '" data-ep="' + i + '">' +
@@ -5667,7 +5719,7 @@
             partTag += " " + (pIdx < 0 ? "P?" : "P" + (pIdx + 1)) +
                        "/" + detail.pages.length;
         }
-        report("player", detail.bvid + " " + String(detail.title || "").slice(0, 24) +
+        report("player", detail.bvid + " " + Diag.priv(String(detail.title || "").slice(0, 24)) +
                partTag + " — requesting qn=" + Settings.qnCap());
 
         /* Both forms at once. Asking DASH first and progressive from inside its
@@ -5881,7 +5933,7 @@
                     repaintResumeStrip();
                 });
             } else {
-                toast("播放失败：拿不到播放地址（" + whyText.slice(0, 60) + "）");
+                trouble("播放失败：拿不到播放地址（" + whyText.slice(0, 60) + "）");
             }
             failOut();
         }
@@ -6157,7 +6209,7 @@
             report("player", "dash 兜底：playurl 失败（" + w2 + "）" +
                    (playing !== session ? "，而且会话已经没了" : ""));
             if (playing !== session) { return; }
-            toast("播放失败：" + w2);
+            trouble("播放失败：" + w2);
             failOut();
         });
     }
@@ -6165,7 +6217,7 @@
     /* bvid plus a slice of title — the shape every playback line carries, so a
      * sofa report can be matched to a log line without guessing at bvids. */
     function videoTag(d) {
-        return (d.bvid || "?") + " " + String(d.title || "").slice(0, 24);
+        return (d.bvid || "?") + " " + Diag.priv(String(d.title || "").slice(0, 24));
     }
 
     /* A full view() payload landing on a session, from whichever path fetched
@@ -6304,7 +6356,7 @@
          * video it was, and a report of "one video would not play" cannot be
          * chased any further than guessing at candidates. */
         var who = playing && playing.detail
-            ? playing.detail.bvid + " " + String(playing.detail.title || "").slice(0, 24)
+            ? playing.detail.bvid + " " + Diag.priv(String(playing.detail.title || "").slice(0, 24))
             : "?";
         try {
             var xhr = new XMLHttpRequest();
@@ -6919,7 +6971,7 @@
                         }, function (w3) {
                             if (playing !== session3) { report("player", "原地重启的 playurl 回来时会话已经没了，丢弃"); return; }
                             report("player", "原地重启：重取 playurl 失败（" + w3 + "），退出");
-                            toast("播放错误：" + data);
+                            trouble("播放错误：" + data);
                             failOut();
                         });
                     } else if (playing.urls && playing.urls.length &&
@@ -6929,13 +6981,13 @@
                         Player.playProgressive(playing.urls[playing.urlIdx || 0],
                                                lastKnownPosition);
                     } else {
-                        toast("播放错误：" + data);
+                        trouble("播放错误：" + data);
                         failOut();
                     }
                     return;
                 }
                 report("player", "原地重启后仍然出错，退出：" + data);
-                toast("播放错误：" + data);
+                trouble("播放错误：" + data);
                 failOut();
                 return;
             }
@@ -7047,7 +7099,7 @@
              * ended. */
             report("player", "所有路都试过，有声退出（" +
                    (refused ? "403 被拒" : String(data)) + "）");
-            toast(refused
+            trouble(refused
                 ? "视频流被拒绝（403）——可能是临时限流，过几分钟再试，或换一个视频"
                 : "播放错误：" + data);
             failOut();
@@ -7205,6 +7257,7 @@
         screenEl = el("screen");
         statusEl = el("status");
         toastEl = el("toast");
+        Diag.init({ report: report });
 
         Nav.registerKeys();
         Nav.onFocus(function (elm) {
@@ -7327,6 +7380,13 @@
             try { Update.init({ report: report, busy: function () { return !!playing; } }); }
             catch (e) { report("update", "Update.init 抛异常：" + (e && e.message)); }
         }
+        /* An update that could not reach the home screen was thrown out by
+         * boot.js on this launch. The viewer sees nothing (the package just
+         * runs), so this is the only way the developer hears of it. */
+        try {
+            var bootNote = Boot.info().note || "";
+            if (/标坏|选代码时出错/.test(bootNote)) { Diag.incident("更新包启动失败：" + bootNote); }
+        } catch (e) {}
 
         /* This launch's code is good: it got through onload and two seconds of
          * a first screen without a single JS error. boot.js clears its

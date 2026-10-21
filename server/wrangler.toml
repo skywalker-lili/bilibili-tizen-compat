@@ -1,0 +1,24 @@
+# The diagnostics endpoint (see README.md). Deploy from this directory:
+#   npx wrangler@4 deploy
+# READ_TOKEN is a secret (npx wrangler@4 secret put READ_TOKEN), never in this file.
+name = "tizen-diag"
+main = "diag-worker.mjs"
+compatibility_date = "2026-09-01"
+
+# Not on *.workers.dev: that is blocked in mainland China, where the first
+# television this exists for is.
+workers_dev = false
+routes = [{ pattern = "diag.titdev.nl", custom_domain = true }]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "tizen-diag"
+database_id = "9c60db97-a9ab-49a2-9577-a3dc7f790d5c"
+
+# The 30-day prune (scheduled() in diag-worker.mjs).
+[triggers]
+crons = ["0 4 * * *"]
+
+# No request logs on Cloudflare's side either: README.md promises no IP addresses kept.
+[observability]
+enabled = false

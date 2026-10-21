@@ -12,3 +12,8 @@ var REPORT_TO = "";
 /* Set by tools/deploy.sh --selftest: walks the whole flow on the device and
  * reports each step to the collector. Never on in a normal build. */
 var SELFTEST = false;
+
+/* Dev only: where diag.js uploads from a dev build (deploy.sh writes it from
+ * BILI_DIAG_TO, to test the upload path on the television). Empty means dev
+ * builds upload nothing; a release always uses diag.js's own endpoint. */
+var DIAG_TO = "";

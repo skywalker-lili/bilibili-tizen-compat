@@ -24,7 +24,7 @@ what you half-watched on the phone is under the cursor when the TV comes on.
 | ![Panel](docs/screenshots/04-panel.jpg) | ![Comments](docs/screenshots/05-comments.jpg) |
 | Press down while playing for the panel — **the video keeps running**: danmaku on/off, like, coin, favourite, comments and speed in one row, a follow button by the uploader; parts, the collection (long ones folded into ranges of 50, listed on the right) and related videos. Back from a related video or the uploader's page returns to the video you were watching | Comments and replies beside the video, which keeps playing |
 | ![Settings](docs/screenshots/06-settings.jpg) | ![Search](docs/screenshots/02-search.jpg) |
-| Settings: autoplay, subtitles, danmaku, quality cap, clearing watch history, self-update, and cards per row to suit the TV and the sofa | Search, with the TV's own Chinese IME one button away |
+| Settings: autoplay, subtitles, danmaku, quality cap, clearing watch history, self-update, diagnostic logs, and cards per row to suit the TV and the sofa | Search, with the TV's own Chinese IME one button away |
 | ![Live](docs/screenshots/07-live.jpg) | ![Top bar](docs/screenshots/08-bar.jpg) |
 | Live: the streamers you follow who are on come first, then the whole site by popularity; inside, up and down change room like channels | Your own top bar: pick a tab up and move it left or right, take it off with down, add from the row below with one press |
 
@@ -126,9 +126,9 @@ zsh tools/deploy.sh     # check, sign, install, launch — about 15 seconds
 ## Accounts and privacy
 
 - QR sign-in, any number of accounts, switching needs no rescan.
-- **Credentials are stored only in the TV's local storage.** No server, no
-  analytics, no third party; the app talks to `bilibili.com` and its CDN and
-  nothing else. Stream URLs are pre-signed, so media requests carry no account.
+- **Credentials are stored only in the TV's local storage.** No analytics, no
+  ads, no third-party SDK. Stream URLs are pre-signed, so media requests carry
+  no account.
 - Watch progress is reported back to bilibili (every 30 s), so the phone and the
   web can pick up where the TV left off — and vice versa.
 - Like, coin and favourite write to your bilibili account, and only when you pick
@@ -142,10 +142,13 @@ zsh tools/deploy.sh     # check, sign, install, launch — about 15 seconds
 - An expired token means scanning again (the refresh endpoint has not been
   verified against the server, and guessing on the one path that holds the whole
   household's credentials is not something this project does).
+- **Diagnostic logs (from 1.3.2)**: when something goes wrong, the app sends the
+  developer the information needed to find out why, and nothing that identifies
+  you. It can be switched off in 设置 (settings); when reporting a problem, quote
+  the TV's code shown there.
 - From source, `deploy.sh` bakes **your computer's LAN address** into the package
-  as the destination for diagnostic logs; anything is received only while you run
-  the collector on that computer, and only on your LAN. **The release package has
-  no such address** and sends logs nowhere.
+  as the destination for live dev logs, on your LAN only; such builds send no
+  diagnostics to the developer's endpoint.
 
 ## What it does, and what it deliberately does not
 

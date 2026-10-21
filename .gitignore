@@ -16,3 +16,5 @@ app/tizen_web_project.yaml
 *.env
 *.env.*
 *.log
+# wrangler cache (account id and email) from deploying server/
+.wrangler/

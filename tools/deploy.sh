@@ -18,6 +18,10 @@ SELFTEST=false
 # checks the strong token is swapped in without a rebuild, and that the next
 # video starts on it. One spoiled request to the CDN per run.
 [ "$1" = "--tokenswap" ] && SELFTEST='"tokenswap"'
+# --diag: the diagnostics upload through 设置 and from an incident (selftest.js,
+# 2026-10-21), sent to BILI_DIAG_TO — by default tools/diag-local.mjs on this
+# machine, which has to be running: node tools/diag-local.mjs
+[ "$1" = "--diag" ] && SELFTEST='"diag"'
 
 export PATH="$HOME/tizen-studio/tools:$HOME/tizen-studio/tools/ide/bin:$PATH"
 
@@ -82,6 +86,7 @@ p = os.path.join(os.environ["APP"], "js", "config.js")
 src = open(p).read()
 src = re.sub(r'var SELFTEST = (?:[a-z]+|"[a-z]+");', 'var SELFTEST = false;', src)
 src = re.sub(r'var REPORT_TO = "[^"]*";', 'var REPORT_TO = "";', src, count=1)
+src = re.sub(r'var DIAG_TO = "[^"]*";', 'var DIAG_TO = "";', src, count=1)
 open(p, "w").write(src)
 PY
 }
@@ -94,7 +99,11 @@ trap 'exit 130' INT TERM
 echo "== pointing reporting at this machine =="
 HOST_IP=$(ipconfig getifaddr "$NET_IF")
 [ -n "$HOST_IP" ] || { echo "拿不到 $NET_IF 的地址 — 用 BILI_NET_IF 指定网卡"; exit 1; }
-APP="$APP" HOST_IP="$HOST_IP" SELFTEST="$SELFTEST" python3 - <<'PY'
+[ "$SELFTEST" = '"diag"' ] && BILI_DIAG_TO="${BILI_DIAG_TO:-http://$HOST_IP:8097/v1/upload}"
+# BILI_DIAG_TO points this build's diagnostics uploads (diag.js) somewhere —
+# a local stand-in or the real endpoint — to test that path on the television.
+# Unset, a dev build uploads nothing: the collector already has every line.
+APP="$APP" HOST_IP="$HOST_IP" SELFTEST="$SELFTEST" DIAG_TO="${BILI_DIAG_TO:-}" python3 - <<'PY'
 import os, re
 p = os.path.join(os.environ["APP"], "js", "config.js")
 src = open(p).read()
@@ -102,8 +111,10 @@ src = re.sub(r'var REPORT_TO = "[^"]*";',
              'var REPORT_TO = "http://%s:8099/report";' % os.environ["HOST_IP"], src, count=1)
 src = re.sub(r'var SELFTEST = (?:[a-z]+|"[a-z]+");',
              'var SELFTEST = %s;' % os.environ.get("SELFTEST", "false"), src)
+src = re.sub(r'var DIAG_TO = "[^"]*";', 'var DIAG_TO = "%s";' % os.environ["DIAG_TO"], src, count=1)
 open(p, "w").write(src)
-print("  report -> %s, selftest=%s" % (os.environ["HOST_IP"], os.environ.get("SELFTEST")))
+print("  report -> %s, selftest=%s%s" % (os.environ["HOST_IP"], os.environ.get("SELFTEST"),
+      ", diag -> " + os.environ["DIAG_TO"] if os.environ["DIAG_TO"] else ""))
 PY
 
 echo "== signing profile =="
