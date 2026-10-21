@@ -85,9 +85,9 @@ const lastBody = (tv) => JSON.parse(tv.sent[tv.sent.length - 1].body);
 
 await t("包起来的标题、用户名换成 …，bvid 和 mid=0 留着", () => {
   const { Diag } = television();
-  const line = "player: BV1wmnE61Ete " + Diag.priv("AI连假山都模仿") + " cid=42861660308 — requesting qn=120";
-  assert.equal(Diag.scrub(line), "player: BV1wmnE61Ete … cid=42861660308 — requesting qn=120");
-  assert.equal(Diag.plain(line), "player: BV1wmnE61Ete AI连假山都模仿 cid=42861660308 — requesting qn=120");
+  const line = "player: BV1xx4y1z7Ab " + Diag.priv("某个视频标题") + " cid=11112222333 — requesting qn=120";
+  assert.equal(Diag.scrub(line), "player: BV1xx4y1z7Ab … cid=11112222333 — requesting qn=120");
+  assert.equal(Diag.plain(line), "player: BV1xx4y1z7Ab 某个视频标题 cid=11112222333 — requesting qn=120");
   assert.match(Diag.scrub("whoami: 启动 裸请求 → isLogin=false mid=0 uname=-"), /mid=0 /);
 });
 
@@ -100,35 +100,35 @@ await t("被截断、没收尾的包裹一直抹到行尾", () => {
 await t("whoami / account 行：mid、用户名、凭证指纹都不出门", () => {
   const { Diag } = television();
   const lines = [
-    "whoami: 启动 活动=a1 access_key=有 header=有 a88ea7e6 jar主=无 withCred=否 | a1 mid=87851630 " + Diag.priv("某人") +
-      " 凭证=4ec2bfd5；a2 mid=12345678 " + Diag.priv("另一个人") + " 凭证=c78b06b2",
-    "whoami: 启动 常规 → isLogin=true mid=87851630 uname=" + Diag.priv("某人") + " 会员=无(status=0 type=0)",
-    "whoami: 万一忘了包 → isLogin=true mid: 87851630 uname=没包的名字 会员=无",
+    "whoami: 启动 活动=a1 access_key=有 header=有 5f3c9e1d jar主=无 withCred=否 | a1 mid=20481024 " + Diag.priv("某人") +
+      " 凭证=7b2a6c40；a2 mid=12345678 " + Diag.priv("另一个人") + " 凭证=9d4e8f13",
+    "whoami: 启动 常规 → isLogin=true mid=20481024 uname=" + Diag.priv("某人") + " 会员=无(status=0 type=0)",
+    "whoami: 万一忘了包 → isLogin=true mid: 20481024 uname=没包的名字 会员=无",
     "account: 2 个账号，当前 route=access_key，服务器认得 " + Diag.priv("某人"),
   ];
   for (const l of lines) {
     const s = Diag.scrub(l);
-    assert.doesNotMatch(s, /87851630|12345678|某人|另一个人|没包的名字|a88ea7e6|4ec2bfd5|c78b06b2/, s);
+    assert.doesNotMatch(s, /20481024|12345678|某人|另一个人|没包的名字|5f3c9e1d|7b2a6c40|9d4e8f13/, s);
   }
 });
 
 await t("地址里的签名和会话参数抹掉，主机和路径留着", () => {
   const { Diag } = television();
   const u = "player: 失败 https://upos-sz-mirrorcos.bilivideo.com/upgcxcode/60/83/1-1-30080.m4s?e=ig8eux&uipk=5&deadline=1761000000" +
-            "&mid=87851630&upsig=0123456789abcdef0123456789abcdef&uparams=e,deadline&access_key=fedcba9876543210fedcba9876543210&ts=1";
+            "&mid=20481024&upsig=0123456789abcdef0123456789abcdef&uparams=e,deadline&access_key=fedcba9876543210fedcba9876543210&ts=1";
   const s = Diag.scrub(u);
   assert.match(s, /upos-sz-mirrorcos\.bilivideo\.com\/upgcxcode\/60\/83\/1-1-30080\.m4s\?e=ig8eux/);
-  assert.doesNotMatch(s, /87851630|0123456789abcdef|fedcba9876543210/, s);
+  assert.doesNotMatch(s, /20481024|0123456789abcdef|fedcba9876543210/, s);
   assert.doesNotMatch(Diag.scrub("cookie SESSDATA=abc%2C123; bili_jct=zzz"), /abc%2C123|zzz/);
 });
 
 await t("上传的整份内容里没有任何包起来的东西（原因也过一遍）", () => {
   const tv = television();
   tv.Diag.record("player", "BV1abc " + tv.Diag.priv("秘密标题") + " 播放错误");
-  tv.Diag.incident("收藏没成功：" + tv.Diag.priv("我的收藏夹") + " mid=87851630");
+  tv.Diag.incident("收藏没成功：" + tv.Diag.priv("我的收藏夹") + " mid=20481024");
   tv.advance(tv.Diag._test.SETTLE);
   assert.equal(tv.sent.length, 1);
-  assert.doesNotMatch(tv.sent[0].body, /秘密标题|我的收藏夹|87851630||/);
+  assert.doesNotMatch(tv.sent[0].body, /秘密标题|我的收藏夹|20481024||/);
   assert.match(tv.sent[0].body, /BV1abc/);
 });
 

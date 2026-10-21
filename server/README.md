@@ -2,7 +2,7 @@
 
 电视上的 `app/js/diag.js` 出事时（或在设置里手动）把最近的运行日志传到这里。一个
 Cloudflare Worker（`diag-worker.mjs`）加一个 D1 数据库（`schema.sql`），免费额度够用。
-bilibili-tizen 和 douyin-tizen 共用，按 `app` 字段分开。
+bilibili-tizen、douyin-tizen、telegram-tizen 共用，按 `app` 字段分开。
 
 ## 为什么是这样
 
@@ -40,7 +40,7 @@ npx wrangler@4 deploy                                                  # 改了 
 npx wrangler@4 secret put READ_TOKEN < ~/.bilibili-tizen-diag-token
 ```
 
-接收地址写在 `app/js/diag.js` 的 `ENDPOINT` 里（douyin-tizen 的 `diag.js` 同理）；
+接收地址写在 `app/js/diag.js` 的 `ENDPOINT` 里（douyin-tizen、telegram-tizen 的 `diag.js` 同理）；
 `release.sh` 在它不是 https 地址时拒绝发布。
 
 ## 读

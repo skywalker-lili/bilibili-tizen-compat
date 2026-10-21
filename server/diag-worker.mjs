@@ -12,7 +12,7 @@
  * to, because "which region's CDN" is exactly the question issue #5 could not
  * answer. */
 
-const APPS = new Set(["bilibili-tizen", "douyin-tizen"]);
+const APPS = new Set(["bilibili-tizen", "douyin-tizen", "telegram-tizen"]);
 const MAX_BYTES = 600000;        // diag.js caps its ring at 160k characters; CJK is 3 bytes each
 const MAX_LINES = 2000;
 const MAX_LINE = 5000;
