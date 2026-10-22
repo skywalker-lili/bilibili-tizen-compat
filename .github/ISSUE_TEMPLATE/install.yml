@@ -22,7 +22,8 @@ body:
     attributes:
       label: Which step / 卡在哪一步
       options:
-        - Apps2Samsung, release .wgt / 用 Apps2Samsung 装发布包
+        - Apps2Samsung, from its app list / 用 Apps2Samsung 从应用列表装
+        - Apps2Samsung, release .wgt / 用 Apps2Samsung 装下载的 .wgt
         - tools/setup.sh
         - Certificate issuance / 证书签发 (samsung-tv-cert)
         - tizen package / 打包签名

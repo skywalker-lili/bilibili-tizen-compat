@@ -54,7 +54,7 @@ installs new versions itself (from 1.2.0 on). Two ways:
 |---|---|---|
 | For | Watching bilibili on the TV | Changing the code, reading diagnostics |
 | Needs | A computer (Windows / macOS / Linux) **or an Android phone** with [Apps2Samsung](https://github.com/Apps2Samsung/Apps2Samsung) | macOS, Node, Python 3, Tizen Studio CLI |
-| Upgrade | Automatic from 1.2.0 on; older versions: download the new `.wgt`, install it again | Automatic from 1.2.0 on too; or `git pull`, run `deploy.sh` again |
+| Upgrade | Automatic from 1.2.0 on; older versions: install again with Apps2Samsung | Automatic from 1.2.0 on too; or `git pull`, run `deploy.sh` again |
 
 **From 1.2.0 on, the app updates itself**: a minute after it opens, when
 nothing is playing, it checks this repository, then every 6 hours; it downloads a
@@ -86,16 +86,25 @@ account once.
 
 ### Release package
 
-1. Download `bilibili-tizen-<version>.wgt` from
-   [Releases](https://github.com/titlog/bilibili-tizen/releases/latest).
-2. Install [Apps2Samsung](https://github.com/Apps2Samsung/Apps2Samsung/releases),
+1. Install [Apps2Samsung](https://github.com/Apps2Samsung/Apps2Samsung/releases),
    desktop or Android.
-3. Open it, select your TV (enter its IP if it is not listed), choose a custom
-   `.wgt` as the app, pick the file from step 1, and install. The first time, it
-   asks you to sign in to Samsung and issues the certificate for this TV.
+2. Open it and select your TV (enter its IP if it is not listed).
+3. Find **bilibili** in its app list (the community catalog) and install it. The
+   first time, it asks you to sign in to Samsung and issues the certificate for
+   this TV.
+
+The community catalog picks up the latest release from here once a day. For a
+version it has not picked up yet, or a specific one, download
+`bilibili-tizen-<version>.wgt` from
+[Releases](https://github.com/titlog/bilibili-tizen/releases/latest) and choose a
+custom `.wgt` in step 3 instead.
 
 The package is re-signed with your own certificate on install, so the same file
 works for everyone.
+
+**Only an iPhone?** Apps2Samsung has no iOS version; sideloading takes a computer
+or an Android phone. It is needed once (after that the TV installs new versions
+itself), so borrowing a computer for the install is enough.
 
 ### From source
 

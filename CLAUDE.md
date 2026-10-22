@@ -80,6 +80,9 @@ zsh tools/release.sh            # 给陌生人的发布包 → dist/
 3. `zsh tools/release.sh` 出 wgt，`gh release create`，说明中英双份（照前几版的格式）。
 4. 装着 1.2.0 以后版本的电视会自己更新。**发布包绝不能用 `SamsungBili` 签**（里面有账号邮箱、真名、DUID），
    `release.sh` 用一次性作者证书并读回验证。→ `docs/自动更新.md`、`docs/部署与发布.md`
+5. 不用管 Apps2Samsung 的社区目录（README 里推荐的装法）：它每天按 `releases/latest` 自己取新的 wgt
+   （`Apps2Samsung/tizen-community-packages` 的 `packages/titlog__bilibili-tizen.json`，按 `bilibili-tizen-.*[.]wgt$` 挑资产），
+   所以 wgt 要一直叫 `bilibili-tizen-<版本>.wgt`。
 
 ## 调试
 

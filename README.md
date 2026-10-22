@@ -50,7 +50,7 @@
 |---|---|---|
 | 适合 | 只想在电视上看 b 站 | 要改代码、要看诊断日志 |
 | 需要 | 电脑（Windows / macOS / Linux）**或安卓手机**，装上 [Apps2Samsung](https://github.com/Apps2Samsung/Apps2Samsung) | macOS、Node、Python 3、Tizen Studio 命令行工具 |
-| 升级 | 1.2.0 起自己更新；更早的版本下载新版 `.wgt` 再装一次 | 1.2.0 起也会自己更新；`git pull` 再跑一次 `deploy.sh` 也行 |
+| 升级 | 1.2.0 起自己更新；更早的版本用 Apps2Samsung 再装一次 | 1.2.0 起也会自己更新；`git pull` 再跑一次 `deploy.sh` 也行 |
 
 **从 1.2.0 起，应用会自己更新**：开机一分钟后、没在播放时去这个仓库看有没有新版本，之后每 6 小时看一次；
 下载、验签名，下次打开时生效；新版本启动不起来会自动退回装的那一版。
@@ -71,14 +71,20 @@ DUID，要用你自己的三星账号登录一次来申请。
 
 ### 装发布包
 
-1. 到 [Releases](https://github.com/titlog/bilibili-tizen/releases/latest) 下载
-   `bilibili-tizen-<版本>.wgt`。
-2. 装 [Apps2Samsung](https://github.com/Apps2Samsung/Apps2Samsung/releases)，电脑版、
+1. 装 [Apps2Samsung](https://github.com/Apps2Samsung/Apps2Samsung/releases)，电脑版、
    安卓版都行。
-3. 打开它，选中你的电视（列表里没有就手动输入电视的 IP），应用选自定义 `.wgt`，选第
-   1 步下载的文件，安装。第一次会让你登录三星账号，替这台电视签证书。
+2. 打开它，选中你的电视（列表里没有就手动输入电视的 IP）。
+3. 在它的应用列表（社区目录）里找到 **bilibili**，安装。第一次会让你登录三星账号，
+   替这台电视签证书。
+
+社区目录每天从这里同步一次最新的发布包。想装目录还没同步到的新版本，或者某个指定版本：
+到 [Releases](https://github.com/titlog/bilibili-tizen/releases/latest) 下载
+`bilibili-tizen-<版本>.wgt`，第 3 步改选自定义 `.wgt`，选这个文件。
 
 发布包安装时会被重新签成你自己的证书，所以同一个文件谁都能装。
+
+**只有 iPhone？** Apps2Samsung 没有 iOS 版，侧载要一台电脑或者一部安卓手机。不过只需要装一次
+（之后新版本电视自己装），借一台电脑装一次就够了。
 
 ### 从源码装
 
