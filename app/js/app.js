@@ -5455,12 +5455,14 @@
 
     function openOptions() {
         if (!playing || optionsOpen) { return; }
+        var ot = backTimer("打开面板");
         cancelScrub();
         optionsOpen = true;
         el("playerui").className = "hidden";
         document.body.className += " options-open";
         el("options").className = "scroll";
         el("options").scrollTop = 0;
+        ot.mark("切布局");
 
         var d = playing.detail;
 
@@ -5496,15 +5498,21 @@
                         stack: backStack.slice() };
             stopPlayback(function () { openUp(mid, name, face); upReturn = ret; });
         };
+        ot.mark("标题");
         paintDesc(d.desc);
+        ot.mark("简介");
         paintPanelActions();
         loadPanelActions();
         loadFollow(el("panel-follow"), d.mid);
         el("panel-comments").onselect = openComments;
+        ot.mark("按钮");
 
         paintParts();
+        ot.mark("分P");
         paintSeason();
+        ot.mark("合集");
         paintSpeed();
+        ot.mark("倍速");
         /* No 弹幕 row since 2026-10-20 (the viewer: 「弹幕的设置入口，就保留在统一设置的
          * 那个入口」) — it is a setting of this television, not of one video. */
 
@@ -5521,6 +5529,7 @@
             panelGrid.clear();
             el("opt-related").innerHTML = '<div class="empty">正在加载相关视频…</div>';
         }
+        ot.mark("相关");
 
         /* The episode being watched when there is a list of them, else the
          * row's first button. Spelled out since speed moved into the top row
@@ -5530,6 +5539,9 @@
             var ffNode = document.querySelector(firstFocus[ff]);
             if (ffNode && ffNode.offsetParent !== null) { Nav.focus(ffNode); break; }
         }
+        ot.mark("焦点");
+        ot.done("分P " + ((d.pages || []).length) + " · 合集 " + document.querySelectorAll("#opt-season .opt").length +
+                " · 相关 " + ((d.related || []).length) + " · 播放器 " + Player.mode());
     }
 
     /* True when no other focusable in the panel sits above this one — the
@@ -6808,6 +6820,8 @@
                     }
                     prev = t;
                     if (t - t0 < 1500) { window.requestAnimationFrame(frame); return; }
+                    /* Only the slow ones: every 返回 and every panel would fill the diagnostics ring. */
+                    if (first <= 100 && worst <= 150) { return; }
                     var u = Player.lastUnload();
                     report("perf", what + " 同步 " + sync + "ms（" + parts.join(" ") + "）· 第一帧 " + first + "ms · 之后 " + n +
                            " 帧里最长 " + worst + "ms" + (slow.length ? "，超过 50ms 的（时长@起点）" + slow.join(" ") : "") +
