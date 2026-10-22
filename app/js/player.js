@@ -2671,6 +2671,14 @@ var Player = (function () {
 
     function describeShakaError(e) {
         if (!e) { return "(no error object)"; }
+        /* Shaka's own errors always carry a numeric category. Anything else is
+         * a script error thrown inside the library or the engine — a TypeError,
+         * a DOMException — and printed as code/category/severity it read
+         * 「code=undefined category=undefined severity=undefined」 on a
+         * Tizen 3.0 set (issue #5, 10-22), every load and every live room,
+         * while the ladder above treated it as a refusal. Its name, message
+         * and where it was thrown are the only evidence there is. */
+        if (typeof e.category !== "number") { return describeScriptError(e); }
         var out = "code=" + e.code + " category=" + e.category +
                   " severity=" + e.severity;
         try {
@@ -2709,6 +2717,24 @@ var Player = (function () {
                 out += " data[" + i + "]=" + part;
             }
         } catch (e3) {}
+        return out;
+    }
+
+    /* 「不是 shaka 的错误 TypeError: … @ shaka-player.compiled.js:1234:56 < …」:
+     * the first three frames as file:line:col, which point into the vendored
+     * build even though its names are minified. */
+    function describeScriptError(e) {
+        var out = "不是 shaka 的错误 ";
+        try {
+            out += (e.name || typeof e) + (typeof e.code === "number" ? "(" + e.code + ")" : "") +
+                   ": " + String(e.message !== undefined ? e.message : e).replace(/\s+/g, " ").slice(0, 300);
+            var frames = String(e.stack || "").split("\n"), at = [];
+            for (var i = 0; i < frames.length && at.length < 3; i++) {
+                var m = /([^\/\s()]+:\d+:\d+)\)?\s*$/.exec(frames[i]);
+                if (m) { at.push(m[1]); }
+            }
+            out += at.length ? " @ " + at.join(" < ") : " (没有调用栈)";
+        } catch (e2) { out += "(读不出来)"; }
         return out;
     }
 
