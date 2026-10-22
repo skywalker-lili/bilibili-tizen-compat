@@ -2345,11 +2345,12 @@
         liveNative = !!on;
         liveNativeForce = force || "";
         liveFailTsOnce = !!failTsOnce;
-        if (on && liveRoom) { Player.stop(); startLiveRoom(""); }
+        /* Each step starts from what the room has not yet learned. */
+        if (on && liveRoom) { liveRoom.nativeFor = ""; Player.stop(); startLiveRoom(""); }
     };
     window.__stLiveRoom = function () {
         return liveRoom && { room: liveRoom.nativeFor, fmt: liveRoom.nativeFmt, used: liveRoom.nativeUsed,
-                             below: liveRoom.tsBelow, gaveUp: liveRoom.tsGaveUp };
+                             below: liveRoom.tsBelow, gaveUp: liveRoom.tsGaveUp, token: liveRoom.token, moved: liveRoom.moved };
     };
     window.__stWake = function () { lastWake = 0; wokeUp("自测模拟关机再开机", AWAY_MS); };
 
@@ -4203,13 +4204,19 @@
      * TS was PLAYER_ERROR_NOT_SUPPORTED_FORMAT, and fMP4 on that AVPlay never
      * left prepare, three times. So a TS tier that fails before its first
      * picture steps down a tier, still TS, and fMP4 is the last resort, given
-     * up for the session the first time AVPlay cannot start it. */
+     * up for the session the first time AVPlay cannot start it. "Before its
+     * first picture" means before AVPlay's clock moves (LIVE_NATIVE_STALL). */
     var liveNative = false;
     var liveFmp4Dead = false;       /* AVPlay could not start HLS-fMP4 this session */
     var liveNativeForce = "";       /* selftest only: "ts" | "fmp4" */
     var liveFailTsOnce = false;     /* selftest only: the next TS start reports NOT_SUPPORTED_FORMAT */
     var LIVE_DECODE_FAIL = /code=3016 .*data\[0\]=[34](?!\d)|媒体元素出错 code=[34](?!\d)/;
     var LIVE_NATIVE_WAIT = 15000;
+    /* For AVPlay 「到画面」 only means prepared. 10-22 evening, 1.3.6/1.3.7 on the
+     * Tizen 3.0 set: 「部分直播不能播放」 and not one upload — whatever those rooms
+     * did never reached an exit that reports. So after the picture its clock
+     * has to move: still for this long counts as a failure. */
+    var LIVE_NATIVE_STALL = 10000;
 
     function openLive(v) {
         var cache = feedCache[state.screen];
@@ -4218,7 +4225,8 @@
         if (index < 0) { list = [v]; index = 0; }
         liveRoom = { list: list, index: index, tries: 0, token: 0, item: null,
                      qnName: "", pausedAt: 0, timed: false, failing: false, okTimer: null,
-                     nativeFmt: "", nativeFor: "", nativeQn: 0, nativeUsed: 0, nativeAccept: [], tsBelow: 0, tsGaveUp: false };
+                     nativeFmt: "", nativeFor: "", nativeQn: 0, nativeUsed: 0, nativeAccept: [], tsBelow: 0, tsGaveUp: false,
+                     timedAt: 0, moved: false, clockPos: -1, clockMovedAt: 0, bufAt: 0 };
         startLiveRoom("");
     }
 
@@ -4231,6 +4239,9 @@
         room.qnName = "";
         room.nativeFmt = "";
         room.timed = false;
+        room.moved = false;
+        room.clockPos = -1;
+        room.bufAt = 0;
         room.failing = false;
         /* What the native route learned is about this room's streams. */
         if (room.nativeFor !== String(v.roomid)) {
@@ -4284,6 +4295,18 @@
                         onLiveEvent("error", "直播：AVPlay " + (LIVE_NATIVE_WAIT / 1000) + " 秒没出画面（" + fmt + "）");
                     }
                 }, LIVE_NATIVE_WAIT);
+                /* ...and after the picture, its clock has to move (LIVE_NATIVE_STALL). */
+                var watch = setInterval(function () {
+                    if (liveRoom !== room || token !== room.token || room.failing) { clearInterval(watch); return; }
+                    if (!room.timed) { return; }
+                    var t = new Date().getTime();
+                    if (Player.userPaused()) { room.clockMovedAt = t; return; }
+                    if (t - room.clockMovedAt > LIVE_NATIVE_STALL) {
+                        clearInterval(watch);
+                        onLiveEvent("error", "直播：AVPlay " + (room.moved ? "放着放着 " : "到画面之后 ") + (LIVE_NATIVE_STALL / 1000) +
+                                    " 秒时间没走（" + fmt + " " + room.qnName + (room.bufAt ? "，一直在缓冲" : "") + "）");
+                    }
+                }, 1000);
             }
             function withoutTs(note) {
                 if (!liveFmp4Dead) { native("HLS-fMP4", url, note); return; }
@@ -4357,15 +4380,37 @@
             el("loading-status").textContent = "";
             if (!room.timed) {
                 room.timed = true;
+                room.timedAt = room.clockMovedAt = new Date().getTime();
                 report("live", "到画面 " + Player.timings());
                 showLiveUi();
             }
             /* A good minute buys the reconnect budget back. */
             if (room.okTimer) { clearTimeout(room.okTimer); }
             room.okTimer = setTimeout(function () { if (liveRoom === room) { room.tries = 0; } }, 60000);
+        } else if (kind === "time") {
+            /* AVPlay's clock (oncurrentplaytime). Two different readings is
+             * playing; the watchdog in startLiveRoom reads clockMovedAt. */
+            if (!room.nativeFmt || !data) { return; }
+            var pos = data.position || 0, tNow = new Date().getTime();
+            if (pos === room.clockPos) { return; }
+            if (room.clockPos >= 0 && !room.moved) {
+                room.moved = true;
+                report("live", "AVPlay 时间开始走了（" + room.nativeFmt + " " + room.qnName + "，到画面后 " +
+                       (room.timedAt ? tNow - room.timedAt : 0) + "ms）");
+            }
+            room.clockPos = pos;
+            room.clockMovedAt = tNow;
         } else if (kind === "buffering") {
             el("live-hint").textContent = data ? "缓冲中…" : LIVE_HINT;
             if (data) { showLiveUi(); }
+            /* AVPlay only: Shaka's live path logs its own. One line per stall, at its end. */
+            if (room.nativeFmt) {
+                if (data) { room.bufAt = room.bufAt || new Date().getTime(); }
+                else if (room.bufAt) {
+                    report("live", "AVPlay 缓冲了 " + (new Date().getTime() - room.bufAt) + "ms（" + room.nativeFmt + " " + room.qnName + "）");
+                    room.bufAt = 0;
+                }
+            }
         } else if (kind === "error") {
             if (room.failing) { return; }   /* one failure, one reconnect */
             room.failing = true;
@@ -4384,7 +4429,7 @@
              * the stream, not the network: step the TS down a tier (no reconnect
              * spent), and when TS has no tier left, or fMP4 will not start,
              * remember it. */
-            if (Player.mode() === "avplay" && !room.timed && /NOT_SUPPORTED|秒没出画面/.test(String(data))) {
+            if (Player.mode() === "avplay" && !room.moved && /NOT_SUPPORTED|秒没出画面|时间没走/.test(String(data))) {
                 if (room.nativeFmt === "HLS-fMP4") { liveFmp4Dead = true; }
                 if (room.nativeFmt === "HLS-TS") {
                     var lower = 0;

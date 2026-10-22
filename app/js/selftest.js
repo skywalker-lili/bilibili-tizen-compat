@@ -1414,9 +1414,31 @@ var SelfTest = (function () {
         ["直播：同一个直播间改走 AVPlay + HLS-fMP4，出画面、时间在走", 300, function () {
             return liveNativeStep("fmp4");
         }, 25000, "25 秒没在 AVPlay 上走起来"],
+        /* 10-22: rooms that 「不能播放」 on the Tizen 3.0 set sent nothing — AVPlay
+         * said it was prepared, and nothing watched it after that. Pause it
+         * behind the app's back: the clock stops, and the room should
+         * reconnect by itself and move again. */
+        ["直播：AVPlay 画面停住 → 自己重连、时间又走起来", 300, function () {
+            var st = window.__stLiveRoom() || {};
+            if (!probe.freeze) {
+                probe.freeze = { token: st.token, t0: -1 };
+                try { webapis.avplay.pause(); } catch (e) { return "暂停不了 AVPlay：" + e.message; }
+                return WAIT;
+            }
+            if (st.token === probe.freeze.token) { return WAIT; }
+            if (visible("shell")) { return "退回了网格（看 live: 那几行）"; }
+            if (Player.mode() !== "avplay" || visible("player-loading")) { return WAIT; }
+            var t = -1;
+            try { if (webapis.avplay.getState() === "PLAYING") { t = webapis.avplay.getCurrentTime(); } } catch (e) {}
+            if (t < 0) { return WAIT; }
+            if (probe.freeze.t0 < 0) { probe.freeze.t0 = t; return WAIT; }
+            return t - probe.freeze.t0 >= 1500 ? null : WAIT;
+        }, 40000, "40 秒没重连起来（看 live: 那几行）"],
+        /* Up to two playlist looks, a TS that stalls (10 s) and steps down, two
+         * more looks and fMP4 — 10-22 that whole road took about 35 s here. */
         ["直播：再走 AVPlay，有能用的 HLS-TS 就用 TS，出画面、时间在走", 300, function () {
             return liveNativeStep("auto");
-        }, 25000, "25 秒没在 AVPlay 上走起来"],
+        }, 60000, "60 秒没在 AVPlay 上走起来"],
         /* The Tizen 3.0 set's third room (10-22): its 原画 TS was
          * NOT_SUPPORTED_FORMAT. Made to order here — the next TS start reports
          * it — and the room should step down a tier, still on TS. */
@@ -1445,15 +1467,15 @@ var SelfTest = (function () {
             }
             if (visible("shell")) { return "退回了网格（看 live: 那几行）"; }
             if (!st.below || Player.mode() !== "avplay" || visible("player-loading")) { return WAIT; }
-            if (st.fmt !== "HLS-TS" || !(st.used < st.below)) {
-                return done("降档之后是 " + st.fmt + " qn" + st.used + "，应该是低于 qn" + st.below + " 的 TS");
-            }
+            if (!(st.used < st.below)) { return done("降档之后是 " + st.fmt + " qn" + st.used + "，应该低于 qn" + st.below); }
+            /* The lower tier's TS not answering is weather; fMP4 is then what was designed. */
+            if (st.fmt !== "HLS-TS" && !ts.noted) { ts.noted = true; post("降到 qn" + st.used + " 了，那一档的 TS 清单不通，用的 " + st.fmt); }
             var t = -1;
             try { if (webapis.avplay.getState() === "PLAYING") { t = webapis.avplay.getCurrentTime(); } } catch (e) {}
             if (t < 0) { return WAIT; }
             if (ts.t0 < 0) { ts.t0 = t; return WAIT; }
             if (t - ts.t0 < 1500) { return WAIT; }
-            post("直播间 " + st.room + " 的 TS 从 qn" + st.below + " 降到 qn" + st.used + "，出画面了");
+            post("直播间 " + st.room + " 的 TS 从 qn" + st.below + " 降到 qn" + st.used + "（" + st.fmt + "），出画面了");
             return done(null);
         }, 75000, "75 秒没降档出画面（看 live: 那几行）"],
         ["直播：返回，焦点落在最后看的那个直播间", 600, function () {
