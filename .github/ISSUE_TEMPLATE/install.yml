@@ -15,7 +15,7 @@ body:
         | `Invalid certificate chain` | Tizen's own distributor certificates do not work on 2023+ sets — **both** of them, expired and `-new` alike. You need a Samsung-issued one. / Tizen 自带的两套分发证书在新机器上都不行，必须用三星签发的 |
         | Installs, but the app is not there / 装完了但找不到应用 | The distributor certificate was issued for a different DUID / 分发证书绑的是别的 DUID |
         | `sdb` times out silently / `sdb` 静默超时 | Developer Mode lists a different host PC address, or the TV was not fully power-cycled after changing it / 开发者模式里登记的主机地址不是这台，或者改完没有完整断电重启 |
-        | Nothing in the collector / 收集器一片空白 | It was started after the app. The app gives up reporting after five failures / 收集器开晚了。应用连撞五次失败会永久关闭上报 |
+        | Nothing in the collector / 收集器一片空白 | It was started after the app: after five missed reports the app waits five minutes before trying again, and redeploying reconnects at once / 收集器开晚了：应用连撞五次失败会等五分钟再试，重新部署立刻恢复 |
 
   - type: dropdown
     id: step

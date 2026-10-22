@@ -1,0 +1,12 @@
+name: Something else / 其他
+description: A question, an idea, or just a word / 提问、建议，或者只是想说句话
+body:
+  - type: textarea
+    id: text
+    attributes:
+      label: What would you like to say? / 想说什么
+      description: |
+        No log needed. If it turns out to be a problem on the TV, a TV model helps.
+        不用附日志。如果其实是电视上出了问题，写上电视型号会有帮助。
+    validations:
+      required: true
