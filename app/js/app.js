@@ -2050,6 +2050,10 @@
                 }, 3000);
                 return;
             }
+            /* The upload's reason carries only the words on the screen; which
+             * tab said them is here (10-22: five 「code -352」 from a set in HK,
+             * and nothing to say which feed). */
+            report("feed", kind + " 加载失败（" + why + "），给了重试按钮");
             showError("加载失败：" + why, function () { loadFeed(kind); });
         };
         if (bootSlot) {

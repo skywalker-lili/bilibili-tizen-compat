@@ -66,7 +66,7 @@ let failed = false;
  * a call — so they come out before anything is counted. */
 function strip(src) {
   return src
-    .replace(/\/\*[\s\S]*?\*\//g, " ")
+    .replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, " "))   /* keeps line numbers */
     .replace(/(^|[^:])\/\/[^\n]*/g, "$1 ")
     .replace(/"(?:[^"\\\n]|\\.)*"/g, '""')
     .replace(/'(?:[^'\\\n]|\\.)*'/g, "''");
@@ -117,6 +117,19 @@ function scanFile(file, known) {
 
 const known = new Set();
 for (const f of ORDER) { scanFile(f, known); }
+
+/* play() returns undefined on Chromium 47 (Tizen 3.0), so chaining on it throws
+ * after a load that worked — issue #5 lost every video to this. startPlaying()
+ * in player.js is the way through. */
+for (const f of ORDER) {
+  const src = strip(fs.readFileSync(path.join(APP, f), "utf8"));
+  const lines = src.split("\n");
+  const bad = lines.flatMap((l, i) => /\.play\(\)\s*(?:\.|\[)/.test(l) ? [i + 1] : []);
+  if (bad.length) {
+    console.log(`✗ ${f}:${bad.join(",")}: play() 的返回值在 Chromium 47 上是 undefined，用 startPlaying()`);
+    failed = true;
+  }
+}
 
 /* Every id the app reaches for must exist in the markup or be built by it. */
 const html = fs.readFileSync(INDEX, "utf8");

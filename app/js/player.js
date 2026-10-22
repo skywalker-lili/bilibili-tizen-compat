@@ -2454,7 +2454,7 @@ var Player = (function () {
             if (t) { emit("quality", { id: t.originalVideoId || t.id, width: t.width, height: t.height }); }
             if (playRate !== 1) { applyRate(); }   /* each load starts Shaka's rate at 1 */
             if (userPaused) { return; }
-            v.play().catch(function (e) {
+            startPlaying(v, function (e) {
                 if (gen !== mseGeneration) { return; }
                 if (/interrupted|aborted/i.test(e.message || "")) { return; }
                 emit("error", "play(): " + e.message);
@@ -2658,7 +2658,7 @@ var Player = (function () {
                         (t.audioCodec ? " / " + t.audioCodec : ""));
                 }
                 if (userPaused) { return; }
-                v.play()["catch"](function (e) {
+                startPlaying(v, function (e) {
                     if (gen !== mseGeneration || /interrupted|aborted/i.test(e.message || "")) { return; }
                     emit("error", "直播：play() " + e.message);
                 });
@@ -2667,6 +2667,18 @@ var Player = (function () {
                 emit("error", "直播：加载失败 " + describeShakaError(e));
             });
         });
+    }
+
+    /* play() returns a promise from Chromium 50. On Tizen 3.0 (Chromium 47) it
+     * returns undefined and plays all the same, so `v.play().catch(…)` threw
+     * right after every load had succeeded, and the ladder read that TypeError
+     * as a refusal — down every quality, then the progressive route and its
+     * 403 (issue #5, 10-22: 「Cannot read property 'catch' of undefined」 on
+     * every video). On the old engine there is no promise to reject; a play
+     * that never starts is the watchdog's (10 seconds to the first frame). */
+    function startPlaying(v, onRefused) {
+        var p = v.play();
+        if (p && typeof p.then === "function") { p.then(null, onRefused); }
     }
 
     function describeShakaError(e) {
