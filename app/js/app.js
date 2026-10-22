@@ -4271,6 +4271,10 @@
      * did never reached an exit that reports. So after the picture its clock
      * has to move: still for this long counts as a failure. */
     var LIVE_NATIVE_STALL = 10000;
+    /* ...except a first start that AVPlay says it is buffering: HLS-fMP4 原画 took
+     * 6–9.5 s here before its clock moved, and one 10.2 s start (10-22, 1.3.8
+     * selftest) was read as "fMP4 cannot play" and closed the room. */
+    var LIVE_NATIVE_FIRST_BUFFER = 20000;
 
     function openLive(v) {
         var cache = feedCache[state.screen];
@@ -4279,7 +4283,7 @@
         if (index < 0) { list = [v]; index = 0; }
         liveRoom = { list: list, index: index, tries: 0, token: 0, item: null,
                      qnName: "", pausedAt: 0, timed: false, failing: false, okTimer: null,
-                     nativeFmt: "", nativeFor: "", nativeQn: 0, nativeUsed: 0, nativeAccept: [], tsBelow: 0, tsGaveUp: false,
+                     nativeFmt: "", nativeFor: "", nativeQn: 0, nativeUsed: 0, nativeAccept: [], tsBelow: 0, tsGaveUp: false, steps: 0,
                      timedAt: 0, moved: false, clockPos: -1, clockMovedAt: 0, bufAt: 0 };
         startLiveRoom("");
     }
@@ -4303,6 +4307,7 @@
             room.nativeQn = 0;
             room.tsBelow = 0;
             room.tsGaveUp = false;
+            room.steps = 0;
         }
         el("shell").className = "veiled";
         el("pause-glyph").className = "hidden";
@@ -4355,9 +4360,10 @@
                     if (!room.timed) { return; }
                     var t = new Date().getTime();
                     if (Player.userPaused()) { room.clockMovedAt = t; return; }
-                    if (t - room.clockMovedAt > LIVE_NATIVE_STALL) {
+                    var limit = !room.moved && room.bufAt ? LIVE_NATIVE_FIRST_BUFFER : LIVE_NATIVE_STALL;
+                    if (t - room.clockMovedAt > limit) {
                         clearInterval(watch);
-                        onLiveEvent("error", "直播：AVPlay " + (room.moved ? "放着放着 " : "到画面之后 ") + (LIVE_NATIVE_STALL / 1000) +
+                        onLiveEvent("error", "直播：AVPlay " + (room.moved ? "放着放着 " : "到画面之后 ") + (limit / 1000) +
                                     " 秒时间没走（" + fmt + " " + room.qnName + (room.bufAt ? "，一直在缓冲" : "") + "）");
                     }
                 }, 1000);
@@ -4461,7 +4467,9 @@
             if (room.nativeFmt) {
                 if (data) { room.bufAt = room.bufAt || new Date().getTime(); }
                 else if (room.bufAt) {
-                    report("live", "AVPlay 缓冲了 " + (new Date().getTime() - room.bufAt) + "ms（" + room.nativeFmt + " " + room.qnName + "）");
+                    /* With a 3 s buffer AVPlay reports a stream of 20–70 ms blips nobody sees. */
+                    var bufMs = new Date().getTime() - room.bufAt;
+                    if (bufMs >= 500) { report("live", "AVPlay 缓冲了 " + bufMs + "ms（" + room.nativeFmt + " " + room.qnName + "）"); }
                     room.bufAt = 0;
                 }
             }
@@ -4484,21 +4492,28 @@
              * spent), and when TS has no tier left, or fMP4 will not start,
              * remember it. */
             if (Player.mode() === "avplay" && !room.moved && /NOT_SUPPORTED|秒没出画面|时间没走/.test(String(data))) {
-                if (room.nativeFmt === "HLS-fMP4") { liveFmp4Dead = true; }
-                if (room.nativeFmt === "HLS-TS") {
+                /* Prepared and never moving is this tier being too much, on
+                 * either playlist: step down. Not starting at all, or refusing
+                 * the format, is this player and fMP4 (the Tizen 3.0 set). */
+                var stuck = /时间没走/.test(String(data));
+                if (room.nativeFmt === "HLS-fMP4" && !stuck) { liveFmp4Dead = true; }
+                if (room.nativeFmt === "HLS-TS" || stuck) {
                     var lower = 0;
                     for (var q = 0; q < room.nativeAccept.length; q++) {
                         if (room.nativeAccept[q] < room.nativeUsed && room.nativeAccept[q] > lower) { lower = room.nativeAccept[q]; }
                     }
-                    if (lower) {
-                        report("live", "HLS-TS " + room.qnName + "（qn" + room.nativeUsed + "）AVPlay 放不了，这个直播间降到 qn" + lower + " 再试 TS");
+                    /* At most three steps a room: a server that answers a lower ask
+                     * with the same tier must not turn this into a loop. */
+                    if (lower && room.steps < 3) {
+                        room.steps++;
+                        report("live", room.nativeFmt + " " + room.qnName + "（qn" + room.nativeUsed + "）AVPlay 放不了，这个直播间降到 qn" + lower + " 再试");
                         room.nativeQn = lower;
-                        room.tsBelow = room.nativeUsed;
+                        if (room.nativeFmt === "HLS-TS") { room.tsBelow = room.nativeUsed; }
                         Player.stop();
                         startLiveRoom("");
                         return;
                     }
-                    room.tsGaveUp = true;
+                    if (room.nativeFmt === "HLS-TS") { room.tsGaveUp = true; }
                 }
             }
             if (++room.tries > 3) {
@@ -6803,6 +6818,43 @@
         bt.done(state.screen + " " + screenEl.querySelectorAll(".card").length + " 张卡片 · 每行 " + gridColumns() + " · 播放器 " + mode);
     }
 
+    /* Every key, timed to the frames after it (10-22, after 返回 went from
+     * ~280 ms to ~50 ms: 「再看看还有哪些地方可以优化体验」). A line only when it
+     * was slow — the first frame or any frame in the next 0.6 s over 100 ms,
+     * which a viewer feels as the set ignoring the remote for a moment. One
+     * measurement at a time: a held key's repeats are the same press. */
+    (function () {
+        var NAMES = {};
+        for (var k in Nav.KEY) { if (Nav.KEY.hasOwnProperty(k)) { NAMES[Nav.KEY[k]] = k; } }
+        var measuring = false;
+        function where(node) {
+            var ctx = playing ? "播放中" + (optionsOpen ? "·面板" : "") : liveRoom ? "直播" : state.screen;
+            if (!node) { return ctx; }
+            var name = node.id || (node.getAttribute && node.getAttribute("data-screen")) ||
+                       String(node.className || "").split(" ")[0] || node.tagName;
+            return ctx + " " + name;
+        }
+        document.addEventListener("keydown", function (e) {
+            if (measuring || !window.requestAnimationFrame) { return; }
+            measuring = true;
+            var t0 = new Date().getTime(), key = NAMES[e.keyCode] || String(e.keyCode), at = where(Nav.current());
+            var prev = 0, first = 0, worst = 0, worstAt = 0;
+            function frame() {
+                var t = new Date().getTime();
+                if (!first) { first = t - t0; }
+                else if (t - prev > worst) { worst = t - prev; worstAt = prev - t0; }
+                prev = t;
+                if (t - t0 < 600) { window.requestAnimationFrame(frame); return; }
+                measuring = false;
+                if (first > 100 || worst > 100) {
+                    report("perf", "按键 " + key + "（" + at + " → " + where(Nav.current()) + "）第一帧 " + first + "ms" +
+                           (worst > 100 ? "，之后最长 " + worst + "ms@" + worstAt : ""));
+                }
+            }
+            window.requestAnimationFrame(frame);
+        }, true);
+    })();
+
     Player.on(function (kind, data) {
         if (liveRoom) {
             if (kind === "log") { report("live", data); }
@@ -7516,6 +7568,32 @@
                 return true;
         }
     });
+
+    /* Which function a slow key spent its time in: these are the ones that
+     * draw whole screens or panels. A line only over 50 ms. Reassigning the
+     * declarations works because every caller looks them up by name. */
+    function timed(name, fn) {
+        return function () {
+            var t0 = new Date().getTime();
+            try { return fn.apply(this, arguments); }
+            finally {
+                var ms = new Date().getTime() - t0;
+                if (ms > 50) { report("perf", name + " 用了 " + ms + "ms"); }
+            }
+        };
+    }
+    renderMine = timed("renderMine", renderMine);
+    renderMineLibrary = timed("renderMineLibrary", renderMineLibrary);
+    renderSettings = timed("renderSettings", renderSettings);
+    renderSearch = timed("renderSearch", renderSearch);
+    renderGrid = timed("renderGrid", renderGrid);
+    paintCards = timed("paintCards", paintCards);
+    fitCardMeta = timed("fitCardMeta", fitCardMeta);
+    openOptions = timed("openOptions", openOptions);
+    reopenRelated = timed("reopenRelated", reopenRelated);
+    startLiveRoom = timed("startLiveRoom", startLiveRoom);
+    switchLive = timed("switchLive", switchLive);
+    stopLive = timed("stopLive", stopLive);
 
     Nav.onBack(function () {
         if (opening) { cancelOpening(); return; }

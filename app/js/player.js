@@ -904,7 +904,11 @@ var Player = (function () {
 
     /* ---------------- AVPlay ---------------- */
 
-    function playAvplay(url, startMs) {
+    /* opts.bufferSec (live only): how much AVPlay buffers before it starts and
+     * before it resumes. Left at its default, HLS-fMP4 原画 sat 6–9.5 s
+     * buffering after prepare on this set (10-22), and the stall watchdog read
+     * one 10 s start as a dead stream. */
+    function playAvplay(url, startMs, opts) {
         mode = "avplay";
         var gen = ++avGeneration;
         ensureObject();
@@ -915,6 +919,12 @@ var Player = (function () {
         try { webapis.avplay.setDisplayMethod("PLAYER_DISPLAY_MODE_LETTER_BOX"); } catch (e) {}
         webapis.avplay.setDisplayRect(viewport.x, viewport.y, viewport.w, viewport.h);
         try { webapis.avplay.setStreamingProperty("USER_AGENT", USER_AGENT); } catch (e) {}
+        if (opts && opts.bufferSec) {
+            try {
+                webapis.avplay.setBufferingParam("PLAYER_BUFFER_FOR_PLAY", "PLAYER_BUFFER_SIZE_IN_SECOND", opts.bufferSec);
+                webapis.avplay.setBufferingParam("PLAYER_BUFFER_FOR_RESUME", "PLAYER_BUFFER_SIZE_IN_SECOND", opts.bufferSec);
+            } catch (e) { log("AVPlay 不认 setBufferingParam（" + (e && (e.name || e.message)) + "），用它默认的缓冲"); }
+        }
         /* No COOKIE property, on purpose (2026-09-07). Stream urls are
          * pre-signed and AVPlay needs no session to fetch them — CLAUDE.md has
          * said so since the "AVPlay 看不到 cookie jar" assumption was debunked
@@ -2896,7 +2906,7 @@ var Player = (function () {
         /* 直播 through AVPlay, from an HLS-TS playlist: for an engine whose MSE
          * cannot decode the live fMP4 (Tizen 3.0, issue #5). The AVPlay
          * listener's events are the same ones app.js already reads for live. */
-        playLiveNative: function (url) { reset(); mark("manifest"); playAvplay(url, 0); },
+        playLiveNative: function (url) { reset(); mark("manifest"); playAvplay(url, 0, { bufferSec: 3 }); },
         playDash: function (dash, startMs) {
             reset();
             /* Half a second goes missing between `playurl` and `manifest` and
