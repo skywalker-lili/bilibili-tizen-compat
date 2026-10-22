@@ -827,7 +827,25 @@ var Player = (function () {
     }
 
     var lastUnload = null;   /* {at, ms}: when the last Shaka unload started and how long it took — for 返回到网格 */
-    function reset() {
+    /* An AVPlay session left by 返回 is closed late (10-22): stop()+close() were
+     * ~310–330 ms of that press on this set — every exit from a progressive
+     * video, every live room on a set that plays live through AVPlay — and the
+     * screen behind waited for them. Paused and hidden at once, closed once the
+     * screen behind has had its frames; the next session to start, of either
+     * kind, settles it first, so two players never hold the decoder. */
+    var lateAv = null, AV_LATE_CLOSE = 600;
+    function settleLateAv() {
+        if (!lateAv) { return; }
+        var node = lateAv.node;
+        clearTimeout(lateAv.timer);
+        lateAv = null;
+        try { webapis.avplay.stop(); } catch (e) {}
+        try { webapis.avplay.close(); } catch (e) {}
+        if (node.parentNode) { node.parentNode.removeChild(node); }
+    }
+
+    /* late: called as Player.stop (the viewer leaving), not as the start of a new session. */
+    function reset(late) {
         mseGeneration++;
         avGeneration++;
         loadPending = false;
@@ -843,7 +861,13 @@ var Player = (function () {
          * screen spent closing a player that was never opened. Found by
          * splitting the `到画面` line with a `teardown` mark rather than by
          * guessing, which is the only reason it was ever visible. */
-        if (obj) {
+        settleLateAv();
+        if (obj && late === true) {
+            try { webapis.avplay.pause(); } catch (e) {}
+            try { obj.style.visibility = "hidden"; } catch (e) {}
+            lateAv = { node: obj, timer: setTimeout(settleLateAv, AV_LATE_CLOSE) };
+            obj = null;
+        } else if (obj) {
             try { webapis.avplay.stop(); } catch (e) {}
             try { webapis.avplay.close(); } catch (e) {}
             if (obj.parentNode) { obj.parentNode.removeChild(obj); }
@@ -3010,7 +3034,7 @@ var Player = (function () {
 
         durationMs: function () { return duration; },
         pickDashVideo: pickDashVideo,
-        stop: reset,
+        stop: function () { reset(true); },
         lastUnload: function () { return lastUnload; },
         mode: function () { return mode; }
     };
