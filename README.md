@@ -65,9 +65,8 @@
 `12345`，打开开关，Host PC IP 填装应用的那台电脑或手机的 IP——然后**把电视完整断电
 重启一次**。不重启登记不生效，症状是找不到电视、或者连接静默超时。
 
-**所有人都会卡在证书上，两条路都替你搞定。** 2023 年以后的三星电视只认三星签发的
-分发证书，Tizen Studio 自带的那套一律 `Invalid certificate chain`。证书绑定电视的
-DUID，要用你自己的三星账号登录一次来申请。
+两条路都还要一个三星账号（没有就免费注册一个）：第一次安装时会让你登录，用来给这台电视
+申请证书，之后不用再管。
 
 ### 装发布包
 
@@ -90,8 +89,9 @@ DUID，要用你自己的三星账号登录一次来申请。
 
 准备：Node、Python 3，以及
 [Tizen Studio](https://developer.tizen.org/development/tizen-studio/download)
-的命令行工具（**不需要装 IDE**）。`setup.sh` 会打开三星账号登录页、替你申请证书，
-不需要 Eclipse、不需要 sudo、不需要证书管理器 GUI。
+的命令行工具（**不需要装 IDE**）。2023 年以后的三星电视只认三星签发的分发证书，Tizen Studio
+自带的那套一律 `Invalid certificate chain`；证书绑定电视的 DUID。`setup.sh` 会打开三星账号登录页、
+替你申请这张证书，不需要 Eclipse、不需要 sudo、不需要证书管理器 GUI。
 
 ```bash
 git clone https://github.com/titlog/bilibili-tizen.git && cd bilibili-tizen

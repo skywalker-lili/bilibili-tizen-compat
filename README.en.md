@@ -78,11 +78,8 @@ phone you will install from — then **power-cycle the set completely**. Without
 that the registration does not take, and the symptom is the TV not being found,
 or connections timing out silently.
 
-**Everybody gets stuck on the certificate; both ways handle it.** Samsung sets
-from 2023 on only accept Samsung-issued distributor certificates — the ones that
-ship with Tizen Studio all fail with `Invalid certificate chain`. The certificate
-is bound to your TV's DUID and is requested by signing in to your own Samsung
-account once.
+Both ways also need a Samsung account (free to create): the first install asks
+you to sign in, to get this TV a certificate, and that is all.
 
 ### Release package
 
@@ -110,9 +107,11 @@ itself), so borrowing a computer for the install is enough.
 
 You need Node, Python 3, and the
 [Tizen Studio](https://developer.tizen.org/development/tizen-studio/download)
-command-line tools (**not the IDE**). `setup.sh` opens the Samsung account login,
-requests the certificate for you, and needs no Eclipse, no sudo, no
-certificate-manager GUI.
+command-line tools (**not the IDE**). Samsung sets from 2023 on only accept
+Samsung-issued distributor certificates — the ones that ship with Tizen Studio
+all fail with `Invalid certificate chain` — and the certificate is bound to the
+TV's DUID. `setup.sh` opens the Samsung account login, requests that certificate
+for you, and needs no Eclipse, no sudo, no certificate-manager GUI.
 
 ```bash
 git clone https://github.com/titlog/bilibili-tizen.git && cd bilibili-tizen
