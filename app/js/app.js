@@ -1294,6 +1294,13 @@
      * rememberPosition would read scrollTop as 0 and write that over the
      * remembered feed position while keeping the deep card index, landing the
      * viewer at the top of the grid with the ring off screen. */
+    /* 我的's history was painted whole — up to a hundred cards from innerHTML,
+     * once from this set's record and again when the server's arrived — and
+     * one frame of it took 590 ms here (10-22, perf: 按键). Three rows, then
+     * more as the ring walks down, like the panel. */
+    var histGrid = cardPager("hist", function (v) { playVideo(v); });
+    function histPage() { return gridColumns() * 3; }
+
     var nextupGrid = cardPager("nextup-related", function (v) {
         if (v.bvid) { playedInChain[v.bvid] = 1; }
         backStack = [];   /* the video behind the chooser has ended; nothing to return to */
@@ -3522,14 +3529,13 @@
                     : "还没有看过什么") + '</div>';
                 return;
             }
-            paintCards(h, shown);
-            if (keep) {
-                for (var ki = 0; ki < shown.length; ki++) {
-                    if (shown[ki].bvid !== keep) { continue; }
-                    Nav.focus(h.querySelectorAll(".card")[ki]);
-                    break;
-                }
+            var ki = -1;
+            for (var kj = 0; keep && kj < shown.length; kj++) {
+                if (shown[kj].bvid === keep) { ki = kj; break; }
             }
+            /* Deep enough to hold the card the ring was on, and the row after it. */
+            histGrid.reset(shown, Math.max(histPage(), ki + 1 + gridColumns()));
+            if (ki >= 0) { Nav.focus(h.querySelectorAll(".card")[ki]); }
         }
 
         /* Painted on the first page and on the last, not on all three. Each
@@ -3589,7 +3595,7 @@
             shown = capHistory(mergeHistory(mine, []), HISTORY_FIRST_PAINT);
             var h0 = el("hist");
             if (h0) {
-                if (shown.length) { paintCards(h0, shown); }
+                if (shown.length) { histGrid.reset(shown, histPage()); }
                 else {
                     /* "读取中…" only when something is actually on its way. With
                      * an expired session nothing follows this, and the message
@@ -7663,6 +7669,7 @@
              * grid behind them. */
             if (pendingNext) { nextupGrid.follow(elm, nextupPage()); }
             if (optionsOpen) { panelGrid.follow(elm, panelPage()); }
+            if (state.screen === "mine" && !playing && !pendingNext) { histGrid.follow(elm, histPage()); }
         });
         var tabs = document.querySelectorAll("#tabs .tab");
         for (var i = 0; i < tabs.length; i++) { bindTab(tabs[i]); }
