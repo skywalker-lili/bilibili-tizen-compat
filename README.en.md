@@ -56,8 +56,8 @@ installs new versions itself (from 1.2.0 on). Two ways:
 | Needs | A computer (Windows / macOS / Linux) **or an Android phone** with [Apps2Samsung](https://github.com/Apps2Samsung/Apps2Samsung) | macOS, Node, Python 3, Tizen Studio CLI |
 | Upgrade | Automatic from 1.2.0 on; older versions: install again with Apps2Samsung | Automatic from 1.2.0 on too; or `git pull`, run `deploy.sh` again |
 
-**From 1.2.0 on, the app updates itself**: a minute after it opens, when
-nothing is playing, it checks this repository, then every 6 hours; it downloads a
+**From 1.2.0 on, the app updates itself**: a minute after every launch, when
+nothing is playing, it checks for a new version, then every 6 hours while open; it downloads a
 newer version, verifies its signature and runs it from the next launch; a version
 that fails to start falls back to the one installed.
 
