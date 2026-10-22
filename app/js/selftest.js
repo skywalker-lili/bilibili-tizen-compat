@@ -59,6 +59,24 @@ var SelfTest = (function () {
      * timers, so an asynchronous answer is parked here for the next step. */
     var probe = {};
 
+    /* Live on AVPlay: switch the room over once, then wait for the native
+     * player's clock to move a second and a half. */
+    function liveNativeStep(force) {
+        var k = "native_" + force;
+        if (!probe[k]) {
+            probe[k] = { t0: -1 };
+            window.__stLiveNative(true, force === "auto" ? "" : force);
+            return WAIT;
+        }
+        if (visible("shell")) { return "退回了网格（看 live: 那几行）"; }
+        if (Player.mode() !== "avplay" || visible("player-loading")) { return WAIT; }
+        var t = -1;
+        try { if (webapis.avplay.getState() === "PLAYING") { t = webapis.avplay.getCurrentTime(); } } catch (e) {}
+        if (t < 0) { return WAIT; }
+        if (probe[k].t0 < 0) { probe[k].t0 = t; return WAIT; }
+        return t - probe[k].t0 >= 1500 ? null : WAIT;
+    }
+
     function rect(id) {
         var n = document.getElementById(id);
         var r = n && n.getBoundingClientRect();
@@ -1388,6 +1406,19 @@ var SelfTest = (function () {
             var moved = document.getElementById("live-meta").textContent !== probe.liveWas;
             return (moved && !visible("player-loading") && v && v.currentTime > 1 && !v.paused) ? null : WAIT;
         }, 20000, "换台 20 秒没出画面"],
+        /* Tizen 3.0's MSE cannot decode live (issue #5, 10-22), so there live
+         * goes to AVPlay — fMP4, or TS when the TS playlist answers. No set
+         * here takes that route by itself; this is where it gets played. The
+         * second step lets the room choose, so whether it ran TS is in the
+         * 「开 … 走 AVPlay」 line, not a pass/fail (TS is weather). */
+        ["直播：同一个直播间改走 AVPlay + HLS-fMP4，出画面、时间在走", 300, function () {
+            return liveNativeStep("fmp4");
+        }, 25000, "25 秒没在 AVPlay 上走起来"],
+        ["直播：再走 AVPlay，有能用的 HLS-TS 就用 TS，出画面、时间在走", 300, function () {
+            var r = liveNativeStep("auto");
+            if (r === null) { window.__stLiveNative(false); }
+            return r;
+        }, 25000, "25 秒没在 AVPlay 上走起来"],
         ["直播：返回，焦点落在最后看的那个直播间", 600, function () {
             key(KEY.RETURN);
             var f = document.querySelector("#feed-grid .card.focused");

@@ -104,7 +104,7 @@ zsh tools/release.sh            # 给陌生人的发布包 → dist/
   在大陆被墙），设置里能手动传、能关，默认开。`node tools/diag-logs.mjs --device <设置页里的编号>` 读。**往 `report()` 里放标题、
   用户名、UP 主名、收藏夹名、搜索词，一律包 `Diag.priv()`**（`diag-verify` 卡着 `.title` / `.uname` / `.author`），mid、签名参数
   由 `scrub()` 兜底。新的失败出口用 `trouble(文字)` 而不是 `toast()`。开发构建不往那里传（除非 `BILI_DIAG_TO`）。→ `server/README.md`
-- 无人值守：`--selftest` 派发和遥控器一样的按键走全流程（现在 123 步），最后一行 `SELFTEST 结束，全部通过 / N 步失败`。
+- 无人值守：`--selftest` 派发和遥控器一样的按键走全流程（现在 125 步），最后一行 `SELFTEST 结束，全部通过 / N 步失败`。
   **能靠按键复现的 bug，就给它加一步。** 等网络的步骤返回 `WAIT` 轮询，不写死等待；每次放的视频是推荐流里随手拿的，
   一步失败先看是不是只对那一部片子成立。
 
@@ -114,7 +114,9 @@ zsh tools/release.sh            # 给陌生人的发布包 → dist/
   `app/vendor/shaka-player.compiled.js`。
 - **最老要跑在 Chromium 47**（`required_version="3.0"`，Tizen 3.0；4.0 是 56、5.5 是 69）：不能用 ES6 语法、
   CSS 变量、CSS grid（`compat.js` 加 `legacy-no-grid`）、flex 的 `gap`（加 `legacy-flex-gap`）。**`app.css` 每加一个
-  带 `gap` 的 flex 容器，都要在 `legacy-layout.css` 里补替身**（`legacy-css-verify` 卡着）。2017–2019 的机型还没人完整试过。
+  带 `gap` 的 flex 容器，都要在 `legacy-layout.css` 里补替身**（`legacy-css-verify` 卡着）。**`play()` 在 Chromium 50 以前返回
+  `undefined`**，不能接 `.then` / `.catch`，用 `startPlaying()`（`lint.mjs` 卡着）。Tizen 3.0 有人用过（issue #5）：点播能放，直播的 MSE
+  解码失败、改走 AVPlay（见「播放」）；4.0–5.0 还没人试过。
 - **一切由 D-pad 驱动**，焦点是几何的（`nav.js` 挑方向上最近的 `.focusable`）；横向同一行优先、纵向同一列优先。
   **新加的东西必须能这样够到**；滚动容器靠 `scroll` 这个词识别，横排用 `hscroll`。
 - **屏幕上的字只给观众要用的信息**：观众看了会做出不同的事吗？不会就进日志。留下的：打不开的原因、自救时的
@@ -158,6 +160,9 @@ zsh tools/release.sh            # 给陌生人的发布包 → dist/
 - **任何会启动新播放的入口，第一件事是拆掉旧的**（`Player.stop()`，世代计数器让旧回调闭嘴）；每个视频的状态在
   `play()` 顶部清，不在拆除时清；`lastKnownPosition` 不是「已经看到哪」，进度要相对 `playing.startMs`。
 - 两种卡顿要分开：通道空着（我们自己不要字节了 → 立刻重建）和请求吊着没回（连接或 CDN → 才轮到退避）。
+- **直播**走 Shaka + HLS-fMP4，音视频混在一路里（点播是分开的）。MSE 解不了它（Tizen 3.0：`3016`、`data[0]=3`）就这次运行都改走
+  AVPlay：TS 的播放列表 4 秒内答了用 TS，否则同一路 fMP4；**TS 是天气**，连不上的 TS 会让 AVPlay 停在 prepare 里不报错，
+  所以 15 秒不出画面当失败。`--selftest` 里两步强制走这条路。→ `docs/功能-弹幕直播画质投屏.md`
 
 ### 账号 → `docs/账号与登录.md`
 
@@ -274,5 +279,5 @@ docs/         排查经过和测量（见「文档地图」）；screenshots/ �
 验）—— 要走到那一步得同时满足「这个稿件没有 DASH」加「暂停两小时后播放中出错」，
 真遇到了表现仍是有声退出，不是冻屏。
 
-还没在野外触发过的：换令牌时在用的文件对不全、整个重建那条路；Tizen 3.0–5.0 上的播放。两个悬着的观测（有的稿件
+还没在野外触发过的：换令牌时在用的文件对不全、整个重建那条路；Tizen 4.0–5.0 上的播放；AVPlay 放直播的 HLS-TS。两个悬着的观测（有的稿件
 AVPlay 必然打不开而地址是好的；播放头自己往回跳）见 `docs/播放与CDN.md` 末尾。

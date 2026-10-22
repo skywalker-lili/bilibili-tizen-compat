@@ -2889,6 +2889,10 @@ var Player = (function () {
 
         playProgressive: function (url, startMs) { reset(); playAvplay(url, startMs); },
         playLive: playLive,
+        /* 直播 through AVPlay, from an HLS-TS playlist: for an engine whose MSE
+         * cannot decode the live fMP4 (Tizen 3.0, issue #5). The AVPlay
+         * listener's events are the same ones app.js already reads for live. */
+        playLiveNative: function (url) { reset(); mark("manifest"); playAvplay(url, 0); },
         playDash: function (dash, startMs) {
             reset();
             /* Half a second goes missing between `playurl` and `manifest` and

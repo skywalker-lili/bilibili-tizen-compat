@@ -2338,6 +2338,13 @@
 
     /* No key press can produce a suspend/resume cycle, so the selftest reaches
      * the wake path through here. */
+    /* The AVPlay route for live only starts after a decode failure, which a
+     * newer set never has; the selftest switches it on for the room it is in. */
+    window.__stLiveNative = function (on, force) {
+        liveNative = !!on;
+        liveNativeForce = force || "";
+        if (on && liveRoom) { Player.stop(); startLiveRoom(""); }
+    };
     window.__stWake = function () { lastWake = 0; wokeUp("自测模拟关机再开机", AWAY_MS); };
 
     /* Nor can a key press make a video end — not inside a run that has to
@@ -4180,6 +4187,26 @@
     var liveUiTimer = null;
     var LIVE_HINT = "确认键 暂停/播放 · 上下键 换直播间 · 返回键 退出";
     var LIVE_PAUSE_LIMIT = 20000;   /* a live window is seconds wide; longer than this, start at the edge again */
+    /* Tizen 3.0 (issue #5, 10-22): on-demand DASH plays through MSE, but every
+     * live room failed with the element's decode error (Shaka 3016, data[0]=3)
+     * — the live fMP4 has audio and video muxed in one stream where on-demand
+     * keeps them apart, and 原画 is 1080p High@5.0; which of the two the engine
+     * refuses is not known. Whatever it is, the native player sidesteps it:
+     * after one such failure, this room and every later one this session go to
+     * AVPlay. Not kept across launches — a stray decode error on a newer set
+     * should cost one session, not the set's whole life.
+     *
+     * Which playlist AVPlay gets: TS where it answers, the same fMP4 otherwise.
+     * TS is what an older native player surely reads, but it is weather — on
+     * 10-22 one room's TS was 404 on one host and silent on the other while
+     * its fMP4 answered everywhere, and AVPlay given the silent one sat in
+     * prepare with neither picture nor error. Hence the look at the playlist
+     * first, and a deadline on the picture: a TS that fails sends the
+     * reconnect to fMP4. */
+    var liveNative = false;
+    var liveNativeForce = "";       /* selftest only: "ts" | "fmp4" */
+    var LIVE_DECODE_FAIL = /code=3016 .*data\[0\]=[34](?!\d)|媒体元素出错 code=[34](?!\d)/;
+    var LIVE_NATIVE_WAIT = 15000;
 
     function openLive(v) {
         var cache = feedCache[state.screen];
@@ -4187,7 +4214,8 @@
         var index = list.indexOf(v);
         if (index < 0) { list = [v]; index = 0; }
         liveRoom = { list: list, index: index, tries: 0, token: 0, item: null,
-                     urls: null, qnName: "", pausedAt: 0, timed: false, failing: false, okTimer: null };
+                     qnName: "", pausedAt: 0, timed: false, failing: false, okTimer: null,
+                     nativeFmt: "", tsFailedFor: "" };
         startLiveRoom("");
     }
 
@@ -4209,20 +4237,76 @@
         Player.startTiming();
         API.livePlay(v.roomid, function (p) {
             if (liveRoom !== room || token !== room.token) { return; }
-            room.urls = p.urls;
             room.qnName = p.qnName;
+            room.nativeFmt = "";
             var url = p.urls[room.tries % p.urls.length];
-            report("live", "开 " + v.roomid + "（" + Diag.priv(v.author) + "）" + p.qnName + " " + p.codec +
-                   (p.signed ? "，带账号" : "，不带账号") + "，可选 " + p.accept.join("/") +
-                   "，主机 " + (url.split("/")[2] || "?") + (why ? "（" + why + "）" : ""));
-            paintLiveUi();
-            Player.playLive(url);
+            function open(how, u, note) {
+                report("live", "开 " + v.roomid + "（" + Diag.priv(v.author) + "）" + p.qnName + " " + p.codec + how +
+                       (p.signed ? "，带账号" : "，不带账号") + "，可选 " + p.accept.join("/") +
+                       "，主机 " + (u.split("/")[2] || "?") + (why ? "（" + why + "）" : "") + (note || ""));
+                paintLiveUi();
+            }
+            if (!liveNative) {
+                open("", url);
+                Player.playLive(url);
+                return;
+            }
+            var ts = p.tsUrls.length ? p.tsUrls[room.tries % p.tsUrls.length] : "";
+            function native(fmt, u, note) {
+                if (liveRoom !== room || token !== room.token) { return; }
+                room.nativeFmt = fmt;
+                open(" " + fmt + " 走 AVPlay", u, note);
+                Player.playLiveNative(u);
+                /* AVPlay can sit in prepare forever without an error. */
+                setTimeout(function () {
+                    if (liveRoom === room && token === room.token && !room.timed) {
+                        onLiveEvent("error", "直播：AVPlay " + (LIVE_NATIVE_WAIT / 1000) + " 秒没出画面（" + fmt + "）");
+                    }
+                }, LIVE_NATIVE_WAIT);
+            }
+            if (liveNativeForce === "fmp4" || !ts || room.tsFailedFor === String(v.roomid)) {
+                native("HLS-fMP4", url, liveNativeForce ? "（自测指定）" : !ts ? "（没给 HLS-TS）" : "（这个直播间的 TS 刚失败过）");
+                return;
+            }
+            if (liveNativeForce === "ts") { native("HLS-TS", ts, "（自测指定）"); return; }
+            peekPlaylist(ts, function (ok, what) {
+                if (ok) { native("HLS-TS", ts); }
+                else { native("HLS-fMP4", url, "（HLS-TS 的清单 " + what + "）"); }
+            });
         }, function (whyNot) {
             if (liveRoom !== room || token !== room.token) { return; }
             report("live", "房间 " + v.roomid + " 取不到流：" + whyNot);
             stopLive();
             trouble("这个直播间现在放不了：" + whyNot);
         });
+    }
+
+    /* Does a playlist answer as one, within four seconds? For choosing what
+     * AVPlay is given — it has no way to say "this address is dead" itself. */
+    function peekPlaylist(url, done) {
+        var finished = false, xhr = null;
+        /* Its own timer, not xhr.timeout: a timed-out request reaches
+         * readyState 4 with status 0 before ontimeout, and would read 连不上. */
+        var timer = setTimeout(function () {
+            end(false, "4 秒没回");
+            try { xhr.abort(); } catch (e) {}
+        }, 4000);
+        function end(ok, what) {
+            if (finished) { return; }
+            finished = true;
+            clearTimeout(timer);
+            done(ok, what);
+        }
+        try {
+            xhr = new XMLHttpRequest();
+            xhr.open("GET", url, true);
+            xhr.onreadystatechange = function () {
+                if (xhr.readyState !== 4) { return; }
+                if (xhr.status === 200 && /^#EXTM3U/.test(xhr.responseText || "")) { end(true, "200"); }
+                else { end(false, xhr.status ? "答 HTTP " + xhr.status : "连不上"); }
+            };
+            xhr.send();
+        } catch (e) { end(false, "发不出去：" + (e && e.message)); }
     }
 
     function onLiveEvent(kind, data) {
@@ -4246,6 +4330,16 @@
             room.failing = true;
             report("live", data);
             if (room.okTimer) { clearTimeout(room.okTimer); room.okTimer = null; }
+            /* Not a reconnect: the same room again on the other player, with the
+             * budget untouched and nothing new on the screen. */
+            if (!liveNative && Player.mode() === "live" && LIVE_DECODE_FAIL.test(String(data))) {
+                liveNative = true;
+                report("live", "这台电视的 MSE 解不了直播流，这个和之后的直播间都改走 AVPlay");
+                Player.stop();
+                startLiveRoom("");
+                return;
+            }
+            if (room.nativeFmt === "HLS-TS") { room.tsFailedFor = String(room.item.roomid); }
             if (++room.tries > 3) {
                 stopLive();
                 trouble("直播断了，重新连了三次也没接上");

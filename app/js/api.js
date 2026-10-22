@@ -439,27 +439,26 @@ var API = (function () {
                 }, onFail);
         },
 
-        /* Where to fetch a room's picture: HLS with fMP4 segments only — the
-         * MPEG-TS variant would need a transmuxer, and FLV needs flv.js.
+        /* Where to fetch a room's picture: HLS with fMP4 segments for Shaka —
+         * the MPEG-TS variant would need a transmuxer, and FLV needs flv.js.
+         * The TS variant of the same tier comes along as tsUrls, for AVPlay:
+         * on Tizen 3.0 the MSE path fails every room with a decode error
+         * (issue #5, 10-22) and app.js moves live to the native player.
          * Measured anonymous on 10-18: 原画 asked for, 超清 (250) given, the same
          * qn on avc and hevc; equal tiers go to avc. Asked with the account
          * first (a signed-in viewer may be given more), then without it if the
-         * signed request is refused. onOk({urls, qn, qnName, codec, accept, signed}). */
+         * signed request is refused.
+         * onOk({urls, tsUrls, qn, qnName, codec, accept, signed}). */
         livePlay: function (roomId, onOk, onFail) {
             var url = LIVE + "/xlive/web-room/v2/index/getRoomPlayInfo?room_id=" + encodeURIComponent(roomId) +
-                      "&protocol=1&format=2&codec=0,1&qn=10000&platform=web&ptype=8&dolby=5&panorama=1";
+                      "&protocol=1&format=1,2&codec=0,1&qn=10000&platform=web&ptype=8&dolby=5&panorama=1";
             var signedIn = typeof Auth !== "undefined" && Auth.isLoggedIn();
-            function pick(d, signed) {
-                if (!d || Number(d.live_status) !== 1) { onFail("没在直播（live_status=" + (d && d.live_status) + "）"); return; }
-                if (d.encrypted && !d.pwd_verified) { onFail("加了密码的直播间"); return; }
-                var pu = (d.playurl_info && d.playurl_info.playurl) || {};
-                var names = {};
-                (pu.g_qn_desc || []).forEach(function (q) { names[q.qn] = q.desc; });
+            function bestOf(pu, formatName) {
                 var best = null;
                 (pu.stream || []).forEach(function (s) {
                     if (s.protocol_name !== "http_hls") { return; }
                     (s.format || []).forEach(function (f) {
-                        if (f.format_name !== "fmp4") { return; }
+                        if (f.format_name !== formatName) { return; }
                         (f.codec || []).forEach(function (c) {
                             var qn = Number(c.current_qn) || 0;
                             if (!best || qn > best.qn || (qn === best.qn && c.codec_name === "avc")) {
@@ -469,9 +468,21 @@ var API = (function () {
                         });
                     });
                 });
+                return best;
+            }
+            function urlsOf(b) {
+                return b ? b.hosts.map(function (u) { return u.host + b.base + (u.extra || ""); }) : [];
+            }
+            function pick(d, signed) {
+                if (!d || Number(d.live_status) !== 1) { onFail("没在直播（live_status=" + (d && d.live_status) + "）"); return; }
+                if (d.encrypted && !d.pwd_verified) { onFail("加了密码的直播间"); return; }
+                var pu = (d.playurl_info && d.playurl_info.playurl) || {};
+                var names = {};
+                (pu.g_qn_desc || []).forEach(function (q) { names[q.qn] = q.desc; });
+                var best = bestOf(pu, "fmp4");
                 if (!best || !best.hosts.length) { onFail("没有 HLS-fMP4 的流"); return; }
                 onOk({
-                    urls: best.hosts.map(function (u) { return u.host + best.base + (u.extra || ""); }),
+                    urls: urlsOf(best), tsUrls: urlsOf(bestOf(pu, "ts")),
                     qn: best.qn, qnName: names[best.qn] || ("qn" + best.qn), codec: best.codec,
                     accept: best.accept.map(function (q) { return names[q] || String(q); }),
                     signed: signed
