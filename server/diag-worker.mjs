@@ -119,7 +119,7 @@ async function getOne(env, url) {
  * trusted by the television and nothing needs to be — the manifest is signed
  * and names the bundle's sha256, so a changed byte is refused on the set. */
 const UPSTREAM = "https://raw.githubusercontent.com/titlog/";
-const MANIFEST_TTL = 300;                // a release reaches the sets within five minutes
+const MANIFEST_TTL = 300;                // plus GitHub raw's own five: a release reaches every edge within ~10 min
 const BUNDLE_TTL = 30 * 86400;           // a tag's bundle never changes
 
 async function relay(url) {
