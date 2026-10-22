@@ -826,6 +826,7 @@ var Player = (function () {
         return obj;
     }
 
+    var lastUnload = null;   /* {at, ms}: when the last Shaka unload started and how long it took — for 返回到网格 */
     function reset() {
         mseGeneration++;
         avGeneration++;
@@ -863,8 +864,11 @@ var Player = (function () {
          * instead. */
         if (shakaPlayer) {
             try { v.autoplay = false; } catch (e) {}
+            var tu = new Date().getTime();
             shakaOp = shakaOp.then(function () {
                 return shakaPlayer ? shakaPlayer.unload() : null;
+            }).then(function () {
+                lastUnload = { at: tu, ms: new Date().getTime() - tu };
             })["catch"](function () {});
         } else {
             try { v.pause(); v.removeAttribute("src"); v.load(); } catch (e) {}
@@ -2997,6 +3001,7 @@ var Player = (function () {
         durationMs: function () { return duration; },
         pickDashVideo: pickDashVideo,
         stop: reset,
+        lastUnload: function () { return lastUnload; },
         mode: function () { return mode; }
     };
 })();

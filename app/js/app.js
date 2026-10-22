@@ -1103,6 +1103,40 @@
                '</div>';
     }
 
+    /* 返回 from a video used to rebuild the whole grid: 190–260 ms of one
+     * frame for 27 cards on this set (10-22, backTimer), plus every cover asked
+     * for again. The grid is still in the document behind the player, so when
+     * it is the one this tab drew, with every card the cache has, it is shown
+     * as it is, and only what watching changed is redrawn: the progress bars
+     * of what was played (playedSinceGrid) and 继续观看. */
+    var playedSinceGrid = {};
+    function gridIntact(kind, cached) {
+        var grid = el("feed-grid");
+        if (!grid || grid.__for !== kind) { return false; }
+        if (grid.querySelectorAll(".card").length !== cached.items.length) { return false; }
+        /* The first watched video makes 继续观看 appear: the grid has to move down for it. */
+        if (kind === "rcmd" && !el("resume-row") && resumeRowItems().length) { return false; }
+        return true;
+    }
+    function refreshPlayedBars() {
+        var cards = screenEl.querySelectorAll("#feed-grid .card");
+        for (var i = 0; i < cards.length; i++) {
+            var v = cards[i].__video;
+            if (!v || !playedSinceGrid[v.bvid] || typeof v.seen === "number") { continue; }
+            var seen = Resume.fraction(v.bvid), thumb = cards[i].querySelector(".thumb");
+            if (!thumb) { continue; }
+            var bar = thumb.querySelector(".seen");
+            if (!seen) { if (bar) { thumb.removeChild(bar); } continue; }
+            if (!bar) {
+                bar = document.createElement("span");
+                bar.className = "seen";
+                thumb.appendChild(bar);
+            }
+            bar.style.width = Math.round(seen * 100) + "%";
+        }
+        playedSinceGrid = {};
+    }
+
     function renderGrid(items, emptyText) {
         var head = isUp(state.screen) ? upHeadHtml(state.screen) : "";
         if (!items.length) {
@@ -1126,6 +1160,8 @@
         html += '<div class="grid" id="feed-grid">';
         for (var i = 0; i < items.length; i++) { html += cardHtml(items[i], i); }
         screenEl.innerHTML = html + "</div>";
+        el("feed-grid").__for = state.screen;
+        playedSinceGrid = {};
         if (head) { loadFollow(el("up-follow"), state.screen.slice(3)); }
         fitCardMeta(el("feed-grid"));
 
@@ -1987,17 +2023,35 @@
     function loadFeed(kind, restore, retries) {
         state.screen = kind;
         markTab();
+        if (restore) { backMark("顶栏"); }
         if (kind === "rcmd") { refreshHistoryIfStale(); }
         var req = ++feedRequest;
         newView();
 
         var cached = feedCache[kind];
         if (restore && cached) {
-            renderGrid(cached.items, emptyTextFor(kind));
+            backMark("开头");
+            if (gridIntact(kind, cached)) {
+                backMark("认网格");
+                refreshPlayedBars();
+                backMark("进度条");
+                /* After the first frame: 40–50 ms here (10-22), and the ring is in
+                 * the grid below it, so the grid can be up first. */
+                if (kind === "rcmd") {
+                    window.requestAnimationFrame(function () {
+                        setTimeout(function () { if (state.screen === "rcmd") { repaintResumeStrip(); } }, 0);
+                    });
+                }
+            } else {
+                renderGrid(cached.items, emptyTextFor(kind));
+                backMark("整页重画");
+            }
             var cards = screenEl.querySelectorAll("#feed-grid .card");
             var target = cards[Math.min(cached.index || 0, cards.length - 1)];
             Nav.focus(target || cards[0]);
+            backMark("焦点");
             screenEl.scrollTop = cached.scrollTop || 0;
+            backMark("滚动");
             return;
         }
 
@@ -2177,7 +2231,7 @@
          * remembered position keeps the deep card index and loses the scroll,
          * so coming back focuses card #37 and then scrolls to the top, leaving
          * the ring off screen. */
-        if (el("shell").className.indexOf("hidden") >= 0) { return; }
+        if (browseHidden()) { return; }
         /* Related videos in the player panel carry data-i too, so without this
          * picking one wrote its index over the feed's and returning landed on
          * an unrelated card. */
@@ -4156,7 +4210,7 @@
     var opening = false;
     function showOpening(v) {
         opening = true;
-        el("shell").className = "hidden";
+        el("shell").className = "veiled";
         el("loading-title").textContent = v.title || "";
         el("loading-status").textContent = "";
         el("player-loading").className = "";
@@ -4250,7 +4304,7 @@
             room.tsBelow = 0;
             room.tsGaveUp = false;
         }
-        el("shell").className = "hidden";
+        el("shell").className = "veiled";
         el("pause-glyph").className = "hidden";
         el("loading-title").textContent = v.title || v.author || "";
         el("loading-status").textContent = why || "";
@@ -5765,8 +5819,10 @@
         }, after);
     }
 
+    /* The player covers the browse screen by veiling it (app.css #shell.veiled). */
+    function browseHidden() { return /\b(hidden|veiled)\b/.test(el("shell").className); }
     function showPlayerUi(on) {
-        el("shell").className = on ? "hidden" : "";
+        el("shell").className = on ? "veiled" : "";
         el("playerui").className = on ? "" : "hidden";
         el("nextup").className = "hidden scroll";   /* never survives either direction */
         if (chromeTimer) { clearTimeout(chromeTimer); chromeTimer = null; }
@@ -5780,6 +5836,7 @@
     var handoff = null;
 
     function play(detail, cid) {
+        if (detail && detail.bvid) { playedSinceGrid[detail.bvid] = 1; }
         /* Every per-video piece of player state is cleared here. Leaving any of
          * it behind is invisible until the exact moment it matters: the scrub
          * head seeded from the last video would jump a fresh one straight to its
@@ -6660,7 +6717,44 @@
      * uploader page, opened from the panel or the end-of-video chooser. It runs
      * after the wake refresh has been paid, so a page opened on a set that slept
      * through the video still sits on top of a fresh home feed. */
+    /* Where the time goes between 返回 and the grid (10-22, 「按返回键感觉卡顿」):
+     * each synchronous step, then the frames after it — a stall a viewer
+     * feels is a long frame, not a long function. One line per exit. */
+    function backTimer(what) {
+        var t0 = new Date().getTime(), last = t0, parts = [];
+        return {
+            mark: function (name) {
+                var t = new Date().getTime();
+                parts.push(name + "=" + (t - last));
+                last = t;
+            },
+            done: function (extra) {
+                var sync = new Date().getTime() - t0, prev = 0, first = 0, worst = 0, slow = [], n = 0;
+                function frame() {
+                    var t = new Date().getTime();
+                    if (!first) { first = t - t0; }
+                    else {
+                        var gap = t - prev; n++;
+                        if (gap > worst) { worst = gap; }
+                        if (gap > 50) { slow.push(gap + "@" + (prev - t0)); }
+                    }
+                    prev = t;
+                    if (t - t0 < 1500) { window.requestAnimationFrame(frame); return; }
+                    var u = Player.lastUnload();
+                    report("perf", what + " 同步 " + sync + "ms（" + parts.join(" ") + "）· 第一帧 " + first + "ms · 之后 " + n +
+                           " 帧里最长 " + worst + "ms" + (slow.length ? "，超过 50ms 的（时长@起点）" + slow.join(" ") : "") +
+                           (u && u.at >= t0 ? " · 播放器卸载 " + u.ms + "ms（按返回后 " + (u.at + u.ms - t0) + "ms 完成）" : "") +
+                           (extra ? " · " + extra : ""));
+                }
+                try { window.requestAnimationFrame(frame); } catch (e) {}
+            }
+        };
+    }
+
+    var backMark = function () {};   /* the running backTimer's mark, for the steps inside showScreen */
     function stopPlayback(then) {
+        var bt = backTimer("返回到网格");
+        backMark = bt.mark;
         el("player-loading").className = "hidden";
         var was = playing;
         /* Before `playing` is cleared: this is the position the viewer actually
@@ -6675,7 +6769,9 @@
             reportProgress(Math.floor(lastKnownPosition / 1000), true,
                            Math.floor(lastKnownDuration / 1000));
         }
+        bt.mark("上报");
         Resume.flush();
+        bt.mark("存进度");
         cancelScrub();
         closeComments(true);
         closeEpisodeList(true);
@@ -6684,11 +6780,16 @@
         cancelNext();
         playedInChain = {};
         backStack = [];
+        bt.mark("关面板");
+        var mode = Player.mode();
         Player.stop();
+        bt.mark("拆播放器");
         playing = null;
         clearSubtitles();
         clearDanmaku();
+        bt.mark("清弹幕字幕");
         showPlayerUi(false);
+        bt.mark("显示网格层");
         /* Unless the set slept through the middle of this video, in which case
          * what is behind the player is last night's screen and the owed refresh
          * is paid here instead of restoring it. */
@@ -6697,6 +6798,9 @@
         if (owed) { return; }
         /* Back to the grid the viewer was browsing, at the card they picked. */
         showScreen(state.screen, true);
+        bt.mark("画网格");
+        backMark = function () {};
+        bt.done(state.screen + " " + screenEl.querySelectorAll(".card").length + " 张卡片 · 每行 " + gridColumns() + " · 播放器 " + mode);
     }
 
     Player.on(function (kind, data) {

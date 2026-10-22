@@ -26,10 +26,13 @@ var Nav = (function () {
         var scope = modal && modal.offsetParent !== null ? modal :
                     (comments && comments.offsetParent !== null ? comments : document);
         var all = scope.querySelectorAll(".focusable");
+        /* The browse screen behind the player keeps its boxes (visibility, not
+         * display) — present, measurable, and not a place the remote can go. */
+        var veiled = document.querySelector(".veiled");
         var out = [];
         for (var i = 0; i < all.length; i++) {
             var el = all[i];
-            if (el.offsetParent !== null) { out.push(el); }
+            if (el.offsetParent !== null && !(veiled && veiled.contains(el))) { out.push(el); }
         }
         return out;
     }

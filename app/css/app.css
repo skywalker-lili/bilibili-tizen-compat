@@ -12,6 +12,11 @@ body {
 }
 
 .hidden { display: none !important; }
+/* #shell behind the player: laid out but not painted. display:none made 返回
+ * pay for laying the whole browse screen out again before the first frame —
+ * 70–120 ms on this set (10-22, the 顶栏 step of perf: 返回到网格). Anything that
+ * asks "can the viewer see this" has to treat it as hidden: nav.js, browseHidden(). */
+#shell.veiled { visibility: hidden; }
 
 #video-stage { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; background: #000; }
 #avplayer { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; }

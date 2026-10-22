@@ -12,6 +12,7 @@ const timers = new Map();
 let nextTimer = 1;
 const body = { className: "", scrollHeight: 0, clientHeight: 0 };
 const cards = [];
+let veiled = null;   /* #shell behind the player: { contains(node) } */
 function card(index, x, y) {
   const node = {
     className: "card focusable", offsetParent: body, parentNode: body,
@@ -27,7 +28,7 @@ const document = {
   body,
   getElementById: () => null,
   querySelectorAll: () => cards,
-  querySelector: () => cards[0],
+  querySelector: (sel) => sel === ".veiled" ? veiled : cards[0],
   addEventListener: (name, fn) => { events[name] = fn; },
 };
 const window = { addEventListener: (name, fn) => { windowEvents[name] = fn; } };
@@ -75,4 +76,13 @@ assert.equal(Nav.current(), secondRow);
 assert.equal(menus, 1);
 assert.equal(plays, 1);
 assert.ok(windowEvents.blur, "blur handler should cancel an in-flight hold");
-console.log("✓ navigation: next row, short Enter, long Enter and repeat");
+
+/* The browse screen behind the player keeps its boxes (visibility: hidden):
+ * its cards measure like any others, and the remote must not reach them. */
+const panelBelow = card(9, 0, 600);
+veiled = { contains: (n) => n === secondRow };
+Nav.focus(first);
+press("keydown", 40);
+assert.equal(Nav.current(), panelBelow, "Down must skip a card inside the veiled shell");
+veiled = null;
+console.log("✓ navigation: next row, short Enter, long Enter and repeat, nothing behind the player");

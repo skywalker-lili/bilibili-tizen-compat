@@ -38,9 +38,15 @@ var SelfTest = (function () {
 
     var KEY = { UP: 38, DOWN: 40, LEFT: 37, RIGHT: 39, ENTER: 13, RETURN: 10009 };
 
+    /* #shell behind the player is veiled (visibility: hidden), not display:none:
+     * still laid out, not on screen. */
     function visible(id) {
         var n = document.getElementById(id);
-        return !!(n && n.offsetParent !== null);
+        if (!n || n.offsetParent === null) { return false; }
+        for (var p = n; p && p !== document.body; p = p.parentNode) {
+            if (/\bveiled\b/.test(p.className || "")) { return false; }
+        }
+        return true;
     }
 
     function count(sel) { return document.querySelectorAll(sel).length; }
