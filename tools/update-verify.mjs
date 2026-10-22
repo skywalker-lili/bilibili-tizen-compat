@@ -232,5 +232,27 @@ next = await fire();
 ok(next === E && /^不用下载：.*已经下载好了/.test(lastReport()), "联网了、没有要下的 → " + Math.round(next / MIN / 60) + " 小时后再查：「" + lastReport() + "」");
 ok(JSON.parse(S.localStorage.getItem("bili.update.last")).fails === 0, "记录里的失败计数清零");
 
+/* 10-22: a launch a minute after a successful check still checks — the record
+ * only paces checks within one run. */
+const before = reports.length;
+const S2 = loadUpdate({ Date: function () { return { getTime: () => clock }; }, localStorage: S.localStorage,
+  setTimeout: (fn, ms) => { timers.push({ fn, ms }); return timers.length; }, clearTimeout() {}, XMLHttpRequest: FakeXhr });
+S2.Boot.PUBKEY = testPub;
+S2.Update.init({ report: (k, t) => reports.push(t), busy: () => false });
+ok(timers[timers.length - 1].ms === 60000, "刚查过又开机 → 还是一分钟后查");
+next = await fire();
+ok(reports.length > before + 1 && /^不用下载/.test(lastReport()) && next === E,
+   "开机这一次照查（「" + lastReport() + "」），之后 " + Math.round(next / MIN / 60) + " 小时");
+/* Back from the background: only when the last check is over WAKE_GAP old. */
+const n0 = timers.length;
+S2.Update.wake();
+ok(timers.length === n0, "刚查过就从后台回来 → 不另查");
+clock += T.WAKE_GAP + MIN;
+S2.Update.wake();
+ok(timers.length === n0 + 1 && timers[timers.length - 1].ms === 60000, "离上次检查一个多小时、从后台回来 → 一分钟后查");
+next = await fire();
+ok(/^不用下载/.test(lastReport()) && next === E, "从后台回来的那次照查，之后 " + Math.round(next / MIN / 60) + " 小时");
+ok(!/titdev|githubusercontent|jsdelivr|清单来自/.test(S2.Update.status().lastResult), "设置页能读到的结果里没有下载地址：「" + S2.Update.status().lastResult + "」");
+
 console.log(failed ? `✗ ${failed} 处不对` : "✓ 自更新全部通过");
 process.exit(failed ? 1 : 0);

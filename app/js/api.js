@@ -447,11 +447,13 @@ var API = (function () {
          * Measured anonymous on 10-18: 原画 asked for, 超清 (250) given, the same
          * qn on avc and hevc; equal tiers go to avc. Asked with the account
          * first (a signed-in viewer may be given more), then without it if the
-         * signed request is refused.
-         * onOk({urls, tsUrls, qn, qnName, codec, accept, signed}). */
-        livePlay: function (roomId, onOk, onFail) {
+         * signed request is refused. `qn` asks for a lower tier (AVPlay stepping
+         * down when a TS tier will not play); 0 is the best there is.
+         * onOk({urls, qn, qnName, codec, accept, acceptQn,
+         *       tsUrls, tsQn, tsQnName, tsCodec, tsAcceptQn, signed}). */
+        livePlay: function (roomId, onOk, onFail, qn) {
             var url = LIVE + "/xlive/web-room/v2/index/getRoomPlayInfo?room_id=" + encodeURIComponent(roomId) +
-                      "&protocol=1&format=1,2&codec=0,1&qn=10000&platform=web&ptype=8&dolby=5&panorama=1";
+                      "&protocol=1&format=1,2&codec=0,1&qn=" + (qn || 10000) + "&platform=web&ptype=8&dolby=5&panorama=1";
             var signedIn = typeof Auth !== "undefined" && Auth.isLoggedIn();
             function bestOf(pu, formatName) {
                 var best = null;
@@ -479,12 +481,15 @@ var API = (function () {
                 var pu = (d.playurl_info && d.playurl_info.playurl) || {};
                 var names = {};
                 (pu.g_qn_desc || []).forEach(function (q) { names[q.qn] = q.desc; });
-                var best = bestOf(pu, "fmp4");
+                var best = bestOf(pu, "fmp4"), ts = bestOf(pu, "ts") || { qn: 0, codec: "", hosts: [], accept: [] };
                 if (!best || !best.hosts.length) { onFail("没有 HLS-fMP4 的流"); return; }
                 onOk({
-                    urls: urlsOf(best), tsUrls: urlsOf(bestOf(pu, "ts")),
+                    urls: urlsOf(best),
                     qn: best.qn, qnName: names[best.qn] || ("qn" + best.qn), codec: best.codec,
                     accept: best.accept.map(function (q) { return names[q] || String(q); }),
+                    acceptQn: best.accept.map(Number),
+                    tsUrls: urlsOf(ts), tsQn: ts.qn, tsQnName: names[ts.qn] || ("qn" + ts.qn), tsCodec: ts.codec,
+                    tsAcceptQn: ts.accept.map(Number),
                     signed: signed
                 });
             }

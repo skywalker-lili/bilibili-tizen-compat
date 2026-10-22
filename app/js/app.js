@@ -2278,6 +2278,7 @@
         if (now - lastWake < AWAY_MS) { return; }   /* the other signal had it */
         lastWake = now;
         report("lifecycle", why + "，离开了 " + Math.round(awayMs / 1000) + " 秒");
+        try { Update.wake(); } catch (e) {}   /* waits out playback by itself */
 
         /* A set that suspended in the middle of a video comes back to the video.
          * Playback owns the screen and its own recovery ladders; a feed reload
@@ -2340,10 +2341,15 @@
      * the wake path through here. */
     /* The AVPlay route for live only starts after a decode failure, which a
      * newer set never has; the selftest switches it on for the room it is in. */
-    window.__stLiveNative = function (on, force) {
+    window.__stLiveNative = function (on, force, failTsOnce) {
         liveNative = !!on;
         liveNativeForce = force || "";
+        liveFailTsOnce = !!failTsOnce;
         if (on && liveRoom) { Player.stop(); startLiveRoom(""); }
+    };
+    window.__stLiveRoom = function () {
+        return liveRoom && { room: liveRoom.nativeFor, fmt: liveRoom.nativeFmt, used: liveRoom.nativeUsed,
+                             below: liveRoom.tsBelow, gaveUp: liveRoom.tsGaveUp };
     };
     window.__stWake = function () { lastWake = 0; wokeUp("自测模拟关机再开机", AWAY_MS); };
 
@@ -3053,66 +3059,59 @@
         Auth.cancelLogin();
         var account = Accounts.active();
         var session = account && account.session;
-        var expiryNote = "未登录；扫码后可在这里查看 TV 令牌的标称到期时间。";
+        var expiryNote = "未登录，去「我的」扫码";
         if (session) {
-            expiryNote = "当前登录方式没有可读取的令牌到期时间。";
+            expiryNote = "已登录";
             if (session.expiresAt && session.savedAt &&
                     session.expiresAt > session.savedAt) {
                 var expiry = new Date(session.expiresAt);
                 var pad = function (n) { return n < 10 ? "0" + n : String(n); };
-                expiryNote = "TV 令牌标称到期：" + expiry.getFullYear() + "-" +
-                    pad(expiry.getMonth() + 1) + "-" + pad(expiry.getDate()) + " " +
-                    pad(expiry.getHours()) + ":" + pad(expiry.getMinutes()) +
-                    "（电视本地时间）。服务端可能提前使登录失效；本版本不会自动续期。";
+                expiryNote = "登录有效期到 " + expiry.getFullYear() + "-" +
+                    pad(expiry.getMonth() + 1) + "-" + pad(expiry.getDate());
             }
         }
-        /* From the installed package, so it cannot drift from config.xml. */
+        /* What is running — an update when there is one. An issue asks for the
+         * version 「设置页最上面」, and that is the one that matters. */
         var version = "";
-        try { version = tizen.application.getCurrentApplication().appInfo.version || ""; }
-        catch (e) {}
+        try { version = Boot.info().running || ""; } catch (e) {}
+        if (!version) {
+            try { version = tizen.application.getCurrentApplication().appInfo.version || ""; }
+            catch (e2) {}
+        }
         screenEl.innerHTML = '<div class="mine">' +
             '<div class="me"><div class="me-name">设置</div>' +
-            '<div class="me-sub">' + (version ? "版本 " + esc(version) + " · " : "") +
-            '这里的设置保存在这台电视上</div></div>' +
+            '<div class="me-sub">' + (version ? "版本 " + esc(version) : "") + '</div></div>' +
             '<div class="section">账号</div>' +
             '<div class="me-sub" style="margin-top:12px">' + esc(expiryNote) + '</div>' +
             '<div class="section">播放</div>' +
             '<div class="actions"><div class="btn focusable" id="btn-autoplay"></div>' +
             '<div class="btn focusable" id="btn-subtitles"></div>' +
             '<div class="btn focusable" id="btn-danmaku"></div></div>' +
-            '<div class="me-sub" style="margin-top:24px">关闭后，视频或分 P 播完会停在下一条推荐页面，按确认键才会继续播放。</div>' +
-            '<div class="me-sub" style="margin-top:12px">字幕只在视频提供字幕轨道时显示；设置会在下一次播放时生效。</div>' +
-            '<div class="me-sub" style="margin-top:12px">弹幕显示在画面上方，播放时按下键打开面板也能调。</div>' +
+
             '<div class="section">画质</div>' +
             '<div class="actions"><div class="btn focusable" id="btn-quality"></div></div>' +
-            '<div class="me-sub" style="margin-top:24px">最高用到哪一档，下一个视频生效。1080P 高码率和 4K 是大会员才有的；账号拿不到的档 bilibili 不给，' +
-            '会自动用能拿到的最高一档。网速跟不上时播放器自己会往下降。</div>' +
+            '<div class="me-sub" style="margin-top:24px">1080P 高码率和 4K 需要大会员，拿不到时用能拿到的最高一档。</div>' +
             '<div class="section">观看记录</div>' +
             '<div class="actions"><div class="btn focusable" id="btn-clear-history">清空观看记录</div></div>' +
-            '<div class="me-sub" style="margin-top:24px">只清这台电视上、当前账号的记录（「我的」和首页的「继续观看」）。bilibili 账号里的历史不动，手机上照样看得到。</div>' +
+            '<div class="me-sub" style="margin-top:24px">只清这台电视上的，B 站账号里的历史不受影响。</div>' +
             '<div class="section">自动更新</div>' +
             '<div class="actions"><div class="btn focusable" id="btn-autoupdate"></div>' +
             '<div class="btn focusable" id="btn-checkupdate">现在检查</div></div>' +
             '<div class="me-sub" id="update-status" style="margin-top:24px"></div>' +
-            '<div class="me-sub" style="margin-top:12px">新版本从这个项目的 GitHub 仓库下载，带签名，验过才用，下次打开应用时生效；' +
-            '新版本启动不起来会自动退回装的这一版。</div>' +
             '<div class="section">诊断日志</div>' +
             '<div class="actions"><div class="btn focusable" id="btn-diag"></div>' +
             '<div class="btn focusable" id="btn-diag-upload">上传诊断日志</div></div>' +
             '<div class="me-sub" id="diag-status" style="margin-top:24px"></div>' +
-            '<div class="me-sub" style="margin-top:12px">视频放不了、页面加载失败、应用出错时，把最近的运行日志传给开发者查原因；' +
-            '别的问题可以按「上传诊断日志」手动传。不含账号、用户名、视频标题和搜索词，含视频的 BV 号和电视的系统版本。' +
-            '到 GitHub 报问题时附上这台电视的编号。</div>' +
+            '<div class="me-sub" style="margin-top:12px">出问题时把排查需要的日志传给开发者，不含个人隐私。报问题时附上这台电视的编号。</div>' +
             '<div class="section">浏览</div>' +
             '<div class="actions"><div class="btn focusable" id="btn-density"></div></div>' +
-            '<div class="me-sub" style="margin-top:24px">离电视远就选 3 个，标题看得清；坐得近或屏幕小，4 个、5 个能一屏看到更多。</div>' +
+
             '<div class="section">顶栏</div>' +
             '<div class="opt-row" id="bar-chips"></div>' +
-            '<div class="me-sub" style="margin-top:24px">按确认拿起一个页签：左右键挪位置，下键把它从顶栏拿掉，再按一次确认放下。' +
-            '推荐固定在最前，搜索和设置固定在最后；顶栏放不下时，左右移动会带着它滑。</div>' +
+            '<div class="me-sub" style="margin-top:24px">确认键拿起页签，左右键挪位置，下键拿掉，再按确认放下。</div>' +
             '<div class="section">可以加到顶栏的</div>' +
             '<div class="opt-row" id="spare-chips"></div>' +
-            '<div class="me-sub" style="margin-top:24px">按确认加到顶栏最后（搜索前面）。</div></div>';
+            '<div class="me-sub" style="margin-top:24px">按确认加到顶栏。</div></div>';
         var button = el("btn-autoplay");
         function paint() {
             button.textContent = "自动播放下一个：" + (autoNextEnabled() ? "开" : "关");
@@ -3141,22 +3140,20 @@
             paintDm();
         };
 
-        /* Self-update (update.js). Written out plainly: what is installed, what
-         * is running, what is waiting for the next launch, when it last looked. */
+        /* Self-update (update.js), in a few words: only what the viewer would
+         * act on. Which host answered, and why a check failed, are in the log. */
         var upBtn = el("btn-autoupdate"), upStatus = el("update-status");
         function paintUpdate() {
-            var st = Update.status();
+            var st = Update.status(), line = "";
             upBtn.textContent = "自动更新：" + (st.enabled ? "开" : "关");
-            var parts = ["装的是 " + st.packaged];
-            if (st.running && st.running !== st.packaged) { parts.push("正在运行更新的 " + st.running); }
-            if (st.downloaded) { parts.push("已下载 " + st.downloaded + "，下次打开生效"); }
-            if (!st.supported) { parts.push("这台电视的浏览器内核不支持验签名，不会自动更新"); }
-            if (st.checking) { parts.push("正在检查…"); }
-            else if (st.lastCheck) {
-                parts.push("上次检查 " + new Date(st.lastCheck).toTimeString().slice(0, 5) +
-                           (st.lastResult ? "：" + st.lastResult : "") + (st.lastError ? "（" + st.lastError + "）" : ""));
-            }
-            upStatus.textContent = parts.join(" · ");
+            if (!st.supported) { line = "这台电视不支持自动更新"; }
+            else if (st.checking) { line = "正在检查…"; }
+            else if (st.downloaded) { line = "新版本 " + st.downloaded + " 已下载，下次打开应用时生效"; }
+            else if (!st.lastCheck) { line = ""; }
+            else if (st.lastError) { line = "这次没查成，稍后会自动再试"; }
+            else if (st.reinstall) { line = "有新版本，需要重新安装"; }
+            else { line = "已是最新版本"; }
+            upStatus.textContent = line;
         }
         paintUpdate();
         upBtn.onselect = function () {
@@ -3179,11 +3176,12 @@
             diagBtn.textContent = "诊断日志：" + (st.enabled ? "开" : "关");
             if (!st.enabled) { diagStatus.textContent = "已关闭：什么都不记录，也不上传"; return; }
             var parts = ["这台电视的编号 " + st.device];
-            if (!st.configured) { parts.push("这个版本没有接收地址，不会上传"); }
+            if (!st.configured) { parts.push("这个版本不上传"); }
             if (st.sending) { parts.push("正在上传…"); }
             else if (st.last) {
-                parts.push(new Date(st.last.at).toTimeString().slice(0, 5) +
-                           (st.last.ok ? " 已上传（编号 " + st.last.id + "）" : " 没传上：" + st.last.why));
+                /* A refusal the viewer can act on is said; a network failure is not theirs to read. */
+                parts.push(st.last.ok ? new Date(st.last.at).toTimeString().slice(0, 5) + " 已上传"
+                    : /^(刚传过|正在上传|诊断日志关着)/.test(st.last.why) ? st.last.why : "没传上，稍后再试");
             }
             diagStatus.textContent = parts.join(" · ");
         }
@@ -4196,15 +4194,20 @@
      * AVPlay. Not kept across launches — a stray decode error on a newer set
      * should cost one session, not the set's whole life.
      *
-     * Which playlist AVPlay gets: TS where it answers, the same fMP4 otherwise.
-     * TS is what an older native player surely reads, but it is weather — on
-     * 10-22 one room's TS was 404 on one host and silent on the other while
-     * its fMP4 answered everywhere, and AVPlay given the silent one sat in
-     * prepare with neither picture nor error. Hence the look at the playlist
-     * first, and a deadline on the picture: a TS that fails sends the
-     * reconnect to fMP4. */
+     * Which playlist AVPlay gets: TS, from the first host whose playlist
+     * answers. TS is weather — on 10-22 one room's TS was 404 on one host and
+     * silent on the other while its fMP4 answered everywhere, and AVPlay given
+     * the silent one sat in prepare with neither picture nor error; hence the
+     * look at the playlist first and a deadline on the picture. On the Tizen
+     * 3.0 set (10-22, 1.3.6) TS played two rooms out of three; the third's 原画
+     * TS was PLAYER_ERROR_NOT_SUPPORTED_FORMAT, and fMP4 on that AVPlay never
+     * left prepare, three times. So a TS tier that fails before its first
+     * picture steps down a tier, still TS, and fMP4 is the last resort, given
+     * up for the session the first time AVPlay cannot start it. */
     var liveNative = false;
+    var liveFmp4Dead = false;       /* AVPlay could not start HLS-fMP4 this session */
     var liveNativeForce = "";       /* selftest only: "ts" | "fmp4" */
+    var liveFailTsOnce = false;     /* selftest only: the next TS start reports NOT_SUPPORTED_FORMAT */
     var LIVE_DECODE_FAIL = /code=3016 .*data\[0\]=[34](?!\d)|媒体元素出错 code=[34](?!\d)/;
     var LIVE_NATIVE_WAIT = 15000;
 
@@ -4215,7 +4218,7 @@
         if (index < 0) { list = [v]; index = 0; }
         liveRoom = { list: list, index: index, tries: 0, token: 0, item: null,
                      qnName: "", pausedAt: 0, timed: false, failing: false, okTimer: null,
-                     nativeFmt: "", tsFailedFor: "" };
+                     nativeFmt: "", nativeFor: "", nativeQn: 0, nativeUsed: 0, nativeAccept: [], tsBelow: 0, tsGaveUp: false };
         startLiveRoom("");
     }
 
@@ -4226,8 +4229,16 @@
         var token = ++room.token;
         room.item = v;
         room.qnName = "";
+        room.nativeFmt = "";
         room.timed = false;
         room.failing = false;
+        /* What the native route learned is about this room's streams. */
+        if (room.nativeFor !== String(v.roomid)) {
+            room.nativeFor = String(v.roomid);
+            room.nativeQn = 0;
+            room.tsBelow = 0;
+            room.tsGaveUp = false;
+        }
         el("shell").className = "hidden";
         el("pause-glyph").className = "hidden";
         el("loading-title").textContent = v.title || v.author || "";
@@ -4238,25 +4249,35 @@
         API.livePlay(v.roomid, function (p) {
             if (liveRoom !== room || token !== room.token) { return; }
             room.qnName = p.qnName;
-            room.nativeFmt = "";
             var url = p.urls[room.tries % p.urls.length];
-            function open(how, u, note) {
-                report("live", "开 " + v.roomid + "（" + Diag.priv(v.author) + "）" + p.qnName + " " + p.codec + how +
+            function open(qnName, codec, how, u, note) {
+                report("live", "开 " + v.roomid + "（" + Diag.priv(v.author) + "）" + qnName + " " + codec + how +
                        (p.signed ? "，带账号" : "，不带账号") + "，可选 " + p.accept.join("/") +
                        "，主机 " + (u.split("/")[2] || "?") + (why ? "（" + why + "）" : "") + (note || ""));
                 paintLiveUi();
             }
             if (!liveNative) {
-                open("", url);
+                open(p.qnName, p.codec, "", url);
                 Player.playLive(url);
                 return;
             }
-            var ts = p.tsUrls.length ? p.tsUrls[room.tries % p.tsUrls.length] : "";
             function native(fmt, u, note) {
                 if (liveRoom !== room || token !== room.token) { return; }
+                var ts = fmt === "HLS-TS";
                 room.nativeFmt = fmt;
-                open(" " + fmt + " 走 AVPlay", u, note);
+                room.nativeUsed = ts ? p.tsQn : p.qn;
+                room.nativeAccept = ts ? p.tsAcceptQn : p.acceptQn;
+                room.qnName = ts ? p.tsQnName : p.qnName;
+                open(room.qnName, ts ? p.tsCodec : p.codec, " " + fmt + " 走 AVPlay", u, note);
                 Player.playLiveNative(u);
+                if (ts && liveFailTsOnce) {
+                    liveFailTsOnce = false;
+                    setTimeout(function () {
+                        if (liveRoom === room && token === room.token && !room.timed) {
+                            onLiveEvent("error", "PLAYER_ERROR_NOT_SUPPORTED_FORMAT（自测造的）");
+                        }
+                    }, 0);
+                }
                 /* AVPlay can sit in prepare forever without an error. */
                 setTimeout(function () {
                     if (liveRoom === room && token === room.token && !room.timed) {
@@ -4264,21 +4285,41 @@
                     }
                 }, LIVE_NATIVE_WAIT);
             }
-            if (liveNativeForce === "fmp4" || !ts || room.tsFailedFor === String(v.roomid)) {
-                native("HLS-fMP4", url, liveNativeForce ? "（自测指定）" : !ts ? "（没给 HLS-TS）" : "（这个直播间的 TS 刚失败过）");
-                return;
+            function withoutTs(note) {
+                if (!liveFmp4Dead) { native("HLS-fMP4", url, note); return; }
+                report("live", "房间 " + v.roomid + " 没有 AVPlay 放得了的流" + note + "（HLS-fMP4 这次运行里 AVPlay 起不来）");
+                stopLive();
+                trouble("这个直播间现在放不了");
             }
-            if (liveNativeForce === "ts") { native("HLS-TS", ts, "（自测指定）"); return; }
-            peekPlaylist(ts, function (ok, what) {
-                if (ok) { native("HLS-TS", ts); }
-                else { native("HLS-fMP4", url, "（HLS-TS 的清单 " + what + "）"); }
-            });
+            if (liveNativeForce === "fmp4") { native("HLS-fMP4", url, "（自测指定）"); return; }
+            /* Asked for a lower tier and given the one that failed: no loop. */
+            if (room.tsBelow && p.tsQn >= room.tsBelow) {
+                report("live", "要了低于 qn" + room.tsBelow + " 的 TS，给的还是 qn" + p.tsQn + "，这个直播间不再试 TS");
+                room.tsGaveUp = true;
+            }
+            var tsUrls = room.tsGaveUp ? [] : p.tsUrls;
+            if (!tsUrls.length) { withoutTs(room.tsGaveUp ? "（这个直播间的 TS 各档都试过了）" : "（没给 HLS-TS）"); return; }
+            /* Starting from the host this reconnect is due, then the other. */
+            var order = [], i;
+            for (i = 0; i < tsUrls.length; i++) { order.push(tsUrls[(room.tries + i) % tsUrls.length]); }
+            if (liveNativeForce === "ts") { native("HLS-TS", order[0], "（自测指定）"); return; }
+            var said = [];
+            function nextHost(k) {
+                if (liveRoom !== room || token !== room.token) { return; }
+                if (k >= order.length) { withoutTs("（HLS-TS 的清单 " + said.join("；") + "）"); return; }
+                peekPlaylist(order[k], function (ok, what) {
+                    if (ok) { native("HLS-TS", order[k], said.length ? "（前一台 " + said.join("；") + "）" : ""); return; }
+                    said.push((order[k].split("/")[2] || "?") + " " + what);
+                    nextHost(k + 1);
+                });
+            }
+            nextHost(0);
         }, function (whyNot) {
             if (liveRoom !== room || token !== room.token) { return; }
             report("live", "房间 " + v.roomid + " 取不到流：" + whyNot);
             stopLive();
             trouble("这个直播间现在放不了：" + whyNot);
-        });
+        }, liveNative ? room.nativeQn : 0);
     }
 
     /* Does a playlist answer as one, within four seconds? For choosing what
@@ -4339,7 +4380,28 @@
                 startLiveRoom("");
                 return;
             }
-            if (room.nativeFmt === "HLS-TS") { room.tsFailedFor = String(room.item.roomid); }
+            /* A native start that never reached a picture says something about
+             * the stream, not the network: step the TS down a tier (no reconnect
+             * spent), and when TS has no tier left, or fMP4 will not start,
+             * remember it. */
+            if (Player.mode() === "avplay" && !room.timed && /NOT_SUPPORTED|秒没出画面/.test(String(data))) {
+                if (room.nativeFmt === "HLS-fMP4") { liveFmp4Dead = true; }
+                if (room.nativeFmt === "HLS-TS") {
+                    var lower = 0;
+                    for (var q = 0; q < room.nativeAccept.length; q++) {
+                        if (room.nativeAccept[q] < room.nativeUsed && room.nativeAccept[q] > lower) { lower = room.nativeAccept[q]; }
+                    }
+                    if (lower) {
+                        report("live", "HLS-TS " + room.qnName + "（qn" + room.nativeUsed + "）AVPlay 放不了，这个直播间降到 qn" + lower + " 再试 TS");
+                        room.nativeQn = lower;
+                        room.tsBelow = room.nativeUsed;
+                        Player.stop();
+                        startLiveRoom("");
+                        return;
+                    }
+                    room.tsGaveUp = true;
+                }
+            }
             if (++room.tries > 3) {
                 stopLive();
                 trouble("直播断了，重新连了三次也没接上");

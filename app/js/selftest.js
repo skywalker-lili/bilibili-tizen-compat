@@ -1415,10 +1415,47 @@ var SelfTest = (function () {
             return liveNativeStep("fmp4");
         }, 25000, "25 秒没在 AVPlay 上走起来"],
         ["直播：再走 AVPlay，有能用的 HLS-TS 就用 TS，出画面、时间在走", 300, function () {
-            var r = liveNativeStep("auto");
-            if (r === null) { window.__stLiveNative(false); }
-            return r;
+            return liveNativeStep("auto");
         }, 25000, "25 秒没在 AVPlay 上走起来"],
+        /* The Tizen 3.0 set's third room (10-22): its 原画 TS was
+         * NOT_SUPPORTED_FORMAT. Made to order here — the next TS start reports
+         * it — and the room should step down a tier, still on TS. */
+        ["直播：TS 这一档放不了 → 降一档还是 TS，出画面", 300, function () {
+            var ts = probe.tsStep;
+            /* Back to the room the run was in, for the 返回 step below. */
+            function done(r) {
+                window.__stLiveNative(false);
+                for (var i = 0; i < ts.hops; i++) { key(KEY.UP); }
+                return r;
+            }
+            if (!ts) {
+                ts = probe.tsStep = { t0: -1, hops: 0 };
+                window.__stLiveNative(true, "", true);
+                return WAIT;
+            }
+            var st = window.__stLiveRoom() || {};
+            if (!st.fmt) { return WAIT; }
+            /* TS is weather: a room whose TS does not answer cannot show this. */
+            if (st.fmt === "HLS-fMP4" && !st.below) {
+                if (ts.hops >= 3) { post("连着 4 个直播间的 TS 清单都不通，降档这条路走不到，跳过"); return done(null); }
+                ts.hops++;
+                post("直播间 " + st.room + " 的 TS 清单不通，换下一个");
+                key(KEY.DOWN);
+                return WAIT;
+            }
+            if (visible("shell")) { return "退回了网格（看 live: 那几行）"; }
+            if (!st.below || Player.mode() !== "avplay" || visible("player-loading")) { return WAIT; }
+            if (st.fmt !== "HLS-TS" || !(st.used < st.below)) {
+                return done("降档之后是 " + st.fmt + " qn" + st.used + "，应该是低于 qn" + st.below + " 的 TS");
+            }
+            var t = -1;
+            try { if (webapis.avplay.getState() === "PLAYING") { t = webapis.avplay.getCurrentTime(); } } catch (e) {}
+            if (t < 0) { return WAIT; }
+            if (ts.t0 < 0) { ts.t0 = t; return WAIT; }
+            if (t - ts.t0 < 1500) { return WAIT; }
+            post("直播间 " + st.room + " 的 TS 从 qn" + st.below + " 降到 qn" + st.used + "，出画面了");
+            return done(null);
+        }, 75000, "75 秒没降档出画面（看 live: 那几行）"],
         ["直播：返回，焦点落在最后看的那个直播间", 600, function () {
             key(KEY.RETURN);
             var f = document.querySelector("#feed-grid .card.focused");
@@ -1788,11 +1825,12 @@ var SelfTest = (function () {
             key(KEY.ENTER);
             return null;
         }],
-        ["状态行写出编号", 500, function () {
-            var m = /已上传（编号 ([a-z2-9]{8})）/.exec(diagStatus());
-            if (!m) { return /没传上/.test(diagStatus()) ? "没传上：" + diagStatus() : WAIT; }
-            dg.manualId = m[1];
-            post("手动上传：编号 " + m[1]);
+        ["状态行写上传了", 500, function () {
+            var last = Diag.status().last;
+            if (!/已上传/.test(diagStatus())) { return /没传上/.test(diagStatus()) ? "没传上：" + (last && last.why) : WAIT; }
+            if (!last || !last.ok || !last.id) { return "状态行说已上传，Diag.status() 里没有编号"; }
+            dg.manualId = last.id;
+            post("手动上传：编号 " + last.id);
             return null;
         }, 25000, function () { return "25 秒了状态行还是「" + diagStatus() + "」"; }],
         ["开关关掉：不记录，再打开", 300, function () {

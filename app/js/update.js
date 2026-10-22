@@ -10,9 +10,11 @@
  *
  * Applied at the next launch, never mid-run: replacing code under a playing
  * video or an open screen is a class of bug this app does not need. Checked a
- * minute after boot (boot-time fetches lose races to the player — measured
- * here, see CLAUDE.md), never while something is playing, at most every six
- * hours — sooner after a check that failed (waitAfter).
+ * minute after every launch (boot-time fetches lose races to the player —
+ * measured here, see CLAUDE.md), never while something is playing; while the
+ * app stays open, every six hours — sooner after a check that failed
+ * (waitAfter) — and a minute after it comes back from the background if the
+ * last check is over an hour old.
  *
  * This file is part of every bundle, so the checking logic itself can be fixed
  * by an update; boot.js and the key cannot. tools/update-verify.mjs runs the
@@ -33,6 +35,7 @@ var Update = (function () {
     var EVERY = 6 * 3600 * 1000;
     var BUSY_RETRY = 10 * 60000;
     var RETRY = 15 * 60000;              /* after a failed check; doubles per failure in a row */
+    var WAKE_GAP = 3600 * 1000;          /* back from the background: check again if the last one is older */
     var TIMEOUT = 20000;
     var SETTING = "autoUpdate";          /* Settings key; on unless switched off */
     var K_LAST = "bili.update.last";     /* {at, result} of the last finished check */
@@ -209,12 +212,17 @@ var Update = (function () {
         return Math.max(0, Math.min(gap, last.at + gap - t));
     }
 
-    function finish(result, isError, done) {
+    /* more.log goes to the log line only — which host answered is ours to
+     * know, not something for 设置 to show. more.kind marks what 设置 words
+     * differently ("reinstall": a newer version needs a new package). */
+    function finish(result, isError, done, more) {
+        more = more || {};
         checking = false;
         lastError = isError ? result : "";
         var rec = record(parse(get(K_LAST)), result, isError, now());
+        if (more.kind) { rec.kind = more.kind; }
         put(K_LAST, JSON.stringify(rec));
-        report("update", result + (isError && enabled()
+        report("update", result + (more.log || "") + (isError && enabled()
             ? "；" + Math.round(waitAfter(rec, rec.at) / 60000) + " 分钟后再查（连着第 " + rec.fails + " 次没成）" : ""));
         if (done) { done(result); }
     }
@@ -244,7 +252,11 @@ var Update = (function () {
                 if (r.why) { finish(r.why + "（" + host(murl) + "）", true, done); return; }
                 var m = r.manifest, info = Boot.info();
                 var why = judge(m, { running: info.running, shell: Boot.SHELL, bad: parse(get(Boot.keys.bad)) || {}, downloaded: downloaded() });
-                if (why) { finish("不用下载：" + why + "（清单来自 " + host(murl) + "）", false, done); return; }
+                if (why) {
+                    finish("不用下载：" + why, false, done,
+                           { log: "（清单来自 " + host(murl) + "）", kind: (m.shell || 1) > Boot.SHELL ? "reinstall" : "" });
+                    return;
+                }
                 getFirst(m.urls, safe(function (bb, burl) {
                     readBundle(sub, m, bb).then(safe(function (rb) {
                         if (rb.why) { finish(rb.why + "（" + host(burl) + "）", true, done); return; }
@@ -252,8 +264,9 @@ var Update = (function () {
                             finish("存不下：localStorage 放不下 " + Math.round(rb.text.length / 1024) + "K 字的更新包，跳过", true, done);
                             return;
                         }
-                        finish("已下载 " + m.version + "，下次打开生效（正在跑 " + info.running + "，" +
-                               Math.round(bb.byteLength / 1024) + "KB 来自 " + host(burl) + "，" + (now() - t0) + "ms）", false, done);
+                        finish("已下载 " + m.version + "，下次打开生效", false, done,
+                               { log: "（正在跑 " + info.running + "，" + Math.round(bb.byteLength / 1024) + "KB，清单来自 " +
+                                      host(murl) + "，包来自 " + host(burl) + "，" + (now() - t0) + "ms）" });
                     }), function (e) { finish("算 sha256 出错：" + (e && (e.message || e.name)), true, done); });
                 }), function (why2) { finish("取不到 bundle：" + why2, true, done); });
             }), function (e) { finish("验签名出错：" + (e && (e.message || e.name)), true, done); });
@@ -269,11 +282,22 @@ var Update = (function () {
     /* The next check follows from the last record — EVERY when it cannot be
      * read back, so a storage that refuses writes cannot spin this. */
     function rearm() { if (enabled()) { schedule(waitAfter(parse(get(K_LAST)), now()) || EVERY); } }
+    /* The first check of a launch ignores the record. It used to wait out six
+     * hours from the last check, across launches — and on 10-22, with fixes an
+     * hour apart, a set that had checked at 19:37 said nothing on any launch
+     * until 01:37, while the reply in the issue said 「用一会儿，下次打开就是新的」.
+     * Its owner reinstalled every version by hand instead. One manifest per
+     * launch costs a kilobyte. */
+    var firstOfRun = true;
+
     function tick() {
         if (!enabled()) { return; }
         if (busy()) { schedule(BUSY_RETRY); return; }
-        var wait = waitAfter(parse(get(K_LAST)), now());
-        if (wait > 0) { schedule(wait); return; }
+        if (!firstOfRun) {
+            var wait = waitAfter(parse(get(K_LAST)), now());
+            if (wait > 0) { schedule(wait); return; }
+        }
+        firstOfRun = false;
         check(false, rearm);
     }
 
@@ -294,6 +318,16 @@ var Update = (function () {
         /* The settings page's 「现在检查」. The automatic one is re-timed from
          * its result too, so 「N 分钟后再查」 in the log stays true. */
         check: function (done) { check(true, function (r) { rearm(); if (done) { done(r); } }); },
+        /* From app.js when the set comes back after a while: Tizen suspends
+         * more often than it relaunches, so "every launch" alone would miss
+         * a set that is never really closed. */
+        wake: function () {
+            if (!enabled() || checking) { return; }
+            var last = parse(get(K_LAST));
+            if (last && last.at && now() - last.at < WAKE_GAP) { return; }
+            firstOfRun = true;
+            schedule(FIRST_DELAY);
+        },
         enabled: enabled,
         setEnabled: function (on) {
             try { Settings.set(SETTING, !!on); } catch (e) {}
@@ -306,10 +340,11 @@ var Update = (function () {
                 packaged: info.packaged, running: info.running, downloaded: downloaded(),
                 enabled: enabled(), supported: !!subtle(), checking: checking,
                 lastCheck: last.at || 0, lastResult: last.result || "", lastError: lastError || (last.error ? last.result : ""),
+                reinstall: !last.error && last.kind === "reinstall",
                 note: info.note
             };
         },
         _test: { verifySignature: verifySignature, sha256Hex: sha256Hex, judge: judge, readManifest: readManifest, readBundle: readBundle,
-                 record: record, waitAfter: waitAfter, RETRY: RETRY, EVERY: EVERY }
+                 record: record, waitAfter: waitAfter, RETRY: RETRY, EVERY: EVERY, WAKE_GAP: WAKE_GAP }
     };
 })();
