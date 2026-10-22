@@ -130,9 +130,9 @@
      * tab and come back. */
     function showError(message, retry) {
         Diag.incident(message);
-        screenEl.innerHTML = '<div class="empty">' + esc(message) +
+        setScreen('<div class="empty">' + esc(message) +
             '<div class="actions" style="justify-content:center;margin-top:32px">' +
-            '<div class="btn focusable" id="btn-retry">重试</div></div></div>';
+            '<div class="btn focusable" id="btn-retry">重试</div></div></div>');
         var b = el("btn-retry");
         if (b) { b.onselect = retry; }
         Nav.reset("#btn-retry");
@@ -1110,6 +1110,51 @@
      * as it is, and only what watching changed is redrawn: the progress bars
      * of what was played (playedSinceGrid) and 继续观看. */
     var playedSinceGrid = {};
+
+    /* Each feed tab's grid, kept when another screen takes #screen. Rebuilt,
+     * 27 cards took 50–75 ms of script and 140–230 ms to the first frame
+     * (10-22) on every tab switch and every way back from UP 主页 / 我的 / 设置,
+     * and every cover was asked for again. The cards themselves are kept,
+     * detached, for the last three tabs; a stash belongs to the exact list
+     * it was drawn from (feedCache[kind].items), so a refetch or a cache reset
+     * retires it without anyone having to say so. Everything that replaces
+     * #screen goes through setScreen. */
+    var gridStash = {}, stashOrder = [], STASH_MAX = 3;
+    function stashGrid() {
+        var grid = el("feed-grid"), kind = grid && grid.__for;
+        var c = kind && feedCache[kind];
+        if (!c || grid.querySelectorAll(".card").length !== c.items.length) { return; }
+        var frag = document.createDocumentFragment(), top = screenEl.scrollTop;
+        while (screenEl.firstChild) { frag.appendChild(screenEl.firstChild); }
+        gridStash[kind] = { frag: frag, items: c.items, scrollTop: top };
+        for (var i = stashOrder.length - 1; i >= 0; i--) {
+            var k = stashOrder[i];
+            if (k === kind || !feedCache[k] || !gridStash[k] || gridStash[k].items !== feedCache[k].items) {
+                if (k !== kind) { delete gridStash[k]; }
+                stashOrder.splice(i, 1);
+            }
+        }
+        stashOrder.push(kind);
+        while (stashOrder.length > STASH_MAX) { delete gridStash[stashOrder.shift()]; }
+    }
+    function setScreen(html) {
+        stashGrid();
+        screenEl.innerHTML = html;
+    }
+    /* The kept grid for this tab back on screen, if it is still this list. */
+    function unstashGrid(kind, cached) {
+        var st = gridStash[kind];
+        if (!st) { return false; }
+        delete gridStash[kind];
+        for (var i = 0; i < stashOrder.length; i++) { if (stashOrder[i] === kind) { stashOrder.splice(i, 1); break; } }
+        if (st.items !== cached.items) { return false; }
+        /* The first watched video makes 继续观看 appear: that needs the full draw. */
+        if (kind === "rcmd" && !st.frag.querySelector("#resume-row") && resumeRowItems().length) { return false; }
+        setScreen("");
+        screenEl.appendChild(st.frag);
+        screenEl.scrollTop = st.scrollTop;
+        return true;
+    }
     function gridIntact(kind, cached) {
         var grid = el("feed-grid");
         if (!grid || grid.__for !== kind) { return false; }
@@ -1140,7 +1185,7 @@
     function renderGrid(items, emptyText) {
         var head = isUp(state.screen) ? upHeadHtml(state.screen) : "";
         if (!items.length) {
-            screenEl.innerHTML = head + '<div class="empty">' + esc(emptyText || "没有内容") + '</div>';
+            setScreen(head + '<div class="empty">' + esc(emptyText || "没有内容") + '</div>');
             if (head) { loadFollow(el("up-follow"), state.screen.slice(3)); }
             return;
         }
@@ -1159,8 +1204,9 @@
         }
         html += '<div class="grid" id="feed-grid">';
         for (var i = 0; i < items.length; i++) { html += cardHtml(items[i], i); }
-        screenEl.innerHTML = html + "</div>";
+        setScreen(html + "</div>");
         el("feed-grid").__for = state.screen;
+        delete gridStash[state.screen];   /* this draw supersedes a kept one */
         playedSinceGrid = {};
         if (head) { loadFollow(el("up-follow"), state.screen.slice(3)); }
         fitCardMeta(el("feed-grid"));
@@ -2038,8 +2084,9 @@
         var cached = feedCache[kind];
         if (restore && cached) {
             backMark("开头");
-            if (gridIntact(kind, cached)) {
-                backMark("认网格");
+            var kept = !gridIntact(kind, cached) && unstashGrid(kind, cached);
+            if (kept || gridIntact(kind, cached)) {
+                backMark(kept ? "取回网格" : "认网格");
                 refreshPlayedBars();
                 backMark("进度条");
                 /* After the first frame: 40–50 ms here (10-22), and the ring is in
@@ -2062,11 +2109,11 @@
             return;
         }
 
-        screenEl.innerHTML = '<div class="empty">加载中…</div>';
+        setScreen('<div class="empty">加载中…</div>');
         if ((kind === "dynamic" || kind === "toview") && !Auth.isLoggedIn()) {
-            screenEl.innerHTML = '<div class="empty">' +
+            setScreen('<div class="empty">' +
                 (kind === "dynamic" ? "动态" : "稍后再看") +
-                '需要登录，先去「我的」扫码</div>';
+                '需要登录，先去「我的」扫码</div>');
             Nav.reset(tabSelectorFor(kind));
             return;
         }
@@ -2527,7 +2574,7 @@
                 '<div class="key wide go focusable" data-act="go">搜索</div>' +
                 '</div></div><div id="suggests" class="suggests"></div>' +
                 '<div id="results"></div></div>';
-        screenEl.innerHTML = html;
+        setScreen(html);
 
         /* Coming back from a video used to land on an empty keyboard with the
          * results thrown away, so finding one thing meant searching twice. */
@@ -2900,7 +2947,7 @@
         } else if (list.length) {
             html += '<div class="acc-note">每个账号的观看记录和推荐都是分开的，互相看不到。</div>';
         }
-        screenEl.innerHTML = html + '</div>';
+        setScreen(html + '</div>');
 
         var tiles = screenEl.querySelectorAll(".acc");
         for (var j = 0; j < tiles.length; j++) {
@@ -3140,7 +3187,7 @@
             try { version = tizen.application.getCurrentApplication().appInfo.version || ""; }
             catch (e2) {}
         }
-        screenEl.innerHTML = '<div class="mine">' +
+        setScreen('<div class="mine">' +
             '<div class="me"><div class="me-name">设置</div>' +
             '<div class="me-sub">' + (version ? "版本 " + esc(version) : "") + '</div></div>' +
             '<div class="section">账号</div>' +
@@ -3173,7 +3220,7 @@
             '<div class="me-sub" style="margin-top:24px">确认键拿起页签，左右键挪位置，下键拿掉，再按确认放下。</div>' +
             '<div class="section">可以加到顶栏的</div>' +
             '<div class="opt-row" id="spare-chips"></div>' +
-            '<div class="me-sub" style="margin-top:24px">按确认加到顶栏。</div></div>';
+            '<div class="me-sub" style="margin-top:24px">按确认加到顶栏。</div></div>');
         var button = el("btn-autoplay");
         function paint() {
             button.textContent = "自动播放下一个：" + (autoNextEnabled() ? "开" : "关");
@@ -3335,10 +3382,10 @@
         var title = kind === "folders" ? "我的收藏" :
                     kind === "following" ? "关注的 UP 主" : mineView.title;
 
-        screenEl.innerHTML = '<div class="library-head">' +
+        setScreen('<div class="library-head">' +
             '<div class="btn ghost focusable" id="mine-back">返回</div>' +
             '<div class="me-name">' + esc(title) + '</div></div>' +
-            '<div id="mine-library"><div class="empty">读取中…</div></div>';
+            '<div id="mine-library"><div class="empty">读取中…</div></div>');
         el("mine-back").onselect = function () {
             mineView = kind === "videos"
                 ? { kind: "folders", id: 0, title: "" }
@@ -3475,7 +3522,7 @@
         }
         var token = newView();
         var accId = Accounts.activeId();
-        screenEl.innerHTML = '<div class="mine"><div class="empty">检查登录状态…</div></div>';
+        setScreen('<div class="mine"><div class="empty">检查登录状态…</div></div>');
 
         /* Started here rather than from inside the nav callback. The two have
          * nothing to say to each other, and one after the other meant this
@@ -3581,7 +3628,7 @@
             }
             html += '<div class="section">观看历史</div><div id="hist"></div>' +
                     '<div id="hist-note"></div></div>';
-            screenEl.innerHTML = html;
+            setScreen(html);
             if (me.isLogin) {
                 el("mine-favorites").onselect = function () { openMineLibrary("folders"); };
                 el("mine-following").onselect = function () { openMineLibrary("following"); };
@@ -3644,7 +3691,7 @@
 
         }, function (why) {
             if (!stillViewing(token)) { return; }
-            screenEl.innerHTML = '<div class="empty">无法检查登录状态：' + esc(why) + '</div>';
+            setScreen('<div class="empty">无法检查登录状态：' + esc(why) + '</div>');
             Nav.reset(".tab");
         });
     }
@@ -3660,7 +3707,7 @@
         var again = !!intoId;
         var more = Accounts.count() > 0;
 
-        screenEl.innerHTML = '<div class="login">' +
+        setScreen('<div class="login">' +
             '<div class="login-left">' +
             '<h2>' + (again ? "重新扫码登录这个账号"
                             : (more ? "添加一个账号" : "用 bilibili App 扫码登录")) + '</h2>' +
@@ -3672,7 +3719,7 @@
             '<div class="btn focusable" id="btn-refresh">重新获取</div>' +
             (more ? '<div class="btn ghost focusable" id="btn-back">返回账号列表</div>' : '') +
             '</div></div>' +
-            '<div class="login-right" id="qrbox"></div></div>';
+            '<div class="login-right" id="qrbox"></div></div>');
 
         el("btn-refresh").onselect = function () { renderLogin(intoId); };
         if (more) { el("btn-back").onselect = function () { renderAccounts(false); }; }
