@@ -7685,7 +7685,10 @@
             renderMine();
             return;
         }
-        if (state.screen !== "rcmd") { loadFeed("rcmd"); return; }
+        /* Restored, like pressing the 推荐 tab: going back to it used to fetch a
+         * new page and drop the place (and every cover), while the tab itself
+         * has always come back to where you were. */
+        if (state.screen !== "rcmd") { loadFeed("rcmd", true); return; }
         try { tizen.application.getCurrentApplication().exit(); } catch (e) {}
     });
 
