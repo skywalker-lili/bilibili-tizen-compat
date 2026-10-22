@@ -20,7 +20,12 @@
 var Update = (function () {
     "use strict";
 
+    /* Our own domain first: in mainland China raw.githubusercontent.com is
+     * DNS-poisoned and jsDelivr comes and goes. It relays GitHub (see
+     * server/diag-worker.mjs in bilibili-tizen) and needs no trust — the
+     * manifest is signed and names the bundle's sha256. */
     var MANIFESTS = [
+        "https://diag.titdev.nl/v1/update/bilibili-tizen/manifest.json",
         "https://raw.githubusercontent.com/titlog/bilibili-tizen/master/update/manifest.json",
         "https://cdn.jsdelivr.net/gh/titlog/bilibili-tizen@master/update/manifest.json"
     ];
@@ -239,7 +244,7 @@ var Update = (function () {
                 if (r.why) { finish(r.why + "（" + host(murl) + "）", true, done); return; }
                 var m = r.manifest, info = Boot.info();
                 var why = judge(m, { running: info.running, shell: Boot.SHELL, bad: parse(get(Boot.keys.bad)) || {}, downloaded: downloaded() });
-                if (why) { finish("不用下载：" + why, false, done); return; }
+                if (why) { finish("不用下载：" + why + "（清单来自 " + host(murl) + "）", false, done); return; }
                 getFirst(m.urls, safe(function (bb, burl) {
                     readBundle(sub, m, bb).then(safe(function (rb) {
                         if (rb.why) { finish(rb.why + "（" + host(burl) + "）", true, done); return; }

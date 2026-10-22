@@ -111,6 +111,37 @@ async function getOne(env, url) {
   return row ? json(row) : json({ error: "not found" }, 404);
 }
 
+/* Self-update, relayed (2026-10-22). The apps fetch their signed manifest and
+ * bundles from GitHub and jsDelivr, and in mainland China neither is
+ * dependable — raw.githubusercontent.com is DNS-poisoned, jsDelivr lost its
+ * licence there in 2021. This domain is reachable, so it carries a copy: the
+ * manifest from master, a bundle from its release tag. Nothing here can be
+ * trusted by the television and nothing needs to be — the manifest is signed
+ * and names the bundle's sha256, so a changed byte is refused on the set. */
+const UPSTREAM = "https://raw.githubusercontent.com/titlog/";
+const MANIFEST_TTL = 300;                // a release reaches the sets within five minutes
+const BUNDLE_TTL = 30 * 86400;           // a tag's bundle never changes
+
+async function relay(url) {
+  const m = /^\/v1\/update\/([a-z-]+)\/(?:manifest\.json|bundle-(\d{1,4}\.\d{1,4}\.\d{1,4})\.json)$/.exec(url.pathname);
+  if (!m || !APPS.has(m[1])) return json({ error: "not found" }, 404);
+  const [, app, version] = m;
+  const src = version
+    ? `${UPSTREAM}${app}/v${version}/update/bundle-${version}.json`
+    : `${UPSTREAM}${app}/master/update/manifest.json`;
+  const ttl = version ? BUNDLE_TTL : MANIFEST_TTL;
+  let r;
+  try {
+    r = await fetch(src, { cf: { cacheTtl: ttl, cacheEverything: true } });
+  } catch (e) {
+    return json({ error: "upstream unreachable" }, 502);
+  }
+  if (!r.ok) return json({ error: "upstream " + r.status }, r.status === 404 ? 404 : 502);
+  return new Response(r.body, {
+    headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "public, max-age=" + ttl, ...CORS },
+  });
+}
+
 async function prune(env, now = Date.now()) {
   await env.DB.prepare("DELETE FROM uploads WHERE at < ?").bind(now - KEEP_MS).run();
   await env.DB.prepare("DELETE FROM daily WHERE day < ?").bind(new Date(now - KEEP_MS).toISOString().slice(0, 10)).run();
@@ -127,9 +158,10 @@ export default {
     if (url.pathname === "/v1/get" && request.method === "GET") {
       return authed(request, env) ? getOne(env, url) : json({ error: "unauthorized" }, 401);
     }
+    if (url.pathname.startsWith("/v1/update/") && request.method === "GET") return relay(url);
     return json({ error: "not found" }, 404);
   },
   async scheduled(event, env) { await prune(env); },
 };
 
-export const _test = { prune, PER_DEVICE_HOUR, PER_DAY, KEEP_MS };
+export const _test = { prune, PER_DEVICE_HOUR, PER_DAY, KEEP_MS, MANIFEST_TTL, BUNDLE_TTL };

@@ -1,6 +1,6 @@
 # 诊断日志的接收端
 
-电视上的 `app/js/diag.js` 出事时（或在设置里手动）把最近的运行日志传到这里。一个
+电视上的 `app/js/diag.js` 出事时（或在设置里手动）把最近的运行日志传到这里；三个应用的自更新也从这里取一份 GitHub 的中转（见「接口」）。一个
 Cloudflare Worker（`diag-worker.mjs`）加一个 D1 数据库（`schema.sql`），免费额度够用。
 bilibili-tizen、douyin-tizen、telegram-tizen 共用，按 `app` 字段分开。
 
@@ -24,6 +24,11 @@ bilibili-tizen、douyin-tizen、telegram-tizen 共用，按 `app` 字段分开�
 | `POST /v1/upload` | `text/plain` 的 JSON：`{v:1, app, device, version, running, reason, manual, tvAt, tz, ua, lines:[…]}`，回 `{id}` |
 | `GET /v1/list?device=&app=&since=&limit=` | 带 `Authorization: Bearer <令牌>`；只有元数据 |
 | `GET /v1/get?id=` | 带令牌；整份，`body` 是按行拼起来的日志 |
+| `GET /v1/update/<应用>/manifest.json` | 自更新的清单，转 GitHub 上 master 的那份，缓存 5 分钟；不要令牌 |
+| `GET /v1/update/<应用>/bundle-<版本>.json` | 自更新的包，转 `v<版本>` 这个 tag 上的，缓存 30 天 |
+
+后两个是给大陆的电视用的（raw.githubusercontent.com 被 DNS 污染，jsDelivr 时通时断）。中转不需要被信任：清单有签名，
+里面写着包的 sha256，改过的电视不收。三个应用的 `update.js` 都先问这里，再问 GitHub、jsDelivr。
 
 每天的定时触发（cron）删掉 30 天前的记录。
 

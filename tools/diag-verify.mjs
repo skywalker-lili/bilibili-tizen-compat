@@ -369,5 +369,38 @@ await t("diag.js 发出的那份，worker 收得下", async () => {
   assert.equal(up.status, 200, JSON.stringify(up.body));
 });
 
+await t("worker：自更新的中转——清单取 master、包取 tag，别的一概不转", async () => {
+  const realFetch = globalThis.fetch, asked = [];
+  globalThis.fetch = async (u, init) => {
+    asked.push({ u: String(u), ttl: init && init.cf && init.cf.cacheTtl });
+    if (/bundle-9\.9\.9/.test(u)) return new Response("nope", { status: 404 });
+    if (/bundle-8\.8\.8/.test(u)) throw new TypeError("network");
+    return new Response(JSON.stringify({ from: String(u) }), { status: 200 });
+  };
+  try {
+    const env = { DB: d1(), READ_TOKEN: "x" };
+    const man = await call(env, "GET", "/v1/update/douyin-tizen/manifest.json");
+    assert.equal(man.status, 200);
+    assert.equal(man.body.from, "https://raw.githubusercontent.com/titlog/douyin-tizen/master/update/manifest.json");
+    assert.equal(man.headers.get("access-control-allow-origin"), "*");
+    assert.equal(asked[0].ttl, workerTest.MANIFEST_TTL);
+    const b = await call(env, "GET", "/v1/update/bilibili-tizen/bundle-1.3.5.json");
+    assert.equal(b.body.from, "https://raw.githubusercontent.com/titlog/bilibili-tizen/v1.3.5/update/bundle-1.3.5.json");
+    assert.equal(asked[1].ttl, workerTest.BUNDLE_TTL);
+    assert.equal((await call(env, "GET", "/v1/update/bilibili-tizen/bundle-9.9.9.json")).status, 404);
+    assert.equal((await call(env, "GET", "/v1/update/bilibili-tizen/bundle-8.8.8.json")).status, 502);
+    const before = asked.length;
+    for (const p of ["/v1/update/other-app/manifest.json", "/v1/update/bilibili-tizen/README.md",
+                     "/v1/update/bilibili-tizen/../../x/manifest.json", "/v1/update/bilibili-tizen/bundle-1.3.json",
+                     "/v1/update/bilibili-tizen/manifest.json?x=1/../app"]) {
+      const r = await call(env, "GET", p);
+      if (p.endsWith("?x=1/../app")) { assert.equal(r.status, 200, p); continue; }   /* the query is not part of the path */
+      assert.equal(r.status, 404, p);
+    }
+    assert.equal(asked.length, before + 1, "only the well-formed one went upstream");
+    assert.equal((await call(env, "POST", "/v1/update/bilibili-tizen/manifest.json", { body: "x" })).status, 404);
+  } finally { globalThis.fetch = realFetch; }
+});
+
 if (failures) { console.log(failures + " 项失败"); process.exit(1); }
 console.log("诊断日志：全部通过");
