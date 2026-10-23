@@ -2456,6 +2456,14 @@
         /* Each step starts from what the room has not yet learned. */
         if (on && liveRoom) { liveRoom.nativeFor = ""; Player.stop(); startLiveRoom(""); }
     };
+    window.__stLiveUnsupportedOnce = function () {
+        liveFail4032Once = true;
+        if (liveRoom) { liveRoom.nativeFor = ""; Player.stop(); startLiveRoom(""); }
+    };
+    window.__stLiveNoFmp4 = function (on) {
+        liveNoFmp4 = !!on;
+        if (on && liveRoom) { liveRoom.nativeFor = ""; Player.stop(); startLiveRoom(""); }
+    };
     window.__stLiveRoom = function () {
         return liveRoom && { room: liveRoom.nativeFor, fmt: liveRoom.nativeFmt, used: liveRoom.nativeUsed,
                              below: liveRoom.tsBelow, gaveUp: liveRoom.tsGaveUp, token: liveRoom.token, moved: liveRoom.moved };
@@ -4312,12 +4320,24 @@
      * left prepare, three times. So a TS tier that fails before its first
      * picture steps down a tier, still TS, and fMP4 is the last resort, given
      * up for the session the first time AVPlay cannot start it. "Before its
-     * first picture" means before AVPlay's clock moves (LIVE_NATIVE_STALL). */
+     * first picture" means before AVPlay's clock moves (LIVE_NATIVE_STALL).
+     *
+     * A room with TS and no fMP4 goes to AVPlay on any set, without turning
+     * liveNative on: Shaka has nothing to play, AVPlay has. Until 10-23 that
+     * room was 「没有 HLS-fMP4 的流」 and closed (issue #7, a Tizen 4.0 set).
+     * So does a room whose playlist Shaka finds nothing playable in (4032,
+     * LIVE_UNSUPPORTED): reconnecting fetched the same refusal three times. */
     var liveNative = false;
     var liveFmp4Dead = false;       /* AVPlay could not start HLS-fMP4 this session */
     var liveNativeForce = "";       /* selftest only: "ts" | "fmp4" */
     var liveFailTsOnce = false;     /* selftest only: the next TS start reports NOT_SUPPORTED_FORMAT */
+    var liveNoFmp4 = false;         /* selftest only: every room answers as if it had TS and no fMP4 */
+    var liveFail4032Once = false;   /* selftest only: the next Shaka start reports 4032 */
     var LIVE_DECODE_FAIL = /code=3016 .*data\[0\]=[34](?!\d)|媒体元素出错 code=[34](?!\d)/;
+    /* Shaka's CONTENT_UNSUPPORTED_BY_BROWSER: nothing in this room's playlist
+     * is playable here. 10-23 one room on the Tizen 9 set, four times running,
+     * every other room fine — so this room goes to AVPlay, not the session. */
+    var LIVE_UNSUPPORTED = /code=4032 /;
     var LIVE_NATIVE_WAIT = 15000;
     /* For AVPlay 「到画面」 only means prepared. 10-22 evening, 1.3.6/1.3.7 on the
      * Tizen 3.0 set: 「部分直播不能播放」 and not one upload — whatever those rooms
@@ -4337,7 +4357,7 @@
         liveRoom = { list: list, index: index, tries: 0, token: 0, item: null,
                      qnName: "", pausedAt: 0, timed: false, failing: false, okTimer: null,
                      nativeFmt: "", nativeFor: "", nativeQn: 0, nativeUsed: 0, nativeAccept: [], tsBelow: 0, tsGaveUp: false, steps: 0,
-                     timedAt: 0, moved: false, clockPos: -1, clockMovedAt: 0, bufAt: 0 };
+                     timedAt: 0, moved: false, clockPos: -1, clockMovedAt: 0, bufAt: 0, mseRefused: false };
         startLiveRoom("");
     }
 
@@ -4361,6 +4381,7 @@
             room.tsBelow = 0;
             room.tsGaveUp = false;
             room.steps = 0;
+            room.mseRefused = false;
         }
         el("shell").className = "veiled";
         el("pause-glyph").className = "hidden";
@@ -4371,19 +4392,30 @@
         Player.startTiming();
         API.livePlay(v.roomid, function (p) {
             if (liveRoom !== room || token !== room.token) { return; }
-            room.qnName = p.qnName;
-            var url = p.urls[room.tries % p.urls.length];
+            if (liveNoFmp4) { p.urls = []; p.shape = "（自测：当作没有 HLS-fMP4）" + p.shape; }
+            room.qnName = p.urls.length ? p.qnName : p.tsQnName;
+            var url = p.urls.length ? p.urls[room.tries % p.urls.length] : "";
             function open(qnName, codec, how, u, note) {
                 report("live", "开 " + v.roomid + "（" + Diag.priv(v.author) + "）" + qnName + " " + codec + how +
                        (p.signed ? "，带账号" : "，不带账号") + "，可选 " + p.accept.join("/") +
                        "，主机 " + (u.split("/")[2] || "?") + (why ? "（" + why + "）" : "") + (note || ""));
                 paintLiveUi();
             }
-            if (!liveNative) {
+            if (!liveNative && url && !room.mseRefused) {
                 open(p.qnName, p.codec, "", url);
                 Player.playLive(url);
+                if (liveFail4032Once) {
+                    liveFail4032Once = false;
+                    setTimeout(function () {
+                        if (liveRoom === room && token === room.token && !room.timed) {
+                            onLiveEvent("error", "直播：加载失败 code=4032 category=4 severity=2（自测造的）");
+                        }
+                    }, 0);
+                }
                 return;
             }
+            /* No fMP4 for Shaka: the TS is AVPlay's on any set (issue #7). */
+            if (!url) { report("live", "房间 " + v.roomid + " 没有 HLS-fMP4，给的是 " + p.shape); }
             function native(fmt, u, note) {
                 if (liveRoom !== room || token !== room.token) { return; }
                 var ts = fmt === "HLS-TS";
@@ -4422,12 +4454,13 @@
                 }, 1000);
             }
             function withoutTs(note) {
-                if (!liveFmp4Dead) { native("HLS-fMP4", url, note); return; }
-                report("live", "房间 " + v.roomid + " 没有 AVPlay 放得了的流" + note + "（HLS-fMP4 这次运行里 AVPlay 起不来）");
+                if (!liveFmp4Dead && url) { native("HLS-fMP4", url, note); return; }
+                report("live", "房间 " + v.roomid + " 没有 AVPlay 放得了的流" + note +
+                       (url ? "（HLS-fMP4 这次运行里 AVPlay 起不来）" : "（也没有 HLS-fMP4）"));
                 stopLive();
                 trouble("这个直播间现在放不了");
             }
-            if (liveNativeForce === "fmp4") { native("HLS-fMP4", url, "（自测指定）"); return; }
+            if (liveNativeForce === "fmp4" && url) { native("HLS-fMP4", url, "（自测指定）"); return; }
             /* Asked for a lower tier and given the one that failed: no loop. */
             if (room.tsBelow && p.tsQn >= room.tsBelow) {
                 report("live", "要了低于 qn" + room.tsBelow + " 的 TS，给的还是 qn" + p.tsQn + "，这个直播间不再试 TS");
@@ -4450,12 +4483,12 @@
                 });
             }
             nextHost(0);
-        }, function (whyNot) {
+        }, function (whyNot, shape) {
             if (liveRoom !== room || token !== room.token) { return; }
-            report("live", "房间 " + v.roomid + " 取不到流：" + whyNot);
+            report("live", "房间 " + v.roomid + " 取不到流：" + whyNot + (shape ? "（" + shape + "）" : ""));
             stopLive();
             trouble("这个直播间现在放不了：" + whyNot);
-        }, liveNative ? room.nativeQn : 0);
+        }, room.nativeQn);
     }
 
     /* Does a playlist answer as one, within four seconds? For choosing what
@@ -4536,6 +4569,13 @@
             if (!liveNative && Player.mode() === "live" && LIVE_DECODE_FAIL.test(String(data))) {
                 liveNative = true;
                 report("live", "这台电视的 MSE 解不了直播流，这个和之后的直播间都改走 AVPlay");
+                Player.stop();
+                startLiveRoom("");
+                return;
+            }
+            if (!liveNative && !room.mseRefused && Player.mode() === "live" && LIVE_UNSUPPORTED.test(String(data))) {
+                room.mseRefused = true;
+                report("live", "这个直播间的流 MSE 放不了（4032），这个直播间改走 AVPlay");
                 Player.stop();
                 startLiveRoom("");
                 return;

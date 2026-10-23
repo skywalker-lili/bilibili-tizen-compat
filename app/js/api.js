@@ -449,8 +449,12 @@ var API = (function () {
          * first (a signed-in viewer may be given more), then without it if the
          * signed request is refused. `qn` asks for a lower tier (AVPlay stepping
          * down when a TS tier will not play); 0 is the best there is.
+         * A room with TS and no fMP4 is still a room (urls empty; AVPlay plays
+         * the TS): issue #7, 10-23, a Tizen 4.0 set was told 「没有 HLS-fMP4 的流」
+         * and nothing said what the room did offer — `shape` says, for the log.
          * onOk({urls, qn, qnName, codec, accept, acceptQn,
-         *       tsUrls, tsQn, tsQnName, tsCodec, tsAcceptQn, signed}). */
+         *       tsUrls, tsQn, tsQnName, tsCodec, tsAcceptQn, signed, shape});
+         * onFail(why, shape) when neither is there. */
         livePlay: function (roomId, onOk, onFail, qn) {
             var url = LIVE + "/xlive/web-room/v2/index/getRoomPlayInfo?room_id=" + encodeURIComponent(roomId) +
                       "&protocol=1&format=1,2&codec=0,1&qn=" + (qn || 10000) + "&platform=web&ptype=8&dolby=5&panorama=1";
@@ -475,22 +479,45 @@ var API = (function () {
             function urlsOf(b) {
                 return b ? b.hosts.map(function (u) { return u.host + b.base + (u.extra || ""); }) : [];
             }
+            /* Every protocol/format/codec offered, with its tier and first host:
+             * 「http_hls/ts(avc qn10000 d1--cn-gotcha104 ×2)」. */
+            function shapeOf(pu) {
+                var out = [];
+                (pu.stream || []).forEach(function (s) {
+                    (s.format || []).forEach(function (f) {
+                        var cs = (f.codec || []).map(function (c) {
+                            var hosts = c.url_info || [];
+                            var h = hosts.length ? String(hosts[0].host || "").replace(/^https?:\/\//, "").split(".")[0] : "无主机";
+                            return c.codec_name + " qn" + c.current_qn + " " + h + (hosts.length > 1 ? " ×" + hosts.length : "");
+                        });
+                        out.push(s.protocol_name + "/" + f.format_name + "(" + cs.join("，") + ")");
+                    });
+                });
+                return out.join(" ") || "一路流都没有";
+            }
             function pick(d, signed) {
                 if (!d || Number(d.live_status) !== 1) { onFail("没在直播（live_status=" + (d && d.live_status) + "）"); return; }
                 if (d.encrypted && !d.pwd_verified) { onFail("加了密码的直播间"); return; }
                 var pu = (d.playurl_info && d.playurl_info.playurl) || {};
                 var names = {};
                 (pu.g_qn_desc || []).forEach(function (q) { names[q.qn] = q.desc; });
-                var best = bestOf(pu, "fmp4"), ts = bestOf(pu, "ts") || { qn: 0, codec: "", hosts: [], accept: [] };
-                if (!best || !best.hosts.length) { onFail("没有 HLS-fMP4 的流"); return; }
+                var none = { qn: 0, codec: "", hosts: [], accept: [] };
+                var best = bestOf(pu, "fmp4"), ts = bestOf(pu, "ts");
+                if (!best || !best.hosts.length) { best = null; }
+                if (!ts || !ts.hosts.length) { ts = null; }
+                var shape = d.playurl_info ? shapeOf(pu) : "没有 playurl_info";
+                if (!best && !ts) { onFail("没给电视放得了的流", shape); return; }
+                var urls = urlsOf(best);
+                best = best || none;
+                ts = ts || none;
                 onOk({
-                    urls: urlsOf(best),
+                    urls: urls,
                     qn: best.qn, qnName: names[best.qn] || ("qn" + best.qn), codec: best.codec,
                     accept: best.accept.map(function (q) { return names[q] || String(q); }),
                     acceptQn: best.accept.map(Number),
                     tsUrls: urlsOf(ts), tsQn: ts.qn, tsQnName: names[ts.qn] || ("qn" + ts.qn), tsCodec: ts.codec,
                     tsAcceptQn: ts.accept.map(Number),
-                    signed: signed
+                    signed: signed, shape: shape
                 });
             }
             getJson(url, function (d) { pick(d, signedIn); }, function (why) {

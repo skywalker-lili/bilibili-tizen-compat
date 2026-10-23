@@ -178,4 +178,45 @@ const after = calls.length;
 failed((ok, fail) => API.videoFavorite(99, 12, false, ok, fail), /登录凭证/);
 assert.equal(calls.length, after);
 assert.equal(replies.length, 0);
-console.log("✓ compat API: library, comments, auth boundaries and video writes");
+// Live (issue #7): a room with TS and no fMP4 still plays (AVPlay takes the
+// TS); one with neither fails, and says what the room did offer.
+function liveRoom(hls) {
+  const hosts = [{ host: "https://d1--cn-gotcha104.bilivideo.com", extra: "x=1" },
+                 { host: "https://d1--cn-gotcha204.bilivideo.com", extra: "x=2" }];
+  return { code: 0, data: { live_status: 1, playurl_info: { playurl: {
+    g_qn_desc: [{ qn: 10000, desc: "原画" }, { qn: 250, desc: "超清" }],
+    stream: [
+      { protocol_name: "http_stream", format: [{ format_name: "flv", codec: [{ codec_name: "avc", current_qn: 10000,
+        base_url: "/live/a.flv?", accept_qn: [10000], url_info: [{ host: "https://d1--ov-gotcha105.bilivideo.com", extra: "" }] }] }] },
+      { protocol_name: "http_hls", format: hls.map((name) => ({ format_name: name, codec: [{ codec_name: "avc", current_qn: 10000,
+        base_url: `/live/${name}.m3u8?`, accept_qn: [10000, 250], url_info: hosts }] })) },
+    ] } } } };
+}
+function liveFails(body) {
+  let got;
+  respond(body);
+  API.livePlay(5, () => assert.fail("a room with nothing to play played"), (why, shape) => { got = { why, shape }; });
+  take();
+  assert.ok(got, "failure callback was not called");
+  return got;
+}
+respond(liveRoom(["fmp4", "ts"]));
+let live = result((ok, fail) => API.livePlay(5, ok, fail))[0];
+take();
+assert.equal(live.urls[0], "https://d1--cn-gotcha104.bilivideo.com/live/fmp4.m3u8?x=1");
+assert.equal(live.tsUrls.length, 2);
+respond(liveRoom(["ts"]));
+live = result((ok, fail) => API.livePlay(5, ok, fail))[0];
+take();
+assert.deepEqual(Array.from(live.urls), []);
+assert.equal(live.tsUrls[1], "https://d1--cn-gotcha204.bilivideo.com/live/ts.m3u8?x=2");
+assert.equal(live.tsQnName, "原画");
+assert.deepEqual(Array.from(live.tsAcceptQn), [10000, 250]);
+assert.match(live.shape, /http_hls\/ts\(avc qn10000 d1--cn-gotcha104 ×2\)/);
+let nothing = liveFails(liveRoom([]));
+assert.equal(nothing.why, "没给电视放得了的流");
+assert.equal(nothing.shape, "http_stream/flv(avc qn10000 d1--ov-gotcha105)");
+nothing = liveFails({ code: 0, data: { live_status: 1, playurl_info: null } });
+assert.equal(nothing.shape, "没有 playurl_info");
+assert.equal(replies.length, 0);
+console.log("✓ compat API: library, comments, auth boundaries, video writes and live streams");

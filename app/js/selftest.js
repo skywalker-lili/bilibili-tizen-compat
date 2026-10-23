@@ -83,6 +83,17 @@ var SelfTest = (function () {
         return t - probe[k].t0 >= 1500 ? null : WAIT;
     }
 
+    /* A live room is playing: on Shaka the video element moves; a room that
+     * went to AVPlay by itself (4032, no fMP4) has AVPlay's clock instead. */
+    function livePlaying() {
+        if (visible("player-loading")) { return false; }
+        if (Player.mode() === "avplay") {
+            try { return webapis.avplay.getState() === "PLAYING" && webapis.avplay.getCurrentTime() > 1000; } catch (e) { return false; }
+        }
+        var v = document.getElementById("html5-video");
+        return !!(v && v.currentTime > 1 && !v.paused);
+    }
+
     function rect(id) {
         var n = document.getElementById(id);
         var r = n && n.getBoundingClientRect();
@@ -1396,12 +1407,10 @@ var SelfTest = (function () {
                 key(KEY.ENTER);
                 return WAIT;
             }
-            var v = document.getElementById("html5-video");
             if (visible("shell")) { return "退回了网格（直播间打不开，看 live: 那几行）"; }
-            return (!visible("player-loading") && v && v.currentTime > 1 && !v.paused) ? null : WAIT;
-        }, 20000, "20 秒没出画面"],
+            return livePlaying() ? null : WAIT;
+        }, 30000, "30 秒没出画面"],
         ["直播：下键换一个直播间，出画面", 300, function () {
-            var v = document.getElementById("html5-video");
             if (!probe.liveNext) {
                 probe.liveNext = true;
                 probe.liveWas = document.getElementById("live-meta").textContent;
@@ -1410,8 +1419,27 @@ var SelfTest = (function () {
             }
             if (visible("shell")) { return "退回了网格"; }
             var moved = document.getElementById("live-meta").textContent !== probe.liveWas;
-            return (moved && !visible("player-loading") && v && v.currentTime > 1 && !v.paused) ? null : WAIT;
-        }, 20000, "换台 20 秒没出画面"],
+            return (moved && livePlaying()) ? null : WAIT;
+        }, 30000, "换台 30 秒没出画面"],
+        /* 10-23: one room here was Shaka 4032 (nothing in its playlist this
+         * engine plays) four times running, and closed. Made to order — the
+         * next Shaka start reports it — the room should move to AVPlay by
+         * itself, the other rooms staying on Shaka. */
+        ["直播：Shaka 放不了这个直播间（4032）→ 这个直播间改走 AVPlay，时间在走", 300, function () {
+            var k = probe.unsup;
+            if (!k) {
+                k = probe.unsup = { t0: -1 };
+                window.__stLiveUnsupportedOnce();
+                return WAIT;
+            }
+            if (visible("shell")) { return "退回了网格（看 live: 那几行）"; }
+            if (Player.mode() !== "avplay" || visible("player-loading")) { return WAIT; }
+            var t = -1;
+            try { if (webapis.avplay.getState() === "PLAYING") { t = webapis.avplay.getCurrentTime(); } } catch (e) {}
+            if (t < 0) { return WAIT; }
+            if (k.t0 < 0) { k.t0 = t; return WAIT; }
+            return t - k.t0 >= 1500 ? null : WAIT;
+        }, 60000, "60 秒没在 AVPlay 上走起来（看 live: 那几行）"],
         /* Tizen 3.0's MSE cannot decode live (issue #5, 10-22), so there live
          * goes to AVPlay — fMP4, or TS when the TS playlist answers. No set
          * here takes that route by itself; this is where it gets played. The
@@ -1484,6 +1512,44 @@ var SelfTest = (function () {
             post("直播间 " + st.room + " 的 TS 从 qn" + st.below + " 降到 qn" + st.used + "（" + st.fmt + "），出画面了");
             return done(null);
         }, 75000, "75 秒没降档出画面（看 live: 那几行）"],
+        /* Issue #7 (10-23, a Tizen 4.0 set): a room offering no fMP4 was closed
+         * with 「没有 HLS-fMP4 的流」 whatever else it had. With only TS it goes
+         * to AVPlay, on any set. TS not answering here is weather: the room
+         * then closes with the plain message, and is opened again (on MSE) for
+         * the 返回 step below. */
+        ["直播：没有 HLS-fMP4 的直播间走 AVPlay 放 TS", 300, function () {
+            var nf = probe.noFmp4;
+            if (!nf) {
+                nf = probe.noFmp4 = { t0: -1, reopened: false };
+                window.__stLiveNoFmp4(true);
+                return WAIT;
+            }
+            if (nf.reopened) {
+                if (visible("shell")) { return "重新打开直播间又退回了网格（看 live: 那几行）"; }
+                var v = document.getElementById("html5-video");
+                return (!visible("player-loading") && v && v.currentTime > 1 && !v.paused) ? null : WAIT;
+            }
+            if (visible("shell")) {
+                var said = document.getElementById("toast").textContent;
+                window.__stLiveNoFmp4(false);
+                if (/fMP4|没给/.test(said)) { return "没有 fMP4 的直播间被关掉了：" + said; }
+                post("这个直播间的 TS 清单不通，关了（「" + said + "」），重新打开");
+                nf.reopened = true;
+                Nav.focus(document.querySelector('#feed-grid .card[data-i="1"]'));
+                key(KEY.ENTER);
+                return WAIT;
+            }
+            var st = window.__stLiveRoom() || {};
+            if (st.fmt !== "HLS-TS" || Player.mode() !== "avplay" || visible("player-loading")) { return WAIT; }
+            var t = -1;
+            try { if (webapis.avplay.getState() === "PLAYING") { t = webapis.avplay.getCurrentTime(); } } catch (e) {}
+            if (t < 0) { return WAIT; }
+            if (nf.t0 < 0) { nf.t0 = t; return WAIT; }
+            if (t - nf.t0 < 1500) { return WAIT; }
+            window.__stLiveNoFmp4(false);
+            post("直播间 " + st.room + " 没有 fMP4，走 AVPlay 放 HLS-TS qn" + st.used + "，时间在走");
+            return null;
+        }, 60000, "60 秒没在 AVPlay 上放起 TS（看 live: 那几行）"],
         ["直播：返回，焦点落在最后看的那个直播间", 600, function () {
             key(KEY.RETURN);
             var f = document.querySelector("#feed-grid .card.focused");

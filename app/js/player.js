@@ -40,6 +40,7 @@ var Player = (function () {
      * verdict — and an app-issued seek is a position by definition. */
     var haveTime = false;
     var mseGeneration = 0;   /* invalidates a load that a newer one superseded */
+    var liveSeen = "";       /* the variants Shaka parsed out of the live playlist being loaded */
     var avGeneration = 0;    /* same, for the avplay singleton's listener */
     var shakaPlayer = null;  /* the live DASH player, kept across videos */
     /* load() and unload() both take time and both own the media element while
@@ -1048,6 +1049,29 @@ var Player = (function () {
         /* Registered once. They act on whatever is playing now, which is what
          * a long-lived player means — there is no generation to check because
          * there is only ever one session. */
+        /* What Shaka read out of a live playlist, before it filters by what the
+         * engine can play: 10-23 a room here failed four times with 4032 (no
+         * variant this browser supports) and nothing said what the variants
+         * were. Kept for the failure line, not logged on success. */
+        player.addEventListener("manifestparsed", function () {
+            if (mode !== "live") { return; }
+            liveSeen = "";
+            try {
+                liveSeen = (player.getManifest().variants || []).map(function (va) {
+                    var vs = va.video, au = va.audio, out = [];
+                    if (vs) {
+                        out.push((vs.mimeType || "?") + " " + (vs.codecs || "?") + " " + (vs.width || "?") + "x" + (vs.height || "?") +
+                                 (vs.frameRate ? "@" + Math.round(vs.frameRate * 100) / 100 : "") +
+                                 (vs.hdr ? " " + vs.hdr : "") + (vs.encrypted ? " 加密" : ""));
+                    }
+                    if (au && au !== vs) {
+                        out.push((au.mimeType || "?") + " " + (au.codecs || "?") + (au.channelsCount ? " " + au.channelsCount + "ch" : "") +
+                                 (au.audioSamplingRate ? " " + au.audioSamplingRate + "Hz" : "") + (au.encrypted ? " 加密" : ""));
+                    }
+                    return out.join(" + ") + (va.bandwidth ? " " + Math.round(va.bandwidth / 1000) + "kbps" : "");
+                }).join("；") || "没有一路";
+            } catch (e) { liveSeen = "读不出：" + (e && e.message); }
+        });
         player.addEventListener("error", function (e) {
             var err = e && e.detail;
             /* 直播 has none of the on-demand machinery below — no manifest of
@@ -2669,6 +2693,7 @@ var Player = (function () {
     function playLive(url) {
         reset();
         mode = "live";
+        liveSeen = "";
         var gen = ++mseGeneration;
         withShakaScript(function (ok) {
             if (gen !== mseGeneration) { return; }
@@ -2702,7 +2727,7 @@ var Player = (function () {
                 });
             })["catch"](function (e) {
                 if (gen !== mseGeneration || (e && e.code === 7000)) { return; }
-                emit("error", "直播：加载失败 " + describeShakaError(e));
+                emit("error", "直播：加载失败 " + describeShakaError(e) + (liveSeen ? "（清单里：" + liveSeen + "）" : ""));
             });
         });
     }
