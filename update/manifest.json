@@ -1,4 +1,4 @@
 {
- "manifest": "{\"version\":\"1.4.0\",\"shell\":1,\"sha256\":\"dfeea9a7d6f1edc85ff185613ae3b16fc855126dbaf96b88bd942c869d94f7de\",\"size\":1020631,\"date\":\"2026-10-22T17:18:08.653Z\",\"urls\":[\"https://diag.titdev.nl/v1/update/bilibili-tizen/bundle-1.4.0.json\",\"https://cdn.jsdelivr.net/gh/titlog/bilibili-tizen@v1.4.0/update/bundle-1.4.0.json\",\"https://raw.githubusercontent.com/titlog/bilibili-tizen/v1.4.0/update/bundle-1.4.0.json\"]}",
- "sig": "34H81zpgy50aaTSkLWPoZxtp7YSLA1WGZPe8mWvZ/GiCoYocclwdhE45je82jhFv9oNa8+6YEuooLRf+nXABlA=="
+ "manifest": "{\"version\":\"1.4.1\",\"shell\":1,\"sha256\":\"7426fca81c97e6abe1775e6fc90844d3f3c715589db69c3ee32f50d2cb20ce1d\",\"size\":1031141,\"date\":\"2026-10-23T11:36:18.546Z\",\"urls\":[\"https://diag.titdev.nl/v1/update/bilibili-tizen/bundle-1.4.1.json\",\"https://cdn.jsdelivr.net/gh/titlog/bilibili-tizen@v1.4.1/update/bundle-1.4.1.json\",\"https://raw.githubusercontent.com/titlog/bilibili-tizen/v1.4.1/update/bundle-1.4.1.json\"]}",
+ "sig": "xMfZbFOpNfIfNI4Dk3GH7qUEOrTQZQGHilq+gw7iqywyu4eoLS6zwB63EtlCHTOOnwQOLDC0vbo66aXxHimS6g=="
 }
