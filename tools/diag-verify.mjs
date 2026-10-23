@@ -23,7 +23,7 @@ async function t(name, fn) {
 
 /* ---------------- a television for diag.js ---------------- */
 
-function television({ storage = new Map(), settings = {}, reportTo = "", diagTo = "https://diag.test/v1/upload", selftest = false, start = Date.UTC(2026, 9, 21, 4) } = {}) {
+function television({ ua = "Mozilla/5.0 (SMART-TV; LINUX; Tizen 3.0) AppleWebKit/538.1", storage = new Map(), settings = {}, reportTo = "", diagTo = "https://diag.test/v1/upload", selftest = false, start = Date.UTC(2026, 9, 21, 4) } = {}) {
   let clock = start;
   const timers = new Map(); let nextTimer = 1;
   const sent = [], reported = [];
@@ -54,7 +54,7 @@ function television({ storage = new Map(), settings = {}, reportTo = "", diagTo 
   const sandbox = {
     Date: FakeDate, Math, JSON, String, Number, Uint8Array, RegExp,
     localStorage, Settings, XMLHttpRequest: XHR,
-    navigator: { userAgent: "Mozilla/5.0 (SMART-TV; LINUX; Tizen 3.0) AppleWebKit/538.1" },
+    navigator: { userAgent: ua },
     window: { crypto: { getRandomValues: (a) => { for (let i = 0; i < a.length; i++) a[i] = (i * 37 + 11) % 256; return a; } },
               addEventListener() {} },
     document: { hidden: false, addEventListener() {} },
@@ -270,6 +270,16 @@ await t("从源码装的和发布包一样传；DIAG_TO=off、自测构建不传
 
 /* ---------------- app.js: nothing unwrapped reaches report() ---------------- */
 
+
+await t("desktop browsers send nothing (no Tizen in the UA), not even a release build or one given an address", () => {
+  const MAC = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+  for (const desk of [television({ ua: MAC, reportTo: "", diagTo: "" }),
+                      television({ ua: MAC, reportTo: "http://10.0.0.2:8099/report", diagTo: "http://10.0.0.2:8097/v1/upload" })]) {
+    desk.Diag.incident("播放错误"); desk.advance(60000);
+    assert.equal(desk.sent.length, 0);
+    assert.equal(desk.Diag.status().configured, false);
+  }
+});
 await t("app.js：进 report() 的标题、用户名、作者都包在 Diag.priv 里", () => {
   const app = fs.readFileSync(here("../app/js/app.js"), "utf8");
   const bad = [];

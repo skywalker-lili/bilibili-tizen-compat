@@ -69,6 +69,13 @@ var Diag = (function () {
      * stand-in). config.js in an older package may have neither DIAG_TO nor
      * SELFTEST, hence typeof. */
     function endpoint() {
+        /* A desktop browser — a test harness, the README shots — is nobody's
+         * television, and the receiver is for televisions: no "Tizen" in the
+         * UA, nothing leaves. 10-22: douyin's desktop harness had not blocked
+         * the receiver, and js errors from code still being written arrived as
+         * two "new sets". Every real set's UA so far, 3.0 to
+         * 9.0, reads SMART-TV; LINUX; Tizen x.y. */
+        if (!/Tizen/.test(typeof navigator !== "undefined" && navigator.userAgent || "")) { return ""; }
         var override = typeof DIAG_TO !== "undefined" ? DIAG_TO : "";
         if (override === "off") { return ""; }
         if (override) { return override; }
