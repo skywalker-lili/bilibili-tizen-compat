@@ -12,6 +12,14 @@ APP="$ROOT/app"
 # function deleted from another file, which is exactly how a build went out where
 # pressing OK on the home screen did nothing.
 echo "== checking =="
+# Two things a fresh clone does not bring, asked for up front: otherwise they
+# surface as a stack trace from whichever check happens to need them (#4 — Node
+# 18 died in diag-verify, a clone without the packages died in mpd-verify).
+# diag-verify runs the worker on node:sqlite, unflagged from Node 22.13.
+node --no-warnings -e 'require("node:sqlite")' >/dev/null 2>&1 || {
+  echo "  需要 Node 22.13 或更新（现在是 $(node --version 2>/dev/null || echo '没装')）"; exit 1; }
+(cd "$ROOT/tools" && node --input-type=module -e 'await import("fast-xml-parser")') >/dev/null 2>&1 || {
+  echo "  tools 的依赖没装：npm install --prefix tools"; exit 1; }
 for f in "$APP"/js/*.js; do node --check "$f" >/dev/null || { echo "  syntax error in $f"; exit 1; }; done
 node "$ROOT/tools/lint.mjs" || exit 1
 # The account layer fails silently on the device — history filed under the wrong

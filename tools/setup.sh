@@ -25,6 +25,7 @@ echo
 # ---- 1. prerequisites, checked before anything is asked ----
 missing=""
 command -v node >/dev/null 2>&1 || missing="$missing node"
+command -v npm  >/dev/null 2>&1 || missing="$missing npm"
 command -v python3 >/dev/null 2>&1 || missing="$missing python3"
 command -v sdb  >/dev/null 2>&1 || missing="$missing sdb(tizen-studio)"
 command -v tizen >/dev/null 2>&1 || missing="$missing tizen(tizen-studio)"
@@ -36,6 +37,13 @@ if [ -n "$missing" ]; then
   echo "装完确认它们在 ~/tizen-studio/tools 和 ~/tizen-studio/tools/ide/bin 下。"
   exit 1
 fi
+# The checks deploy.sh runs need node:sqlite (Node 22.13) and the tools'
+# packages; check.sh asks for both again on every deploy, this installs them once.
+node --no-warnings -e 'require("node:sqlite")' >/dev/null 2>&1 || {
+  echo "Node 太旧（$(node --version)），要 22.13 或更新"; exit 1; }
+echo "装 tools 的依赖（npm install）…"
+npm install --prefix "$ROOT/tools" --no-audit --no-fund --loglevel=error >/dev/null || {
+  echo "npm install 失败，看上面的输出"; exit 1; }
 
 # ---- 2. this machine's address on the LAN ----
 # Offered as a menu rather than typed: this is the value the television must be

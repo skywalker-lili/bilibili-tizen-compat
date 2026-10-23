@@ -34,8 +34,10 @@ what you half-watched on the phone is under the cursor when the TV comes on.
 |---|---|
 | **Verified** | Samsung 2023 65" **CU7090**, firmware Tizen 9.0 (Chromium 120). Every measurement in this project comes from this one set |
 | **Community-tested** | Samsung 2020 55" **Q90T**, Tizen 5.5 (Chromium 69), tested by the author of [PR #2](https://github.com/titlog/bilibili-tizen/pull/2) on their branch; the old-engine compatibility comes from there |
+| **Community-tested** | Samsung 2018 49" **UA49NU7100**, Tizen 4.0 (Chromium 56). 1.4.0 installed from source works ([#4](https://github.com/titlog/bilibili-tizen/issues/4)) |
+| **Community-tested** | Samsung 2018 75" **Q8C**, Tizen 3.0 (Chromium 47). Videos play from 1.3.4, live streams from 1.3.6 ([#5](https://github.com/titlog/bilibili-tizen/issues/5)) |
 | **Very likely** | 2020 onwards (Tizen 5.5+). Playback uses standard MSE and AVPlay, nothing model-specific — but **no other model has been tried yet** |
-| **Installs, untested** | 2017–2019 sets (Tizen 3.0–5.0, Chromium 47–63), allowed to install from 1.2.5. A 2018 UA49NU7100 (Tizen 4) ran a September build: the UI came up, the covers had wrong colours (fixed since, [#1](https://github.com/titlog/bilibili-tizen/issues/1)); playback has not been tried. **If you install it on one, please open an issue saying how it went** |
+| **Installs, untested** | Other 2017–2019 sets (Tizen 3.0–5.0, Chromium 47–63), allowed to install from 1.2.5. One Tizen 3.0 and one Tizen 4.0 set have been tried (above); Tizen 5.0 has not. **If you install it on one, please open an issue saying how it went** |
 | **No** | Non-Samsung sets; Samsung models from 2016 and earlier (Tizen 2.x) |
 
 A build from source reports its engine string and codec support on boot; that
@@ -53,7 +55,7 @@ installs new versions itself (from 1.2.0 on). Two ways:
 | | Release package (recommended) | From source |
 |---|---|---|
 | For | Watching bilibili on the TV | Changing the code, reading diagnostics |
-| Needs | A computer (Windows / macOS / Linux) **or an Android phone** with [Apps2Samsung](https://github.com/Apps2Samsung/Apps2Samsung) | macOS, Node, Python 3, Tizen Studio CLI |
+| Needs | A computer (Windows / macOS / Linux) **or an Android phone** with [Apps2Samsung](https://github.com/Apps2Samsung/Apps2Samsung) | macOS, Node 22.13+, Python 3, Tizen Studio CLI |
 | Upgrade | Automatic from 1.2.0 on; older versions: install again with Apps2Samsung | Automatic from 1.2.0 on too; or `git pull`, run `deploy.sh` again |
 
 **From 1.2.0 on, the app updates itself**: a minute after every launch, when
@@ -105,7 +107,7 @@ itself), so borrowing a computer for the install is enough.
 
 ### From source
 
-You need Node, Python 3, and the
+You need Node 22.13 or newer (`node --version`), Python 3, and the
 [Tizen Studio](https://developer.tizen.org/development/tizen-studio/download)
 command-line tools (**not the IDE**). Samsung sets from 2023 on only accept
 Samsung-issued distributor certificates — the ones that ship with Tizen Studio
@@ -115,7 +117,7 @@ for you, and needs no Eclipse, no sudo, no certificate-manager GUI.
 
 ```bash
 git clone https://github.com/titlog/bilibili-tizen.git && cd bilibili-tizen
-zsh tools/setup.sh      # once: finds the TV, reads its DUID, issues the certificate; config lives outside the repo
+zsh tools/setup.sh      # once: installs the packages, finds the TV, reads its DUID, issues the certificate; config lives outside the repo
 zsh tools/deploy.sh     # check, sign, install, launch — about 15 seconds
 ```
 

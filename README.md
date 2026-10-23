@@ -33,8 +33,10 @@
 |---|---|
 | **实测可用** | 三星 2023 年款 65 吋 **CU7090**，固件 Tizen 9.0（Chromium 120）。这个项目的所有测量都来自这一台 |
 | **社区实测** | 三星 2020 年款 55 吋 **Q90T**，Tizen 5.5（Chromium 69）。[PR #2](https://github.com/titlog/bilibili-tizen/pull/2) 的作者在他的分支上测的，老引擎的兼容就来自那里 |
+| **社区实测** | 三星 2018 年款 49 吋 **UA49NU7100**，Tizen 4.0（Chromium 56）。从源码装的 1.4.0 正常用（[#4](https://github.com/titlog/bilibili-tizen/issues/4)） |
+| **社区实测** | 三星 2018 年款 75 吋 **Q8C**，Tizen 3.0（Chromium 47）。点播 1.3.4 起、直播 1.3.6 起能放（[#5](https://github.com/titlog/bilibili-tizen/issues/5)） |
 | **大概率可用** | 2020 年以后的三星电视（Tizen 5.5 及以上）。播放走的是标准的 MSE 和 AVPlay，没有用到机型特有的东西——但**其余机型还没人试过** |
-| **能装，没实测** | 2017–2019 年的三星电视（Tizen 3.0–5.0，Chromium 47–63），1.2.5 起放开安装。2018 年的 UA49NU7100（Tizen 4）跑过一个九月份的版本，界面出来了、封面错色（已修，[#1](https://github.com/titlog/bilibili-tizen/issues/1)）；播放还没人试过。**装了请开 issue 说一声好不好用** |
+| **能装，没实测** | 2017–2019 年的其余三星电视（Tizen 3.0–5.0，Chromium 47–63），1.2.5 起放开安装。Tizen 3.0 和 4.0 各有一台实测过（见上），5.0 还没人试过。**装了请开 issue 说一声好不好用** |
 | **不行** | 非三星电视；三星 2016 年及以前的机型（Tizen 2.x） |
 
 从源码装的构建启动时会上报引擎版本和编解码支持，第一件事就是看那一行（发布包不上报）。
@@ -49,7 +51,7 @@
 | | 装发布包（推荐） | 从源码装 |
 |---|---|---|
 | 适合 | 只想在电视上看 b 站 | 要改代码、要看诊断日志 |
-| 需要 | 电脑（Windows / macOS / Linux）**或安卓手机**，装上 [Apps2Samsung](https://github.com/Apps2Samsung/Apps2Samsung) | macOS、Node、Python 3、Tizen Studio 命令行工具 |
+| 需要 | 电脑（Windows / macOS / Linux）**或安卓手机**，装上 [Apps2Samsung](https://github.com/Apps2Samsung/Apps2Samsung) | macOS、Node 22.13 以上、Python 3、Tizen Studio 命令行工具 |
 | 升级 | 1.2.0 起自己更新；更早的版本用 Apps2Samsung 再装一次 | 1.2.0 起也会自己更新；`git pull` 再跑一次 `deploy.sh` 也行 |
 
 **从 1.2.0 起，应用会自己更新**：每次打开一分钟后、没在播放时查有没有新版本，开着就每 6 小时查一次；
@@ -87,7 +89,7 @@
 
 ### 从源码装
 
-准备：Node、Python 3，以及
+准备：Node 22.13 或更新（`node --version` 看）、Python 3，以及
 [Tizen Studio](https://developer.tizen.org/development/tizen-studio/download)
 的命令行工具（**不需要装 IDE**）。2023 年以后的三星电视只认三星签发的分发证书，Tizen Studio
 自带的那套一律 `Invalid certificate chain`；证书绑定电视的 DUID。`setup.sh` 会打开三星账号登录页、
@@ -95,7 +97,7 @@
 
 ```bash
 git clone https://github.com/titlog/bilibili-tizen.git && cd bilibili-tizen
-zsh tools/setup.sh      # 只跑一次：找到电视、读 DUID、签证书，配置写在仓库外
+zsh tools/setup.sh      # 只跑一次：装依赖、找到电视、读 DUID、签证书，配置写在仓库外
 zsh tools/deploy.sh     # 检查、签名、安装、启动，约 15 秒
 ```
 

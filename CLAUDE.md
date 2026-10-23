@@ -60,6 +60,8 @@ node tools/diag-logs.mjs        # 读别人电视传上来的诊断日志（--de
 zsh tools/release.sh            # 给陌生人的发布包 → dist/
 ```
 
+- 开发机要 **Node 22.13 以上**（`diag-verify` 用 `node:sqlite`；18、20、22.12 在那一步崩）和 `tools/` 的依赖（`setup.sh` 会装；`mpd-verify` 要
+  `fast-xml-parser`）。`check.sh` 开头先问这两样，缺了直接说缺什么（issue #4 里 Node 18、旧 clone 各撞了一次）。
 - `tools/check.sh` 是 deploy 和 release 共用的门禁：`node --check`、`lint.mjs`（调用了不存在的东西、
   `el("…")` 的 id 不在 index.html）和一串 `*-verify.mjs`，**任何一个失败就拒绝安装**。
 - 环境变量覆盖配置文件（`BILI_TV_IP=… zsh tools/deploy.sh`）；自己在证书管理器里建的签名档写
@@ -116,7 +118,7 @@ zsh tools/release.sh            # 给陌生人的发布包 → dist/
   CSS 变量、CSS grid（`compat.js` 加 `legacy-no-grid`）、flex 的 `gap`（加 `legacy-flex-gap`）。**`app.css` 每加一个
   带 `gap` 的 flex 容器，都要在 `legacy-layout.css` 里补替身**（`legacy-css-verify` 卡着）。**`play()` 在 Chromium 50 以前返回
   `undefined`**，不能接 `.then` / `.catch`，用 `startPlaying()`（`lint.mjs` 卡着）。Tizen 3.0 有人用过（issue #5）：点播能放，直播的 MSE
-  解码失败、改走 AVPlay（见「播放」）；4.0–5.0 还没人试过。
+  解码失败、改走 AVPlay（见「播放」）。Tizen 4.0（2018 款 NU7100）有人从源码装了 1.4.0，说正常（issue #4）；5.0 还没人试过。
 - **一切由 D-pad 驱动**，焦点是几何的（`nav.js` 挑方向上最近的 `.focusable`）；横向同一行优先、纵向同一列优先。
   **新加的东西必须能这样够到**；滚动容器靠 `scroll` 这个词识别，横排用 `hscroll`。
 - **屏幕上的字只给观众要用的信息**：观众看了会做出不同的事吗？不会就进日志。留下的：打不开的原因、自救时的
@@ -290,5 +292,5 @@ docs/         排查经过和测量（见「文档地图」）；screenshots/ �
 验）—— 要走到那一步得同时满足「这个稿件没有 DASH」加「暂停两小时后播放中出错」，
 真遇到了表现仍是有声退出，不是冻屏。
 
-还没在野外触发过的：换令牌时在用的文件对不全、整个重建那条路；Tizen 4.0–5.0 上的播放；直播 TS 出画面前失败、降一档那条路。两个悬着的观测（有的稿件
+还没在野外触发过的：换令牌时在用的文件对不全、整个重建那条路；Tizen 5.0 上的播放；直播 TS 出画面前失败、降一档那条路。两个悬着的观测（有的稿件
 AVPlay 必然打不开而地址是好的；播放头自己往回跳）见 `docs/播放与CDN.md` 末尾。
