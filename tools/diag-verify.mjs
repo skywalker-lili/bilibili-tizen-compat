@@ -23,7 +23,7 @@ async function t(name, fn) {
 
 /* ---------------- a television for diag.js ---------------- */
 
-function television({ storage = new Map(), settings = {}, reportTo = "", diagTo = "https://diag.test/v1/upload", start = Date.UTC(2026, 9, 21, 4) } = {}) {
+function television({ storage = new Map(), settings = {}, reportTo = "", diagTo = "https://diag.test/v1/upload", selftest = false, start = Date.UTC(2026, 9, 21, 4) } = {}) {
   let clock = start;
   const timers = new Map(); let nextTimer = 1;
   const sent = [], reported = [];
@@ -59,10 +59,13 @@ function television({ storage = new Map(), settings = {}, reportTo = "", diagTo 
               addEventListener() {} },
     document: { hidden: false, addEventListener() {} },
     Boot: { info: () => ({ packaged: "1.2.5", running: "1.3.2", note: "" }) },
-    REPORT_TO: reportTo, DIAG_TO: diagTo,
+    REPORT_TO: reportTo, DIAG_TO: diagTo, SELFTEST: selftest,
     setTimeout: (fn, ms) => { const id = nextTimer++; timers.set(id, { fn, at: clock + (ms || 0) }); return id; },
     clearTimeout: (id) => { timers.delete(id); },
   };
+  /* null: a config.js from before these existed. */
+  if (diagTo === null) { delete sandbox.DIAG_TO; }
+  if (selftest === null) { delete sandbox.SELFTEST; }
   vm.createContext(sandbox);
   vm.runInContext(SRC, sandbox, { filename: "diag.js" });
   const Diag = sandbox.Diag;
@@ -243,16 +246,26 @@ await t("服务器拒绝：写进状态，不当成功", () => {
   assert.match(tv.Diag.status().last.why, /HTTP 429 too many/);
 });
 
-await t("开发构建不传（除非 deploy.sh 给了 DIAG_TO）；发布构建用 diag.js 自己的地址", () => {
-  const dev = television({ reportTo: "http://10.0.0.2:8099/report", diagTo: "" });
-  dev.Diag.incident("播放错误"); dev.advance(60000);
-  assert.equal(dev.sent.length, 0);
-  assert.equal(dev.Diag.status().configured, false);
-  const pointed = television({ reportTo: "http://10.0.0.2:8099/report", diagTo: "http://10.0.0.2:8097/v1/upload" });
-  assert.equal(pointed.Diag._test.endpoint(), "http://10.0.0.2:8097/v1/upload");
-  const release = television({ reportTo: "", diagTo: "" });
+await t("从源码装的和发布包一样传；DIAG_TO=off、自测构建不传；DIAG_TO 给了地址就传那里", () => {
   const ENDPOINT = /var ENDPOINT = "([^"]*)";/.exec(SRC)[1];
+  const lan = "http://10.0.0.2:8099/report";
+  const release = television({ reportTo: "", diagTo: "" });
   assert.equal(release.Diag._test.endpoint(), ENDPOINT);
+  const source = television({ reportTo: lan, diagTo: "" });
+  assert.equal(source.Diag._test.endpoint(), ENDPOINT);
+  assert.equal(source.Diag.status().configured, true);
+  /* A package from before DIAG_TO and SELFTEST existed, updated to this diag.js. */
+  const old = television({ reportTo: lan, diagTo: null, selftest: null });
+  assert.equal(old.Diag._test.endpoint(), ENDPOINT);
+  for (const quiet of [television({ reportTo: lan, diagTo: "off" }),
+                       television({ reportTo: lan, diagTo: "", selftest: true }),
+                       television({ reportTo: lan, diagTo: "", selftest: "tokenswap" })]) {
+    quiet.Diag.incident("播放错误"); quiet.advance(60000);
+    assert.equal(quiet.sent.length, 0);
+    assert.equal(quiet.Diag.status().configured, false);
+  }
+  const pointed = television({ reportTo: lan, diagTo: "http://10.0.0.2:8097/v1/upload", selftest: "diag" });
+  assert.equal(pointed.Diag._test.endpoint(), "http://10.0.0.2:8097/v1/upload");
 });
 
 /* ---------------- app.js: nothing unwrapped reaches report() ---------------- */

@@ -58,16 +58,22 @@ var Diag = (function () {
         try { return Settings.get("diag", true) !== false; } catch (e) { return true; }
     }
 
-    /* Dev builds (REPORT_TO set, the selftest ones included) have the collector
-     * and upload nothing, unless deploy.sh was told where to (BILI_DIAG_TO →
-     * config.js DIAG_TO) — that is how the upload path itself gets tested on
-     * the television. config.js in a package older than this file has no
-     * DIAG_TO, hence typeof. */
+    /* A build from source uploads like a release package (from 10-23). Until
+     * then dev builds (REPORT_TO set) uploaded nothing, on the reasoning that
+     * the collector has every line — true only on this project's own machine:
+     * issue #7, a Tizen 4.0 set built from source, live failing two ways, and
+     * not one line of it reached anybody. What still uploads nothing: a
+     * selftest build (its failures are staged), and DIAG_TO "off" (deploy.sh
+     * writes it from BILI_DIAG_TO=off, which this project's own machine sets).
+     * Any other DIAG_TO is where to send instead (deploy.sh --diag: the local
+     * stand-in). config.js in an older package may have neither DIAG_TO nor
+     * SELFTEST, hence typeof. */
     function endpoint() {
         var override = typeof DIAG_TO !== "undefined" ? DIAG_TO : "";
+        if (override === "off") { return ""; }
         if (override) { return override; }
-        var dev = typeof REPORT_TO !== "undefined" && !!REPORT_TO;
-        return dev ? "" : ENDPOINT;
+        var selftest = typeof SELFTEST !== "undefined" && !!SELFTEST;
+        return selftest ? "" : ENDPOINT;
     }
 
     /* ---------------- what may leave ---------------- */

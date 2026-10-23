@@ -100,9 +100,12 @@ echo "== pointing reporting at this machine =="
 HOST_IP=$(ipconfig getifaddr "$NET_IF")
 [ -n "$HOST_IP" ] || { echo "拿不到 $NET_IF 的地址 — 用 BILI_NET_IF 指定网卡"; exit 1; }
 [ "$SELFTEST" = '"diag"' ] && BILI_DIAG_TO="${BILI_DIAG_TO:-http://$HOST_IP:8097/v1/upload}"
-# BILI_DIAG_TO points this build's diagnostics uploads (diag.js) somewhere —
-# a local stand-in or the real endpoint — to test that path on the television.
-# Unset, a dev build uploads nothing: the collector already has every line.
+# BILI_DIAG_TO points this build's diagnostics uploads (diag.js) somewhere
+# else — a local stand-in, to test that path on the television — or turns
+# them off (BILI_DIAG_TO=off in the conf: this project's own machine, whose
+# collector already has every line). Unset, a build from source uploads like a
+# release package (from 10-23, issue #7: a stranger's source build failed and
+# nothing reached anybody). Selftest builds never upload (diag.js).
 APP="$APP" HOST_IP="$HOST_IP" SELFTEST="$SELFTEST" DIAG_TO="${BILI_DIAG_TO:-}" python3 - <<'PY'
 import os, re
 p = os.path.join(os.environ["APP"], "js", "config.js")

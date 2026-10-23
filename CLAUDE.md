@@ -105,7 +105,8 @@ zsh tools/release.sh            # 给陌生人的发布包 → dist/
   `Diag.incident()` 的地方）时把最近 600 行传到 `server/diag-worker.mjs`（Cloudflare Worker + D1，挂自己的域名，`workers.dev`
   在大陆被墙），设置里能手动传、能关，默认开。`node tools/diag-logs.mjs --device <设置页里的编号>` 读。**往 `report()` 里放标题、
   用户名、UP 主名、收藏夹名、搜索词，一律包 `Diag.priv()`**（`diag-verify` 卡着 `.title` / `.uname` / `.author`），mid、签名参数
-  由 `scrub()` 兜底。新的失败出口用 `trouble(文字)` 而不是 `toast()`。开发构建不往那里传（除非 `BILI_DIAG_TO`）。→ `server/README.md`
+  由 `scrub()` 兜底。新的失败出口用 `trouble(文字)` 而不是 `toast()`。**从源码装的构建也传**（1.4.1 起：#7 那台源码构建出了事，一行都没到我们这）；
+  自测构建不传，`BILI_DIAG_TO=off` 不传（**这台开发机的 `~/.bilibili-tizen.conf` 里写着**，换电脑要补上），`BILI_DIAG_TO=<地址>` 传到那里。→ `server/README.md`
 - 无人值守：`--selftest` 派发和遥控器一样的按键走全流程（现在 129 步），最后一行 `SELFTEST 结束，全部通过 / N 步失败`。
   **能靠按键复现的 bug，就给它加一步。** 等网络的步骤返回 `WAIT` 轮询，不写死等待；每次放的视频是推荐流里随手拿的，
   一步失败先看是不是只对那一部片子成立。

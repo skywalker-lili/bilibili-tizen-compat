@@ -156,9 +156,9 @@ zsh tools/deploy.sh     # check, sign, install, launch — about 15 seconds
   developer the information needed to find out why, and nothing that identifies
   you. It can be switched off in 设置 (settings); when reporting a problem, quote
   the TV's code shown there.
-- From source, `deploy.sh` bakes **your computer's LAN address** into the package
-  as the destination for live dev logs, on your LAN only; such builds send no
-  diagnostics to the developer's endpoint.
+- Builds installed from source send diagnostic logs the same way as the release
+  package (from 1.4.1), and can be switched off in 设置; or put `BILI_DIAG_TO=off`
+  in `~/.bilibili-tizen.conf` and the builds you install send none.
 
 ## What it does, and what it deliberately does not
 

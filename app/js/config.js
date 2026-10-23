@@ -14,6 +14,7 @@ var REPORT_TO = "";
 var SELFTEST = false;
 
 /* Dev only: where diag.js uploads from a dev build (deploy.sh writes it from
- * BILI_DIAG_TO, to test the upload path on the television). Empty means dev
- * builds upload nothing; a release always uses diag.js's own endpoint. */
+ * BILI_DIAG_TO). Empty means diag.js's own endpoint, the same as a release;
+ * "off" means nothing is uploaded; anything else is where to send instead
+ * (deploy.sh --diag, the local stand-in). Selftest builds never upload. */
 var DIAG_TO = "";
