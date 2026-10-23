@@ -2,9 +2,9 @@
  *
  * The collector on 8099 (tools/collect.mjs) exists only for dev builds. A set in
  * somebody else's living room used to fail in silence, and a photo of a toast
- * was all there was to go on — issue #5: every video 403 on a Tizen 3.0 set in
- * mainland China, a region this project had never been run from, and nothing
- * on the screen could say which route had been refused by which host.
+ * was all there was to go on — issue #5: every video 403 on a Tizen 3.0 set on
+ * a network this project had never been run from, and nothing on the screen
+ * could say which route had been refused by which host.
  *
  * So every log line also lands in a small ring here, scrubbed as it is
  * recorded, and the ring is uploaded when something goes wrong in a way the

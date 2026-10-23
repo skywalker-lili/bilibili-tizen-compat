@@ -114,7 +114,7 @@ Shaka 一条都没有，而且不是勉强打平：同一条链路上它估算�
 
 ### 换 CDN 节点在这条链路上行不通（已实测，别再推导一遍）
 
-面向海外用户的那几个油猴脚本（CCB、Bilibili Accelerator、Bilibili Video CDN
+换 CDN 节点的那几个油猴脚本（CCB、Bilibili Accelerator、Bilibili Video CDN
 Switcher）做法都一样：保留签名 query 原样，只改主机名。2026-08-02 从这个网络对
 九个 upos 节点、分别用主地址和备用地址的签名试过：
 

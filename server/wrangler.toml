@@ -5,8 +5,8 @@ name = "tizen-diag"
 main = "diag-worker.mjs"
 compatibility_date = "2026-09-01"
 
-# Not on *.workers.dev: that is blocked in mainland China, where the first
-# television this exists for is.
+# Not on *.workers.dev: some networks block it, and the first television this
+# exists for is on one of them.
 workers_dev = false
 routes = [{ pattern = "diag.titdev.nl", custom_domain = true }]
 

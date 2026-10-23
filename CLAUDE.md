@@ -103,7 +103,7 @@ zsh tools/release.sh            # 给陌生人的发布包 → dist/
   `判别探测`、`分段请求 发出/回来/在飞`、`传输形状`。日志对照表在 `docs/调试与日志.md`。
 - **别人的电视**（2026-10-21 起，`diag.js`）：出事（播放全部失败、页面加载失败、js 报错、更新包被标坏……调 `trouble()` /
   `Diag.incident()` 的地方）时把最近 600 行传到 `server/diag-worker.mjs`（Cloudflare Worker + D1，挂自己的域名，`workers.dev`
-  在大陆被墙），设置里能手动传、能关，默认开。`node tools/diag-logs.mjs --device <设置页里的编号>` 读。**往 `report()` 里放标题、
+  在有的网络里连不上），设置里能手动传、能关，默认开。`node tools/diag-logs.mjs --device <设置页里的编号>` 读。**往 `report()` 里放标题、
   用户名、UP 主名、收藏夹名、搜索词，一律包 `Diag.priv()`**（`diag-verify` 卡着 `.title` / `.uname` / `.author`），mid、签名参数
   由 `scrub()` 兜底。新的失败出口用 `trouble(文字)` 而不是 `toast()`。**从源码装的构建也传**（1.4.1 起：#7 那台源码构建出了事，一行都没到我们这）；
   自测构建不传，`BILI_DIAG_TO=off` 不传（**这台开发机的 `~/.bilibili-tizen.conf` 里写着**，换电脑要补上），`BILI_DIAG_TO=<地址>` 传到那里。
@@ -171,7 +171,7 @@ zsh tools/release.sh            # 给陌生人的发布包 → dist/
   然后一直缓冲，不报错 —— #5 那句「部分直播不能播放」却一份日志都没有）；还没走起来、AVPlay 说在缓冲的，给 20 秒。直播给 AVPlay
   `setBufferingParam` 3 秒（起播和恢复）：不设时 fMP4 原画 prepare 完要缓冲 6–9.5 秒才走，设了 ~1 秒。时钟走起来之前失败：prepare 不回 /
   格式不支持 → TS 降一档、fMP4 这次运行不再用（Tizen 3.0 的 AVPlay 放不了 fMP4）；prepare 完但不走 → 这一档太重，**两种都降一档**（每个直播间最多三次）。
-  海外的 TS 主机（`ov-gotcha105`）从这边几乎都不回，降档在这台电视上走不到。`--selftest` 里三步强制走这条路。
+  `ov-gotcha105` 那台 TS 主机从这边几乎都不回，降档在这台电视上走不到。`--selftest` 里三步强制走这条路。
   **按直播间改走 AVPlay**（任何电视，issue #7）：只给了 TS 没给 fMP4 的；Shaka 报 `4032`（清单里没有这个引擎放得了的一路，10-23 一个竖屏
   1080x1920 原画）的 —— 重连拿回来的是同一路，不重连。Shaka 加载失败的日志带「清单里」每一路的编码和尺寸。→ `docs/功能-弹幕直播画质投屏.md`
 

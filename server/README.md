@@ -6,8 +6,8 @@ bilibili-tizen、douyin-tizen、telegram-tizen 共用，按 `app` 字段分开�
 
 ## 为什么是这样
 
-- **挂在自己的域名上，不用 `*.workers.dev`**：`workers.dev` 在大陆被墙，而第一个要靠它
-  诊断的就是大陆的电视（#5）。
+- **挂在自己的域名上，不用 `*.workers.dev`**：`workers.dev` 在有的网络里连不上，而第一个要靠它
+  诊断的电视（#5）就在这样的网络里。
 - **谁都能写**：地址就在公开的应用里，放什么密钥都藏不住。限住的是形状和大小、同一台电视
   一小时 20 份、全站一天 2 万份，以及 30 天的寿命。读要令牌（Worker 的 secret `READ_TOKEN`）。
 - **不存 IP**，只存 Cloudflare 解析出的国家或地区和机房：「这台电视在哪个地区、拿的是哪批
@@ -27,7 +27,7 @@ bilibili-tizen、douyin-tizen、telegram-tizen 共用，按 `app` 字段分开�
 | `GET /v1/update/<应用>/manifest.json` | 自更新的清单，转 GitHub 上 master 的那份，缓存 5 分钟；不要令牌 |
 | `GET /v1/update/<应用>/bundle-<版本>.json` | 自更新的包，转 `v<版本>` 这个 tag 上的，缓存 30 天 |
 
-后两个是给大陆的电视用的（raw.githubusercontent.com 被 DNS 污染，jsDelivr 时通时断）。中转不需要被信任：清单有签名，
+后两个是给连不上 GitHub 的电视用的（有的网络里 raw.githubusercontent.com 解析不了，jsDelivr 时通时断）。中转不需要被信任：清单有签名，
 里面写着包的 sha256，改过的电视不收。三个应用的 `update.js` 都先问这里，再问 GitHub、jsDelivr。
 
 每天的定时触发（cron）删掉 30 天前的记录。

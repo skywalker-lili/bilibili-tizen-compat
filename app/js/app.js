@@ -371,8 +371,9 @@
         var n = Number(seconds) || 0;
         if (n > 100000000000) { n = Math.floor(n / 1000); }
         if (n < 1230768000 || n > new Date().getTime() / 1000 + 31536000) { return ""; }
-        /* Match bilibili's publication day (China time), rather than the TV's
-         * local day; a California evening is already tomorrow in China. */
+        /* Match bilibili's publication day (UTC+8, the site's own clock),
+         * rather than the TV's local day; an evening west of UTC is often
+         * already tomorrow there. */
         var d = new Date((n + 8 * 3600) * 1000);
         function two(v) { return v < 10 ? "0" + v : String(v); }
         return d.getUTCFullYear() + "-" + two(d.getUTCMonth() + 1) + "-" + two(d.getUTCDate());

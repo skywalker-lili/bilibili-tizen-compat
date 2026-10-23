@@ -112,9 +112,9 @@ async function getOne(env, url) {
 }
 
 /* Self-update, relayed (2026-10-22). The apps fetch their signed manifest and
- * bundles from GitHub and jsDelivr, and in mainland China neither is
- * dependable — raw.githubusercontent.com is DNS-poisoned, jsDelivr lost its
- * licence there in 2021. This domain is reachable, so it carries a copy: the
+ * bundles from GitHub and jsDelivr, and on some networks neither is
+ * dependable — raw.githubusercontent.com does not resolve, jsDelivr comes and
+ * goes. This domain is reachable there, so it carries a copy: the
  * manifest from master, a bundle from its release tag. Nothing here can be
  * trusted by the television and nothing needs to be — the manifest is signed
  * and names the bundle's sha256, so a changed byte is refused on the set. */
