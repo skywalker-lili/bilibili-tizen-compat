@@ -194,6 +194,27 @@ var API = (function () {
         return String(v || "");
     }
 
+    /* Uploader collections can span several videos and sections. Keep their
+     * published order so the player can move across video boundaries. */
+    function seasonOf(raw) {
+        if (!raw || !raw.sections) { return null; }
+        var episodes = [];
+        for (var i = 0; i < raw.sections.length; i++) {
+            var list = raw.sections[i].episodes || [];
+            for (var j = 0; j < list.length; j++) {
+                var ep = list[j], arc = ep.arc || {};
+                if (!ep.bvid || !ep.cid) { continue; }
+                episodes.push({ bvid: ep.bvid, aid: ep.aid || arc.aid || 0,
+                    cid: ep.cid, title: ep.title || arc.title || "",
+                    section: raw.sections[i].title || "",
+                    pic: thumb(arc.pic),
+                    duration: duration(arc.duration || (ep.page && ep.page.duration)) });
+            }
+        }
+        return episodes.length > 1 ?
+            { id: raw.id, title: raw.title || "", episodes: episodes } : null;
+    }
+
     function count(n) {
         if (n >= 100000000) { return (n / 100000000).toFixed(1) + "亿"; }
         if (n >= 10000) { return (n / 10000).toFixed(1) + "万"; }
@@ -1050,6 +1071,7 @@ var API = (function () {
                     duration: duration(d.duration),
                     play: count((d.stat || {}).view),
                     publishedAt: Number(d.pubdate || 0) || 0,
+                    season: seasonOf(d.ugc_season),
                     pages: (d.pages || []).map(function (p) {
                         /* Per-part length, formatted here like every other
                          * duration in this file. It is seconds on a page and

@@ -7,13 +7,13 @@ An unofficial, remote-controlled bilibili client customized for **older Samsung 
 | At a glance | Details |
 | --- | --- |
 | **Upstream base** | **titlog**'s [bilibili-tizen](https://github.com/titlog/bilibili-tizen), `master` at [commit `76003faf3ae1a647a92c532b968e4896427530cb`](https://github.com/titlog/bilibili-tizen/commit/76003faf3ae1a647a92c532b968e4896427530cb), dated **2026-10-02**. This is an exact commit, not an upstream release number. |
-| **This derivative** | **1.0.16**; independently maintained under the upstream MIT license and attribution. We plan to offer the changes back to the original maintainer for review. |
-| **Tested TV** | **55-inch Samsung Q90T (QN55Q90TAFXZA), Tizen 5.5, firmware 2743**. Installation, QR sign-in, and main remote-control flows were tested here; other models remain unverified. |
+| **This derivative** | **1.0.17 release candidate**; episode navigation passes local checks but awaits on-device verification. The upstream MIT license and attribution are retained. |
+| **Tested TV** | **1.0.16** was tested on a 55-inch Samsung Q90T (QN55Q90TAFXZA), Tizen 5.5, firmware 2743. **The new 1.0.17 episode controls have not yet been tested on a TV.** Other models remain unverified. |
 | **Highlights** | Tizen 5.5 support, denser four/five-column browsing with publication dates, favorites and followed creators, long-press video actions, comments beside playback, lightweight danmaku, subtitle/autoplay settings, and token-expiry display. See the [itemized changes](#what-this-version-adds-to-the-original-project). |
 
 The installed TV app is named **Bilibili Tizen 兼容版 / Compatibility**. The name does not restrict it to Q90T, but Q90T remains the only model tested so far.
 
-**Status:** tested by the user on a 55-inch 2020 Samsung Q90T with firmware 2743. Other models and regions have not been tested with this version. See the [Chinese README](README.md) for the full usage guide.
+**Status:** the earlier 1.0.16 build was tested by the user on a 55-inch 2020 Samsung Q90T with firmware 2743. This 1.0.17 candidate still needs TV testing. See the [Chinese README](README.md) for the full usage guide.
 
 ## Screenshots from the tested TV
 
@@ -66,11 +66,12 @@ Samsung lists the 2020 Q90 lineup under Tizen 5.5 in its [TV model groups](https
 ## Features and controls
 
 - Recommendations, continue watching, dynamic feed, watch later, popular videos, rankings, categories, search suggestions, watch history, favorite folders, followed creators, and multiple TV QR-signed-in accounts.
-- Up to requested 1080p playback when the video, account, network, and decoder allow it; multipart videos, resume, seek previews, playback speed, related videos, and optional subtitles.
+- Up to requested 1080p playback when the video, account, network, and decoder allow it; multipart videos, uploader collections, resume, seek previews, playback speed, related videos, and optional subtitles.
 - Video cards show creator, view count, and publication date. Settings offer four or five cards per row and an autoplay-next toggle.
 - Short-press **OK** on a card to play. Long-press **OK** (about 0.65 seconds) to open like/coin/favorite actions. Coin spending requires a second confirmation. Arrow keys navigate cards directly.
 - During playback, **OK** pauses/resumes, left/right seek, and down opens the information panel with **Read comments** selected by default. Comments and nested replies appear beside the still-playing video. Comments are currently read-only.
 - Optional ordinary scrolling danmaku can be adjusted in Settings or the playback panel. Low/medium/high density allows up to 12/25/40 simultaneous comments; choose the top quarter, the upper three quarters, or the full screen.
+- **1.0.17 candidate:** the playback panel offers previous/next episode for multipart uploads and uploader collections. Pressing Down from its action row jumps to the currently playing episode; long collections are paged in groups of 50. Official PGC/bangumi playback is not implemented. This new flow still needs a TV test.
 
 ## What this version adds to the original project
 
@@ -85,6 +86,7 @@ The original **[titlog/bilibili-tizen](https://github.com/titlog/bilibili-tizen)
 7. **Navigation fixes:** the first related-video card can move down to the next row immediately, and the nonworking Chinese-input button has been removed pending real Pinyin support.
 8. **Token-expiry display:** Settings shows the locally stored TV access token's nominal expiry away from the home screen, without exposing the token.
 9. **Lightweight danmaku:** synchronized ordinary scrolling comments, a global toggle, three density levels, and three screen areas. Each six-minute response is capped at 1 MB, and only the previous/current/next segments are kept in memory; changing videos clears them.
+10. **Episode navigation (TV test pending):** previous/next controls for multipart uploads and uploader collections, focus on the current episode when entering the list, and 50-episode pages for long collections.
 
 These are changes relative to the upstream client, not a claim that this branch designed every feature from scratch. See [BUGS.md](BUGS.md) and [FEATURES.md](FEATURES.md) for unresolved issues and plans.
 
@@ -93,6 +95,8 @@ Currently unsupported: 4K, sending or filtering danmaku, reliable Chinese Pinyin
 **Known bugs:** watch-progress reporting and comment-like writes receive HTTP 403 on the tested TV. **Planned features:** standalone comment likes, danmaku filtering, true Chinese Pinyin input, safer account retention across updates, token refresh, and subtitle track selection. See [BUGS.md](BUGS.md) and [FEATURES.md](FEATURES.md) for details.
 
 ## Installation
+
+**Installing from a fresh laptop with Codex?** Start with the [fresh-computer handoff guide (Chinese)](docs/INSTALL_WITH_CODEX.md), including a prompt for a new Codex session, OS-specific paths, a version check, and a TV test checklist. Use this repository's `master` or the pinned `v1.0.17-rc.1` tag for this release candidate.
 
 The automated scripts currently target **macOS with zsh**. A manual Windows route is outlined below but has not been verified on a newly configured Windows machine; Linux is also untested. For the Mac scripts you need Node.js, Python 3, Samsung TV-enabled [Tizen Studio tools](https://developer.samsung.com/smarttv/develop/getting-started/setting-up-sdk/installing-tv-sdk.html), a Samsung account, and a Mac on the same LAN as the TV.
 

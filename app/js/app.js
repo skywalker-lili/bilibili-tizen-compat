@@ -2189,7 +2189,7 @@
         }
         screenEl.innerHTML = '<div class="mine">' +
             '<div class="me"><div class="me-name">设置</div>' +
-            '<div class="me-sub">版本 1.0.16 · 播放偏好会保存在这台电视上</div></div>' +
+            '<div class="me-sub">版本 1.0.17 · 播放偏好会保存在这台电视上</div></div>' +
             '<div class="section">账号</div>' +
             '<div class="me-sub" style="margin-top:12px">' + esc(expiryNote) + '</div>' +
             '<div class="section">播放</div>' +
@@ -3121,6 +3121,53 @@
         el("player-part").textContent = label;
     }
 
+    function currentPartIndex() {
+        if (!playing || !playing.detail || !playing.detail.pages) { return -1; }
+        var pages = playing.detail.pages;
+        for (var i = 0; i < pages.length; i++) {
+            if (pages[i].cid === playing.cid) { return i; }
+        }
+        return -1;
+    }
+
+    function seasonIndex(season, bvid, cid) {
+        if (!season || !season.episodes) { return -1; }
+        var byVideo = -1;
+        for (var i = 0; i < season.episodes.length; i++) {
+            var ep = season.episodes[i];
+            if (ep.bvid !== bvid) { continue; }
+            if (ep.cid === cid) { return i; }
+            if (byVideo < 0) { byVideo = i; }
+        }
+        return byVideo;
+    }
+
+    function seasonEpisodeDetail(ep, season) {
+        var d = playing.detail;
+        return { bvid: ep.bvid, aid: ep.aid, cid: ep.cid,
+            title: ep.title, pic: ep.pic, duration: ep.duration,
+            author: d.author, mid: d.mid, face: d.face,
+            season: season, pages: [] };
+    }
+
+    /* Parts take priority within an upload; at either edge, continue through
+     * the uploader's collection if this video belongs to one. */
+    function seriesNeighbor(step) {
+        if (!playing) { return null; }
+        var d = playing.detail, pages = d.pages || [], part = currentPartIndex();
+        if (part >= 0 && pages.length > 1 && part + step >= 0 &&
+                part + step < pages.length) {
+            var target = part + step;
+            return { detail: d, cid: pages[target].cid,
+                label: "P" + (target + 1), title: pages[target].part || d.title };
+        }
+        var season = d.season, at = seasonIndex(season, d.bvid, playing.cid);
+        if (at < 0 || at + step < 0 || at + step >= season.episodes.length) { return null; }
+        var ep = season.episodes[at + step];
+        return { detail: seasonEpisodeDetail(ep, season), cid: ep.cid,
+            label: ep.title || "第 " + (at + step + 1) + " 集", title: ep.title };
+    }
+
     function fmt(ms) {
         var s = Math.floor((ms || 0) / 1000);
         var m = Math.floor(s / 60);
@@ -3165,23 +3212,13 @@
     var nextTimer = null;
     var playedInChain = {};     /* stops a chain of autoplays circling back */
 
-    /* What follows the video that just finished. A multi-part upload continues
-     * with its own next part — jumping to an unrelated recommendation halfway
-     * through a tutorial series is not what anyone means by "next". Otherwise
-     * take the first related video not already seen in this chain. */
+    /* Continue through parts, then through the uploader's collection. Only
+     * after the series ends do unrelated recommendations become candidates. */
     function nextUp(cb) {
         if (!playing) { cb(null); return; }
-        var d = playing.detail, cid = playing.cid;
-
-        if (d.pages && d.pages.length > 1) {
-            for (var i = 0; i < d.pages.length - 1; i++) {
-                if (d.pages[i].cid === cid) {
-                    cb({ detail: d, cid: d.pages[i + 1].cid,
-                         title: "P" + (i + 2) + "  " + d.pages[i + 1].part });
-                    return;
-                }
-            }
-        }
+        var d = playing.detail;
+        var episode = seriesNeighbor(1);
+        if (episode) { cb(episode); return; }
 
         function fromList(list) {
             for (var i = 0; i < (list || []).length; i++) {
@@ -3365,6 +3402,9 @@
     /* ---------------- options: quality and parts ---------------- */
 
     var optionsOpen = false;
+    var seasonWindowStart = 0;
+    var seasonWindowVideo = "";
+    var seasonWindowSource = null;
     var commentsView = null;
     var commentsToken = 0;
 
@@ -3541,6 +3581,14 @@
     function paintParts() {
         var d = playing.detail;
         var group = el("opt-parts-group");
+        var prev = el("panel-prev-part"), next = el("panel-next-part");
+        var previous = seriesNeighbor(-1), following = seriesNeighbor(1);
+        prev.className = previous ? "btn ghost focusable" : "btn ghost focusable hidden";
+        next.className = following ? "btn ghost focusable" : "btn ghost focusable hidden";
+        prev.onselect = previous ? function () { play(previous.detail, previous.cid); } : null;
+        next.onselect = following ? function () { play(following.detail, following.cid); } : null;
+        if (previous) { prev.textContent = "上一集：" + previous.label; }
+        if (following) { next.textContent = "下一集：" + following.label; }
         if (d.pages && d.pages.length > 1) {
             group.className = "opt-group";
             var ph = "";
@@ -3605,6 +3653,81 @@
                     if (cid) { play(playing.detail, Number(cid)); }
                 };
             })(opts[k]);
+        }
+    }
+
+    /* A long 合集 can contain hundreds of independent videos. Keep only one
+     * fifty-episode slice in the focus tree, initially the one containing the
+     * playing episode. The adjacent slices remain reachable by remote. */
+    function paintSeason() {
+        var group = el("opt-season-group"), row = el("opt-season");
+        var season = playing.detail.season;
+        var focused = Nav.current();
+        var focusedHere = focused && focused.parentNode === row;
+        var focusedIndex = focusedHere ? focused.getAttribute("data-season-index") : null;
+        var focusedPage = focusedHere ? focused.getAttribute("data-season-page") : null;
+        if (!season || !season.episodes || season.episodes.length < 2) {
+            group.className = "opt-group hidden";
+            row.innerHTML = "";
+            if (focusedHere) { Nav.focus(el("panel-comments")); }
+            return;
+        }
+        var episodes = season.episodes;
+        var at = seasonIndex(season, playing.detail.bvid, playing.cid);
+        var key = String(season.id || "") + ":" + playing.detail.bvid;
+        if (seasonWindowVideo !== key || seasonWindowSource !== season) {
+            seasonWindowVideo = key;
+            seasonWindowSource = season;
+            seasonWindowStart = Math.floor(Math.max(0, at) / 50) * 50;
+        }
+        if (seasonWindowStart >= episodes.length) { seasonWindowStart = 0; }
+        group.className = "opt-group";
+        el("opt-season-label").textContent = season.title ? "合集 · " + season.title : "合集";
+        var end = Math.min(seasonWindowStart + 50, episodes.length);
+        var html = seasonWindowStart > 0 ?
+            '<div class="opt focusable" data-season-page="prev">更早集数</div>' : "";
+        for (var i = seasonWindowStart; i < end; i++) {
+            var ep = episodes[i];
+            var label = (ep.section ? ep.section + " · " : "") + (ep.title || "第 " + (i + 1) + " 集");
+            html += '<div class="opt focusable' + (i === at ? " current" : "") +
+                '" data-season-index="' + i + '"><span class="opt-p">' + (i + 1) +
+                '</span><span class="opt-name">' + esc(label) + '</span>' +
+                (ep.duration ? '<span class="opt-dur">' + esc(ep.duration) + '</span>' : "") +
+                '</div>';
+        }
+        if (end < episodes.length) {
+            html += '<div class="opt focusable" data-season-page="next">更晚集数</div>';
+        }
+        row.innerHTML = html;
+        var nodes = row.querySelectorAll(".opt");
+        for (var j = 0; j < nodes.length; j++) {
+            (function (node) {
+                node.onselect = function () {
+                    var page = node.getAttribute("data-season-page");
+                    if (page) {
+                        seasonWindowStart += page === "next" ? 50 : -50;
+                        paintSeason();
+                        var target = page === "next" ? seasonWindowStart :
+                            Math.min(seasonWindowStart + 49, episodes.length - 1);
+                        Nav.focus(row.querySelector('[data-season-index="' + target + '"]'));
+                        return;
+                    }
+                    var index = Number(node.getAttribute("data-season-index"));
+                    var targetEp = episodes[index];
+                    if (!targetEp || (targetEp.bvid === playing.detail.bvid &&
+                                      targetEp.cid === playing.cid)) { return; }
+                    play(seasonEpisodeDetail(targetEp, season), targetEp.cid);
+                };
+            })(nodes[j]);
+        }
+        /* A late view() response may replace this row while the remote is
+         * already inside it. Move focus onto the replacement node so the next
+         * arrow key does not act on a detached element. */
+        if (focusedHere) {
+            var replacement = focusedIndex !== null ?
+                row.querySelector('[data-season-index="' + focusedIndex + '"]') :
+                (focusedPage ? row.querySelector('[data-season-page="' + focusedPage + '"]') : null);
+            Nav.focus(replacement || row.querySelector(".opt.current") || nodes[0]);
         }
     }
 
@@ -3705,7 +3828,10 @@
         };
         el("panel-comments").onselect = openComments;
 
+        seasonWindowVideo = "";
+        seasonWindowSource = null;
         paintParts();
+        paintSeason();
         paintSpeed();
         paintDanmakuPanel();
 
@@ -3748,6 +3874,10 @@
          * open panel), so keeping them would only be images decoding behind a
          * video that is playing. */
         panelGrid.clear();
+        el("opt-parts").innerHTML = "";
+        el("opt-season").innerHTML = "";
+        seasonWindowSource = null;
+        seasonWindowVideo = "";
         if (!playing) { return; }
         el("playerui").className = "";
         showChrome();
@@ -4682,6 +4812,7 @@
      * fetched is not thrown away only to be fetched again a second later. */
     function absorbMeta(session, full) {
         full.related = session.detail.related;
+        if (!full.season) { full.season = session.detail.season || null; }
         if (!full.publishedAt) { full.publishedAt = session.detail.publishedAt || 0; }
         /* aid may already have been filled in by withAid() on the 403 path; a
          * full view() carries it too, so nothing is lost. */
@@ -4694,6 +4825,7 @@
          * closed and reopened it. Painted in place, not by reopening. */
         if (optionsOpen) {
             paintParts();
+            paintSeason();
             el("panel-desc").textContent = (full.desc || "").slice(0, 400);
             var meta = el("panel-meta").querySelector(".panel-meta-rest");
             if (meta) {
@@ -4736,7 +4868,7 @@
                 session.metaWhy = String(why);
                 report("meta", videoTag(d) + " view 失败（" + why +
                        "）：分 P 列表、简介都拿不到，403 那条路也换不到 aid");
-                if (optionsOpen) { paintParts(); }
+                if (optionsOpen) { paintParts(); paintSeason(); }
             });
         }
         if (!d.related) {
@@ -5507,6 +5639,17 @@
         if (pendingNext) { return handleNextKeys(k); }
         if (optionsOpen) {
             if (k === Nav.KEY.RETURN) { closeOptions(); return true; }
+            /* The first Down from the action row enters the series at the
+             * episode being watched, however far down its list that is. */
+            if (k === Nav.KEY.DOWN) {
+                var focused = Nav.current();
+                var actions = el("panel-actions");
+                var currentPart = document.querySelector("#opt-parts .opt.current");
+                var currentSeason = document.querySelector("#opt-season .opt.current");
+                if (focused && focused.parentNode === actions && (currentPart || currentSeason)) {
+                    Nav.focus(currentPart || currentSeason); return true;
+                }
+            }
             /* Up from the first row leaves the panel, mirroring the down key
              * that opened it — otherwise return is the only way out and there
              * is nothing on screen that says so. */

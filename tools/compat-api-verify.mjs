@@ -57,6 +57,27 @@ function failed(run, pattern) {
 function url(call) { return new URL(call.url); }
 function form(call) { return new URLSearchParams(call.body); }
 
+// The view payload is the only source of both multipart and uploader-series
+// order. Preserve section order and the identifiers needed to cross videos.
+respond({ code: 0, data: { bvid: "BV-second", aid: 22, cid: 221,
+  title: "Current", owner: { name: "UP", mid: 7 },
+  pages: [{ cid: 221, page: 1, part: "Part 1", duration: 60 },
+          { cid: 222, page: 2, part: "Part 2", duration: 90 }],
+  ugc_season: { id: 9, title: "Series", sections: [
+    { title: "Season 1", episodes: [
+      { bvid: "BV-first", aid: 11, cid: 111, title: "E1", arc: { duration: 80 } }] },
+    { title: "Season 2", episodes: [
+      { bvid: "BV-second", aid: 22, cid: 221, title: "E2", arc: { duration: 150 } },
+      { bvid: "BV-third", aid: 33, cid: 331, title: "E3", arc: { duration: 180 } }] },
+  ] } } });
+const view = result((ok, fail) => API.view("BV-second", ok, fail))[0];
+assert.equal(view.pages[1].cid, 222);
+assert.deepEqual(Array.from(view.season.episodes, (ep) => ep.bvid),
+  ["BV-first", "BV-second", "BV-third"]);
+assert.equal(view.season.episodes[1].section, "Season 2");
+assert.equal(view.season.episodes[2].cid, 331);
+assert.equal(url(take()).searchParams.get("bvid"), "BV-second");
+
 // Read-side failures must not masquerade as an empty personal library.
 respond({ code: -101, message: "not logged in" });
 failed((ok, fail) => API.favoriteFolders(42, ok, fail), /code -101/);
