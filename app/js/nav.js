@@ -62,7 +62,20 @@ var Nav = (function () {
      * The container is found by the "scroll" class, so any code that rewrites a
      * scroller's className must keep it — losing it does not fail loudly, it
      * just quietly stops the panel moving when focus reaches the bottom. As a
-     * backstop, an element that actually overflows counts too. */
+     * backstop, an element that actually overflows counts too — if it can
+     * scroll at all.
+     *
+     * 2026-10-23, issue #8 (a 2018 set, Chromium 56): on 设置 focus went down
+     * and the page never moved, while the home grid scrolled the same #screen
+     * with the same assignment. So the walk stopped short of #screen, at a box
+     * on the way — the button, .actions or .mine, by elimination, not measured
+     * — whose scrollHeight claimed more than its height. Those are overflow:
+     * visible, and scrollTop on them does nothing. Skipping one says so once
+     * (onNote), which is how the elimination gets confirmed. The first run of
+     * this on the Tizen 9 set showed the same thing on 首页, measured: a focused
+     * card's scale(1.04) makes a one-row #resume-row (or a grid's bottom row)
+     * claim 489 > 479, and the walk used to stop there too. */
+    var skipNoted = {};
     function scrollIntoView(el) {
         var scroller = el;
         while (scroller && scroller !== document.body) {
@@ -71,6 +84,10 @@ var Nav = (function () {
              * itself never scrolling (2026-10-18). */
             var marked = scroller.className && (" " + scroller.className + " ").indexOf(" scroll ") >= 0;
             var overflows = scroller.scrollHeight > scroller.clientHeight + 4;
+            if (overflows && !marked && window.getComputedStyle(scroller).overflowY === "visible") {
+                noteSkip(scroller);
+                overflows = false;
+            }
             if (marked || overflows) { break; }
             scroller = scroller.parentNode;
         }
@@ -79,6 +96,13 @@ var Nav = (function () {
         var sr = scroller.getBoundingClientRect();
         var target = er.top - sr.top + scroller.scrollTop - (sr.height / 2) + (er.height / 2);
         scroller.scrollTop = Math.max(0, target);
+    }
+    function noteSkip(box) {
+        var name = box.id ? "#" + box.id : "." + String(box.className).split(" ")[0];
+        if (skipNoted[name] || !handlers.note) { return; }
+        skipNoted[name] = true;
+        handlers.note("找滚动容器时跳过 " + name + "：overflow 是 visible，滚不了，却报 scrollHeight " +
+                      box.scrollHeight + " > clientHeight " + box.clientHeight);
     }
 
     /* A row wider than its box — the top bar's tabs, once 直播 and the chosen
@@ -223,6 +247,7 @@ var Nav = (function () {
         reveal: function (el) { if (el) { scrollSideways(el); } },
         onBack: function (fn) { handlers.back = fn; },
         onFocus: function (fn) { handlers.focus = fn; },
+        onNote: function (fn) { handlers.note = fn; },
         onKey: function (fn) { handlers.key = fn; },
         registerKeys: function () {
             try {

@@ -1002,6 +1002,24 @@ var SelfTest = (function () {
             return !Diag.enabled() || /编号 [A-Z2-9]{4}-[A-Z2-9]{4}/.test(st.textContent) ? null
                 : "状态行里没有编号：" + st.textContent;
         }],
+        /* 2026-10-23, issue #8: on a Chromium 56 set focus went down 设置 and
+         * the page stayed put, the bottom half out of reach. Every press here
+         * must leave the focused button inside #screen. */
+        ["设置页一路按下键，页面跟着滚", 300, function () {
+            var screen = document.getElementById("screen");
+            Nav.focus(document.getElementById("btn-autoplay"));
+            var start = screen.scrollTop, lost = 0, sr = screen.getBoundingClientRect();
+            for (var i = 0; i < 12; i++) {
+                key(KEY.DOWN);
+                var r = Nav.current().getBoundingClientRect();
+                if (r.top < sr.top - 2 || r.bottom > sr.bottom + 2) { lost++; }
+            }
+            var end = screen.scrollTop, at = Nav.current().id || Nav.current().textContent;
+            Nav.focus(document.getElementById("btn-autoplay"));
+            post("设置页按 12 下下键：到了 " + at + "，scrollTop " + start + " → " + end + "，焦点出画面 " + lost + " 次");
+            return lost === 0 && end > start + 100 ? null
+                : "焦点出画面 " + lost + " 次，scrollTop " + start + " → " + end + "（到了 " + at + "）";
+        }],
         ["退出设置回到推荐", 300, function () {
             key(KEY.RETURN);
             return document.querySelector('#tabs .tab.active[data-screen="rcmd"]') ? null : "没有回到推荐";

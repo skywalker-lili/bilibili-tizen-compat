@@ -7757,6 +7757,7 @@
         Diag.init({ report: report });
 
         Nav.registerKeys();
+        Nav.onNote(function (m) { report("nav", m); });
         Nav.onFocus(function (elm) {
             if (commentsView && elm && elm.getAttribute) {
                 var ci = Number(elm.getAttribute("data-comment-index"));
