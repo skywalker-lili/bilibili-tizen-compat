@@ -2472,7 +2472,8 @@
     window.__stLiveRoom = function () {
         return liveRoom && { room: liveRoom.nativeFor, fmt: liveRoom.nativeFmt, used: liveRoom.qnUsed,
                              below: liveRoom.tsBelow, gaveUp: liveRoom.tsGaveUp, token: liveRoom.token, moved: liveRoom.moved,
-                             mseSteps: liveRoom.mseSteps, mseTry: liveRoom.mseTry, native: liveNative };
+                             mseSteps: liveRoom.mseSteps, mseTry: liveRoom.mseTry, native: liveNative,
+                             tsSilent: liveRoom.tsSilent, flvGaveUp: liveRoom.flvGaveUp, flvDead: liveFlvDead };
     };
     window.__stWake = function () { lastWake = 0; wokeUp("自测模拟关机再开机", AWAY_MS); };
 
@@ -4346,11 +4347,33 @@
      * liveNative on: Shaka has nothing to play, AVPlay has. Until 10-23 that
      * room was 「没有 HLS-fMP4 的流」 and closed (issue #7, a Tizen 4.0 set).
      * So does a room whose playlist Shaka finds nothing playable in (4032,
-     * LIVE_UNSUPPORTED): reconnecting fetched the same refusal three times. */
+     * LIVE_UNSUPPORTED): reconnecting fetched the same refusal three times.
+     *
+     * AVPlay is given the room's HTTP-FLV first, then TS, then fMP4 (10-24).
+     * The Tizen 3.0 set, one morning on 1.4.2/1.4.3: 65 rooms closed with both
+     * TS hosts silent, 25 played. Nearly all of the closed ones offer only
+     * 原画 — TS and FLV, no fMP4 — and from here their TS playlist did not
+     * answer in 20 s, four rooms of four, while their FLV sent its first bytes
+     * within two seconds. Those rooms closed on every set, not only that one:
+     * with no fMP4 there is nothing for MSE either. Of the eight biggest rooms
+     * that evening, the FLV on d1--ov-gotcha07 answered and the TS was silent
+     * or answered; the FLV on d1--ov-gotcha05 was 403 and the TS answered.
+     * On the Tizen 9 set AVPlay played an FLV 原画 (1080p, H.264) with its
+     * clock moving half a second after prepare. Whether Tizen 3.0's AVPlay
+     * plays FLV is not known yet: one room failing it turns FLV off for the
+     * run (liveFlvDead).
+     *
+     * MSE is tried on a room once (room.mseTry) only while it can still turn
+     * out to work: after two rooms in which no tier decoded and none played,
+     * it is not tried again this run (the Tizen 3.0 set went through three
+     * MSE starts on every room AVPlay could not play, on 1.4.3, and none ever
+     * decoded). */
     var liveNative = false;
     var liveMseOk = false;          /* MSE has shown a live picture this session */
+    var liveMseFails = 0;           /* rooms in which no tier decoded on MSE, while liveMseOk is false */
     var liveFmp4Dead = false;       /* AVPlay could not start HLS-fMP4 this session */
-    var liveNativeForce = "";       /* selftest only: "ts" | "fmp4" | "none" (AVPlay is given nothing) */
+    var liveFlvDead = false;        /* AVPlay could not start HTTP-FLV this session */
+    var liveNativeForce = "";       /* selftest only: "ts" | "fmp4" | "none" (AVPlay is given nothing) | "tsdead" (no TS playlist answers) */
     var liveFailTsOnce = false;     /* selftest only: the next TS start reports NOT_SUPPORTED_FORMAT */
     var liveNoFmp4 = false;         /* selftest only: every room answers as if it had TS and no fMP4 */
     var liveFail4032Once = false;   /* selftest only: the next Shaka start reports 4032 */
@@ -4379,7 +4402,8 @@
         liveRoom = { list: list, index: index, tries: 0, token: 0, item: null,
                      qnName: "", pausedAt: 0, timed: false, failing: false, okTimer: null,
                      nativeFmt: "", nativeFor: "", qnAsk: 0, qnUsed: 0, qnAccept: [], tsBelow: 0, tsGaveUp: false, steps: 0,
-                     timedAt: 0, moved: false, clockPos: -1, clockMovedAt: 0, bufAt: 0, mseRefused: false, mseSteps: 0, mseTry: false };
+                     timedAt: 0, moved: false, clockPos: -1, clockMovedAt: 0, bufAt: 0, mseRefused: false, mseSteps: 0, mseTry: false,
+                     tsSilent: false, flvGaveUp: false };
         startLiveRoom("");
     }
 
@@ -4406,6 +4430,8 @@
             room.mseRefused = false;
             room.mseSteps = 0;
             room.mseTry = false;
+            room.tsSilent = false;
+            room.flvGaveUp = false;
         }
         el("shell").className = "veiled";
         el("pause-glyph").className = "hidden";
@@ -4449,16 +4475,16 @@
                 }, LIVE_NATIVE_WAIT);
             }
             if ((!liveNative || room.mseTry) && url && !room.mseRefused) { mse(""); return; }
-            /* No fMP4 for Shaka: the TS is AVPlay's on any set (issue #7). */
+            /* No fMP4 for Shaka: the FLV and TS are AVPlay's on any set (issue #7). */
             if (!url) { report("live", "房间 " + v.roomid + " 没有 HLS-fMP4，给的是 " + p.shape); }
             function native(fmt, u, note) {
                 if (liveRoom !== room || token !== room.token) { return; }
-                var ts = fmt === "HLS-TS";
+                var ts = fmt === "HLS-TS", flv = fmt === "HTTP-FLV";
                 room.nativeFmt = fmt;
-                room.qnUsed = ts ? p.tsQn : p.qn;
-                room.qnAccept = ts ? p.tsAcceptQn : p.acceptQn;
-                room.qnName = ts ? p.tsQnName : p.qnName;
-                open(room.qnName, ts ? p.tsCodec : p.codec, " " + fmt + " 走 AVPlay", u, note);
+                room.qnUsed = ts ? p.tsQn : flv ? p.flvQn : p.qn;
+                room.qnAccept = ts ? p.tsAcceptQn : flv ? p.flvAcceptQn : p.acceptQn;
+                room.qnName = ts ? p.tsQnName : flv ? p.flvQnName : p.qnName;
+                open(room.qnName, ts ? p.tsCodec : flv ? p.flvCodec : p.codec, " " + fmt + " 走 AVPlay", u, note);
                 Player.playLiveNative(u);
                 if (ts && liveFailTsOnce) {
                     liveFailTsOnce = false;
@@ -4488,12 +4514,71 @@
                     }
                 }, 1000);
             }
+            /* What AVPlay is given, in order: the room's HTTP-FLV, its TS, its
+             * fMP4; each from the first host that answers, each skipped once it
+             * has failed in this room. FLV first (10-24): from here it answered
+             * in 0.1–2.7 s wherever the TS was silent, and where it is refused
+             * (d1--ov-gotcha05, 403 at once) the TS answered — so either way the
+             * room starts without the eight seconds of waiting on two silent
+             * TS playlists. */
+            function viaFlv(note) {
+                var hosts = [], said = [], i;
+                for (i = 0; i < p.flvUrls.length; i++) { hosts.push(p.flvUrls[(room.tries + i) % p.flvUrls.length]); }
+                function next(k) {
+                    if (liveRoom !== room || token !== room.token) { return; }
+                    if (k >= hosts.length) {
+                        room.flvGaveUp = true;
+                        viaTs(note + "（HTTP-FLV " + said.join("；") + "）");
+                        return;
+                    }
+                    peekStream(hosts[k], "flv", function (ok, what) {
+                        if (ok) { native("HTTP-FLV", hosts[k], note + (said.length ? "（前一台 " + said.join("；") + "）" : "")); return; }
+                        said.push((hosts[k].split("/")[2] || "?") + " " + what);
+                        next(k + 1);
+                    });
+                }
+                next(0);
+            }
+            function viaTs(note) {
+                /* Asked for a lower tier and given the one that failed: no loop. */
+                if (room.tsBelow && p.tsQn >= room.tsBelow) {
+                    report("live", "要了低于 qn" + room.tsBelow + " 的 TS，给的还是 qn" + p.tsQn + "，这个直播间不再试 TS");
+                    room.tsGaveUp = true;
+                }
+                var tsUrls = room.tsGaveUp || room.tsSilent ? [] : p.tsUrls;
+                if (!tsUrls.length) {
+                    withoutTs(note + (room.tsGaveUp ? "（这个直播间的 TS 各档都试过了）" : room.tsSilent ? "（HLS-TS 的清单刚才都没回）" : "（没给 HLS-TS）"));
+                    return;
+                }
+                /* Starting from the host this reconnect is due, then the other. */
+                var order = [], said = [], i;
+                for (i = 0; i < tsUrls.length; i++) { order.push(tsUrls[(room.tries + i) % tsUrls.length]); }
+                if (liveNativeForce === "ts") { native("HLS-TS", order[0], "（自测指定）"); return; }
+                function nextHost(k) {
+                    if (liveRoom !== room || token !== room.token) { return; }
+                    if (k >= order.length) {
+                        /* Not looked at again in this room: silent for this long it has
+                         * stayed silent (20 s, four rooms, 10-24), and a reconnect that
+                         * waits on it again is eight more seconds of black. */
+                        room.tsSilent = true;
+                        withoutTs(note + "（HLS-TS 的清单 " + said.join("；") + "）");
+                        return;
+                    }
+                    if (liveNativeForce === "tsdead") { said.push((order[k].split("/")[2] || "?") + " 当作没回（自测）"); nextHost(k + 1); return; }
+                    peekStream(order[k], "m3u8", function (ok, what) {
+                        if (ok) { native("HLS-TS", order[k], note + (said.length ? "（前一台 " + said.join("；") + "）" : "")); return; }
+                        said.push((order[k].split("/")[2] || "?") + " " + what);
+                        nextHost(k + 1);
+                    });
+                }
+                nextHost(0);
+            }
             function withoutTs(note) {
                 if (!liveFmp4Dead && url && liveNativeForce !== "none") { native("HLS-fMP4", url, note); return; }
                 var lacks = note + (!url ? "（也没有 HLS-fMP4）" : liveFmp4Dead ? "（HLS-fMP4 这次运行里 AVPlay 起不来）" : "");
                 /* The session is on AVPlay because of some other room; this
                  * one MSE has not refused. */
-                if (liveNative && url && !room.mseRefused && !room.mseTry) {
+                if (liveNative && url && !room.mseRefused && !room.mseTry && (liveMseOk || liveMseFails < 2)) {
                     room.mseTry = true;
                     mse("（AVPlay 放不了它" + lacks + "，试一次 MSE）");
                     return;
@@ -4503,33 +4588,21 @@
                 trouble("这个直播间现在放不了");
             }
             if (liveNativeForce === "fmp4" && url) { native("HLS-fMP4", url, "（自测指定）"); return; }
-            /* Asked for a lower tier and given the one that failed: no loop. */
-            if (room.tsBelow && p.tsQn >= room.tsBelow) {
-                report("live", "要了低于 qn" + room.tsBelow + " 的 TS，给的还是 qn" + p.tsQn + "，这个直播间不再试 TS");
-                room.tsGaveUp = true;
-            }
             if (liveNativeForce === "none") { withoutTs("（自测：当作 AVPlay 什么都放不了）"); return; }
-            var tsUrls = room.tsGaveUp ? [] : p.tsUrls;
-            if (!tsUrls.length) { withoutTs(room.tsGaveUp ? "（这个直播间的 TS 各档都试过了）" : "（没给 HLS-TS）"); return; }
-            /* Starting from the host this reconnect is due, then the other. */
-            var order = [], i;
-            for (i = 0; i < tsUrls.length; i++) { order.push(tsUrls[(room.tries + i) % tsUrls.length]); }
-            if (liveNativeForce === "ts") { native("HLS-TS", order[0], "（自测指定）"); return; }
-            var said = [];
-            function nextHost(k) {
-                if (liveRoom !== room || token !== room.token) { return; }
-                if (k >= order.length) { withoutTs("（HLS-TS 的清单 " + said.join("；") + "）"); return; }
-                peekPlaylist(order[k], function (ok, what) {
-                    if (ok) { native("HLS-TS", order[k], said.length ? "（前一台 " + said.join("；") + "）" : ""); return; }
-                    said.push((order[k].split("/")[2] || "?") + " " + what);
-                    nextHost(k + 1);
-                });
+            /* The selftest's TS steps are about TS: as if this room's FLV had failed. */
+            if (liveNativeForce === "ts" || liveFailTsOnce) { room.flvGaveUp = true; }
+            if (liveFlvDead || room.flvGaveUp || !p.flvUrls.length) {
+                viaTs(liveFlvDead ? "（HTTP-FLV 这次运行里 AVPlay 起不来）" : !p.flvUrls.length ? "（没给 HTTP-FLV）" : "");
+                return;
             }
-            nextHost(0);
+            viaFlv("");
         }, function (whyNot, shape) {
             if (liveRoom !== room || token !== room.token) { return; }
             report("live", "房间 " + v.roomid + " 取不到流：" + whyNot + (shape ? "（" + shape + "）" : ""));
             stopLive();
+            /* A room that has ended is not a failure (10-24: a set woke after
+             * thirteen hours in a room, reconnected, and sent the log in). */
+            if (/^没在直播/.test(String(whyNot))) { toast("这个直播间现在没在直播"); return; }
             trouble("这个直播间现在放不了：" + whyNot);
         }, room.qnAsk);
     }
@@ -4543,9 +4616,11 @@
         return lower;
     }
 
-    /* Does a playlist answer as one, within four seconds? For choosing what
-     * AVPlay is given — it has no way to say "this address is dead" itself. */
-    function peekPlaylist(url, done) {
+    /* Does a playlist answer as one — or an FLV start with its signature —
+     * within four seconds? For choosing what AVPlay is given: it has no way
+     * to say "this address is dead" itself. An FLV never ends, so it is let
+     * go as soon as its first bytes are in. */
+    function peekStream(url, kind, done) {
         var finished = false, xhr = null;
         /* Its own timer, not xhr.timeout: a timed-out request reaches
          * readyState 4 with status 0 before ontimeout, and would read 连不上. */
@@ -4563,8 +4638,14 @@
             xhr = new XMLHttpRequest();
             xhr.open("GET", url, true);
             xhr.onreadystatechange = function () {
+                if (kind === "flv" && xhr.readyState === 3 && xhr.status === 200 && String(xhr.responseText || "").length >= 3) {
+                    var head = String(xhr.responseText).slice(0, 3);
+                    end(head === "FLV", head === "FLV" ? "200" : "答的不是 FLV");
+                    try { xhr.abort(); } catch (e) {}
+                    return;
+                }
                 if (xhr.readyState !== 4) { return; }
-                if (xhr.status === 200 && /^#EXTM3U/.test(xhr.responseText || "")) { end(true, "200"); }
+                if (xhr.status === 200 && (kind === "flv" ? /^FLV/ : /^#EXTM3U/).test(xhr.responseText || "")) { end(true, "200"); }
                 else { end(false, xhr.status ? "答 HTTP " + xhr.status : "连不上"); }
             };
             xhr.send();
@@ -4637,6 +4718,7 @@
                     return;
                 }
                 room.mseRefused = true;
+                if (decode && !liveMseOk) { liveMseFails++; }
                 var what = decode ? "MSE 哪一档都解不了" : "这个直播间的流 MSE 放不了（4032）";
                 if (room.mseTry) {
                     report("live", what + "，AVPlay 也放不了，这个直播间放不了");
@@ -4663,6 +4745,16 @@
                  * the format, is this player and fMP4 (the Tizen 3.0 set). */
                 var stuck = /时间没走/.test(String(data));
                 if (room.nativeFmt === "HLS-fMP4" && !stuck) { liveFmp4Dead = true; }
+                /* FLV not starting at all is this player and FLV: the next
+                 * route for this room right away, no reconnect spent. */
+                if (room.nativeFmt === "HTTP-FLV" && !stuck) {
+                    liveFlvDead = true;
+                    room.flvGaveUp = true;
+                    report("live", "HTTP-FLV AVPlay 起不来，这次运行不再给它");
+                    Player.stop();
+                    startLiveRoom("");
+                    return;
+                }
                 if (room.nativeFmt === "HLS-TS" || stuck) {
                     var lower = lowerQn(room.qnAccept, room.qnUsed);
                     /* At most three steps a room: a server that answers a lower ask
@@ -7647,8 +7739,13 @@
              * ended. */
             report("player", "所有路都试过，有声退出（" +
                    (refused ? "403 被拒" : String(data)) + "）");
+            /* Without an account there is no strong token (it needs access_key),
+             * and that is the one thing that gets a refused stream through.
+             * 10-23/24: two sets on no account, refused on most videos, told
+             * to wait a few minutes. */
             trouble(refused
-                ? "视频流被拒绝（403）——可能是临时限流，过几分钟再试，或换一个视频"
+                ? (Auth.accessKey() ? "视频流被拒绝（403）——可能是临时限流，过几分钟再试，或换一个视频"
+                                    : "视频流被拒绝（403）——先去「我的」扫码登录再试")
                 : "播放错误：" + data);
             failOut();
         }

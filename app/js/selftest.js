@@ -1524,9 +1524,45 @@ var SelfTest = (function () {
             if (probe.freeze.t0 < 0) { probe.freeze.t0 = t; return WAIT; }
             return t - probe.freeze.t0 >= 1500 ? null : WAIT;
         }, 40000, "40 秒没重连起来（看 live: 那几行）"],
-        /* Up to two playlist looks, a TS that stalls (10 s) and steps down, two
-         * more looks and fMP4 — 10-22 that whole road took about 35 s here. */
-        ["直播：再走 AVPlay，有能用的 HLS-TS 就用 TS，出画面、时间在走", 300, function () {
+        /* 10-24: rooms that offer only 原画 have TS and FLV and no fMP4, and
+         * their TS playlist never answered from here; AVPlay is given the FLV
+         * first. No TS playlist counts as answering here, so a room is either
+         * on its HTTP-FLV or on fMP4. Some rooms' FLV hosts answer 403 from
+         * here (d1--ov-gotcha05: the two biggest rooms, 10-24; their TS
+         * answers), which says nothing about AVPlay: on to the next room, and
+         * back again afterwards. */
+        ["直播：AVPlay 先放 HTTP-FLV，出画面、时间在走", 300, function () {
+            var st = window.__stLiveRoom() || {}, f = probe.flv;
+            function back(r) {
+                for (var i = 0; i < f.hops; i++) { key(KEY.UP); }
+                return r;
+            }
+            if (!f) {
+                probe.flv = { t0: -1, hops: 0, room: "" };
+                window.__stLiveNative(true, "tsdead");
+                return WAIT;
+            }
+            if (visible("shell")) { return "退回了网格（看 live: 那几行）"; }
+            if (st.flvDead) { return back("AVPlay 起不来 HTTP-FLV（看 live: 那几行）"); }
+            if (st.flvGaveUp && st.room !== f.room) {
+                if (f.hops >= 6) { return back("7 个直播间的 HTTP-FLV 都没答（看 live: 那几行）"); }
+                f.room = st.room;
+                f.hops++;
+                f.t0 = -1;
+                key(KEY.DOWN);
+                return WAIT;
+            }
+            if (Player.mode() !== "avplay" || visible("player-loading") || st.fmt !== "HTTP-FLV") { return WAIT; }
+            var t = -1;
+            try { if (webapis.avplay.getState() === "PLAYING") { t = webapis.avplay.getCurrentTime(); } } catch (e) {}
+            if (t < 0) { return WAIT; }
+            if (f.t0 < 0) { f.t0 = t; return WAIT; }
+            return t - f.t0 >= 1500 ? back(null) : WAIT;
+        }, 90000, "90 秒没在 AVPlay 上用 HTTP-FLV 走起来（看 live: 那几行）"],
+        /* The room chooses: FLV, TS or fMP4, whichever answers first in that
+         * order. 10-22, before FLV, a TS that stalled (10 s) and stepped down,
+         * two more playlist looks and fMP4 took about 35 s here. */
+        ["直播：再走 AVPlay，直播间自己挑 FLV / TS / fMP4，出画面、时间在走", 300, function () {
             return liveNativeStep("auto");
         }, 60000, "60 秒没在 AVPlay 上走起来"],
         /* The Tizen 3.0 set's third room (10-22): its 原画 TS was
@@ -1585,11 +1621,11 @@ var SelfTest = (function () {
             return st.native ? "MSE 放出来了，这次运行却还在 AVPlay 上" : null;
         }, 30000, "30 秒没在 MSE 上出画面（看 live: 那几行）"],
         /* Issue #7 (10-23, a Tizen 4.0 set): a room offering no fMP4 was closed
-         * with 「没有 HLS-fMP4 的流」 whatever else it had. With only TS it goes
-         * to AVPlay, on any set. TS not answering here is weather: the room
+         * with 「没有 HLS-fMP4 的流」 whatever else it had. With FLV or TS it goes
+         * to AVPlay, on any set. Neither answering here is weather: the room
          * then closes with the plain message, and is opened again (on MSE) for
          * the 返回 step below. */
-        ["直播：没有 HLS-fMP4 的直播间走 AVPlay 放 TS", 300, function () {
+        ["直播：没有 HLS-fMP4 的直播间走 AVPlay 放 FLV 或 TS", 300, function () {
             var nf = probe.noFmp4;
             if (!nf) {
                 nf = probe.noFmp4 = { t0: -1, reopened: false };
@@ -1606,23 +1642,23 @@ var SelfTest = (function () {
                 var said = document.getElementById("toast").textContent;
                 window.__stLiveNoFmp4(false);
                 if (/fMP4|没给/.test(said)) { return "没有 fMP4 的直播间被关掉了：" + said; }
-                post("这个直播间的 TS 清单不通，关了（「" + said + "」），重新打开");
+                post("这个直播间的 FLV 和 TS 都不通，关了（「" + said + "」），重新打开");
                 nf.reopened = true;
                 Nav.focus(document.querySelector('#feed-grid .card[data-i="1"]'));
                 key(KEY.ENTER);
                 return WAIT;
             }
             var st = window.__stLiveRoom() || {};
-            if (st.fmt !== "HLS-TS" || Player.mode() !== "avplay" || visible("player-loading")) { return WAIT; }
+            if ((st.fmt !== "HLS-TS" && st.fmt !== "HTTP-FLV") || Player.mode() !== "avplay" || visible("player-loading")) { return WAIT; }
             var t = -1;
             try { if (webapis.avplay.getState() === "PLAYING") { t = webapis.avplay.getCurrentTime(); } } catch (e) {}
             if (t < 0) { return WAIT; }
             if (nf.t0 < 0) { nf.t0 = t; return WAIT; }
             if (t - nf.t0 < 1500) { return WAIT; }
             window.__stLiveNoFmp4(false);
-            post("直播间 " + st.room + " 没有 fMP4，走 AVPlay 放 HLS-TS qn" + st.used + "，时间在走");
+            post("直播间 " + st.room + " 没有 fMP4，走 AVPlay 放 " + st.fmt + " qn" + st.used + "，时间在走");
             return null;
-        }, 60000, "60 秒没在 AVPlay 上放起 TS（看 live: 那几行）"],
+        }, 60000, "60 秒没在 AVPlay 上放起 FLV 或 TS（看 live: 那几行）"],
         ["直播：返回，焦点落在最后看的那个直播间", 600, function () {
             key(KEY.RETURN);
             var f = document.querySelector("#feed-grid .card.focused");

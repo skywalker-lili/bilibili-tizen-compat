@@ -213,9 +213,17 @@ assert.equal(live.tsUrls[1], "https://d1--cn-gotcha204.bilivideo.com/live/ts.m3u
 assert.equal(live.tsQnName, "原画");
 assert.deepEqual(Array.from(live.tsAcceptQn), [10000, 250]);
 assert.match(live.shape, /http_hls\/ts\(avc qn10000 d1--cn-gotcha104 ×2\)/);
-let nothing = liveFails(liveRoom([]));
+/* Only FLV is still a room: AVPlay plays it (10-24, rooms that offer only 原画). */
+respond(liveRoom([]));
+live = result((ok, fail) => API.livePlay(5, ok, fail))[0];
+take();
+assert.deepEqual(Array.from(live.urls), []);
+assert.deepEqual(Array.from(live.tsUrls), []);
+assert.equal(live.flvUrls[0], "https://d1--ov-gotcha105.bilivideo.com/live/a.flv?");
+assert.equal(live.flvQnName, "原画");
+let nothing = liveFails({ code: 0, data: { live_status: 1, playurl_info: { playurl: { stream: [] } } } });
 assert.equal(nothing.why, "没给电视放得了的流");
-assert.equal(nothing.shape, "http_stream/flv(avc qn10000 d1--ov-gotcha105)");
+assert.equal(nothing.shape, "一路流都没有");
 nothing = liveFails({ code: 0, data: { live_status: 1, playurl_info: null } });
 assert.equal(nothing.shape, "没有 playurl_info");
 assert.equal(replies.length, 0);

@@ -453,17 +453,23 @@ var API = (function () {
          * A room with TS and no fMP4 is still a room (urls empty; AVPlay plays
          * the TS): issue #7, 10-23, a Tizen 4.0 set was told 「没有 HLS-fMP4 的流」
          * and nothing said what the room did offer — `shape` says, for the log.
+         * The HTTP-FLV of the room comes along as flvUrls, also for AVPlay
+         * (10-24): rooms that only offer 原画 have no fMP4, and their TS
+         * playlist on d1--ov-gotcha105/105b did not answer in 20 s from here,
+         * four rooms out of four, while the same rooms' FLV on
+         * d1--ov-gotcha07/07b sent its first bytes in 0.1–1.8 s.
          * onOk({urls, qn, qnName, codec, accept, acceptQn,
-         *       tsUrls, tsQn, tsQnName, tsCodec, tsAcceptQn, signed, shape});
-         * onFail(why, shape) when neither is there. */
+         *       tsUrls, tsQn, tsQnName, tsCodec, tsAcceptQn,
+         *       flvUrls, flvQn, flvQnName, flvCodec, flvAcceptQn, signed, shape});
+         * onFail(why, shape) when none is there. */
         livePlay: function (roomId, onOk, onFail, qn) {
             var url = LIVE + "/xlive/web-room/v2/index/getRoomPlayInfo?room_id=" + encodeURIComponent(roomId) +
-                      "&protocol=1&format=1,2&codec=0,1&qn=" + (qn || 10000) + "&platform=web&ptype=8&dolby=5&panorama=1";
+                      "&protocol=0,1&format=0,1,2&codec=0,1&qn=" + (qn || 10000) + "&platform=web&ptype=8&dolby=5&panorama=1";
             var signedIn = typeof Auth !== "undefined" && Auth.isLoggedIn();
             function bestOf(pu, formatName) {
                 var best = null;
                 (pu.stream || []).forEach(function (s) {
-                    if (s.protocol_name !== "http_hls") { return; }
+                    if (s.protocol_name !== (formatName === "flv" ? "http_stream" : "http_hls")) { return; }
                     (s.format || []).forEach(function (f) {
                         if (f.format_name !== formatName) { return; }
                         (f.codec || []).forEach(function (c) {
@@ -503,14 +509,16 @@ var API = (function () {
                 var names = {};
                 (pu.g_qn_desc || []).forEach(function (q) { names[q.qn] = q.desc; });
                 var none = { qn: 0, codec: "", hosts: [], accept: [] };
-                var best = bestOf(pu, "fmp4"), ts = bestOf(pu, "ts");
+                var best = bestOf(pu, "fmp4"), ts = bestOf(pu, "ts"), flv = bestOf(pu, "flv");
                 if (!best || !best.hosts.length) { best = null; }
                 if (!ts || !ts.hosts.length) { ts = null; }
+                if (!flv || !flv.hosts.length) { flv = null; }
                 var shape = d.playurl_info ? shapeOf(pu) : "没有 playurl_info";
-                if (!best && !ts) { onFail("没给电视放得了的流", shape); return; }
+                if (!best && !ts && !flv) { onFail("没给电视放得了的流", shape); return; }
                 var urls = urlsOf(best);
                 best = best || none;
                 ts = ts || none;
+                flv = flv || none;
                 onOk({
                     urls: urls,
                     qn: best.qn, qnName: names[best.qn] || ("qn" + best.qn), codec: best.codec,
@@ -518,6 +526,8 @@ var API = (function () {
                     acceptQn: best.accept.map(Number),
                     tsUrls: urlsOf(ts), tsQn: ts.qn, tsQnName: names[ts.qn] || ("qn" + ts.qn), tsCodec: ts.codec,
                     tsAcceptQn: ts.accept.map(Number),
+                    flvUrls: urlsOf(flv), flvQn: flv.qn, flvQnName: names[flv.qn] || ("qn" + flv.qn), flvCodec: flv.codec,
+                    flvAcceptQn: flv.accept.map(Number),
                     signed: signed, shape: shape
                 });
             }

@@ -987,11 +987,30 @@ var Player = (function () {
             if (startMs) { try { webapis.avplay.seekTo(startMs); } catch (e) {} }
             if (!userPaused) { webapis.avplay.play(); }
             if (playRate !== 1) { applyRate(); }
+            if (opts && opts.live) { log("AVPlay 的流：" + avplayStreams()); }
             mark("playing");
             emit("playing", { duration: duration });
         }, function (err) {
             if (live()) { emit("error", "prepare failed: " + err); }
         });
+    }
+
+    /* What AVPlay found in a live stream, once prepared: on AVPlay a clock
+     * that moves is all the selftest can see, and a picture is a video
+     * track with a size. 「视频 H264 1920x1080 · 音频 AAC」. */
+    function avplayStreams() {
+        var out = [];
+        try {
+            var tracks = webapis.avplay.getCurrentStreamInfo() || [];
+            for (var i = 0; i < tracks.length; i++) {
+                var x = {};
+                try { x = JSON.parse(tracks[i].extra_info || "{}"); } catch (e) {}
+                var t = tracks[i].type;
+                out.push((t === "VIDEO" ? "视频 " : t === "AUDIO" ? "音频 " : t + " ") + (x.fourCC || "?") +
+                         (t === "VIDEO" ? " " + (x.Width || "?") + "x" + (x.Height || "?") : ""));
+            }
+        } catch (e) { return "读不出：" + (e && (e.name || e.message)); }
+        return out.join(" · ") || "一路都没有";
     }
 
     /* ---------------- MSE ---------------- */
@@ -2955,7 +2974,7 @@ var Player = (function () {
         /* 直播 through AVPlay, from an HLS-TS playlist: for an engine whose MSE
          * cannot decode the live fMP4 (Tizen 3.0, issue #5). The AVPlay
          * listener's events are the same ones app.js already reads for live. */
-        playLiveNative: function (url) { reset(); mark("manifest"); playAvplay(url, 0, { bufferSec: 3 }); },
+        playLiveNative: function (url) { reset(); mark("manifest"); playAvplay(url, 0, { bufferSec: 3, live: true }); },
         playDash: function (dash, startMs) {
             reset();
             /* Half a second goes missing between `playurl` and `manifest` and
