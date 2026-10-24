@@ -10,10 +10,9 @@
  * The client scrubs before sending (names, titles, credentials); this end does
  * not store the sender's IP address — only the country Cloudflare resolves it
  * to, because "which region's CDN" is exactly the question issue #5 could not
- * answer. Nor an IP address inside the lines: 10-24, a CDN's 403 page quoted
- * in a log line (Client_ip), a response header (x-debug-rmt-addr) and the
- * stream url's oi= carried the viewer's, and every build already out there
- * keeps sending them — so this end takes them out too (noIp). */
+ * answer. Nor an IP address inside the lines: the same rules as diag.js
+ * (Client_ip, x-debug-rmt-addr, oi=, dotted quads) run here too (noIp), so
+ * what a client misses is not stored either. */
 
 const APPS = new Set(["bilibili-tizen", "douyin-tizen", "telegram-tizen"]);
 const MAX_BYTES = 600000;        // diag.js caps its ring at 160k characters; CJK is 3 bytes each
