@@ -5472,6 +5472,30 @@
         }
         return -1;
     }
+    function paintEpisodeControls() {
+        var d = playing && playing.detail;
+        var prev = d && EpisodeNav.adjacent(d, playing.cid, -1);
+        var next = d && EpisodeNav.adjacent(d, playing.cid, 1);
+        var group = el("opt-episode-controls");
+        group.className = prev || next ? "opt-group" : "opt-group hidden";
+        function bind(id, choice) {
+            var button = el(id);
+            button.className = choice ? "btn ghost focusable" : "btn ghost focusable hidden";
+            button.onselect = choice ? function () {
+                /* Resolve again at selection time: deferred view() can replace
+                 * detail while the panel is open. */
+                var current = EpisodeNav.adjacent(playing.detail, playing.cid,
+                    id === "panel-prev-episode" ? -1 : 1);
+                if (!current) { return; }
+                var detail = playing.detail;
+                closeOptions();
+                if (current.kind === "part") { play(detail, current.cid); }
+                else { playSeasonEpisode(detail.season, current.index); }
+            } : null;
+        }
+        bind("panel-prev-episode", prev);
+        bind("panel-next-episode", next);
+    }
     function paintSeason() {
         var s = playing && playing.detail && playing.detail.season;
         var group = el("opt-season-group");
@@ -5713,6 +5737,7 @@
         ot.mark("分P");
         paintSeason();
         ot.mark("合集");
+        paintEpisodeControls();
         paintSpeed();
         ot.mark("倍速");
         /* No 弹幕 row since 2026-10-20 (the viewer: 「弹幕的设置入口，就保留在统一设置的
@@ -5736,7 +5761,8 @@
         /* The episode being watched when there is a list of them, else the
          * row's first button. Spelled out since speed moved into the top row
          * (2026-10-20): its current chip would win `#options .opt.current`. */
-        var firstFocus = ["#opt-parts .opt.current", "#opt-season .opt.current", "#panel-dm"];
+        var firstFocus = ["#panel-next-episode", "#panel-prev-episode",
+                          "#opt-parts .opt.current", "#opt-season .opt.current", "#panel-dm"];
         for (var ff = 0; ff < firstFocus.length; ff++) {
             var ffNode = document.querySelector(firstFocus[ff]);
             if (ffNode && ffNode.offsetParent !== null) { Nav.focus(ffNode); break; }
@@ -6791,6 +6817,7 @@
         if (optionsOpen) {
             paintParts();
             paintSeason();
+            paintEpisodeControls();
             paintPanelActions();
             loadPanelActions();
             loadFollow(el("panel-follow"), full.mid);
