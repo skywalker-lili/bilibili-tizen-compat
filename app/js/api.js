@@ -448,7 +448,8 @@ var API = (function () {
          * qn on avc and hevc; equal tiers go to avc. Asked with the account
          * first (a signed-in viewer may be given more), then without it if the
          * signed request is refused. `qn` asks for a lower tier (AVPlay stepping
-         * down when a TS tier will not play); 0 is the best there is.
+         * down when a TS tier will not play, MSE when a tier will not decode);
+         * 0 is the best there is.
          * A room with TS and no fMP4 is still a room (urls empty; AVPlay plays
          * the TS): issue #7, 10-23, a Tizen 4.0 set was told 「没有 HLS-fMP4 的流」
          * and nothing said what the room did offer — `shape` says, for the log.

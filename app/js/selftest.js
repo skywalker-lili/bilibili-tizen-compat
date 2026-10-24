@@ -1439,6 +1439,44 @@ var SelfTest = (function () {
             var moved = document.getElementById("live-meta").textContent !== probe.liveWas;
             return (moved && livePlaying()) ? null : WAIT;
         }, 30000, "换台 30 秒没出画面"],
+        /* Issue #7, 10-24 (Tizen 4.0): MSE could not decode one room's 原画, and
+         * that moved the whole session onto an AVPlay that played nothing — the
+         * room that had just played as well. Made to order: the next Shaka
+         * start reports 3016. This room should step down a tier, still on MSE
+         * (a room with no lower tier goes to AVPlay by itself), and the room
+         * before it should still play on MSE. */
+        ["直播：MSE 解不了这个直播间（3016）→ 降一档还是 MSE，出画面", 300, function () {
+            if (!probe.decode) {
+                probe.decode = true;
+                window.__stLiveDecodeFailOnce();
+                return WAIT;
+            }
+            if (visible("shell")) { return "退回了网格（看 live: 那几行）"; }
+            var st = window.__stLiveRoom() || {};
+            if (st.native) { return "一个直播间解不了，整次运行都改走了 AVPlay"; }
+            if (!st.mseSteps) {
+                if (Player.mode() !== "avplay") { return WAIT; }
+                post("直播间 " + st.room + " 没有更低的档，这个直播间改走了 AVPlay");
+                return null;
+            }
+            if (Player.mode() === "avplay") { return "降了档却走了 AVPlay"; }
+            if (Player.mode() !== "live" || !livePlaying()) { return WAIT; }
+            post("直播间 " + st.room + " 降到 qn" + st.used + "，还是 MSE，出画面了");
+            return null;
+        }, 30000, "30 秒没降档出画面（看 live: 那几行）"],
+        ["直播：上键回到前一个直播间，还是 MSE，出画面", 300, function () {
+            if (!probe.decodeBack) {
+                probe.decodeBack = document.getElementById("live-meta").textContent;
+                key(KEY.UP);
+                return WAIT;
+            }
+            if (visible("shell")) { return "退回了网格（看 live: 那几行）"; }
+            if (document.getElementById("live-meta").textContent === probe.decodeBack) { return WAIT; }
+            if (Player.mode() === "avplay") { return "前一个直播间走了 AVPlay"; }
+            if (Player.mode() !== "live" || !livePlaying()) { return WAIT; }
+            key(KEY.DOWN);   /* back to the room the steps below are in */
+            return null;
+        }, 30000, "30 秒没出画面"],
         /* 10-23: one room here was Shaka 4032 (nothing in its playlist this
          * engine plays) four times running, and closed. Made to order — the
          * next Shaka start reports it — the room should move to AVPlay by
@@ -1530,6 +1568,22 @@ var SelfTest = (function () {
             post("直播间 " + st.room + " 的 TS 从 qn" + st.below + " 降到 qn" + st.used + "（" + st.fmt + "），出画面了");
             return done(null);
         }, 75000, "75 秒没降档出画面（看 live: 那几行）"],
+        /* The other half of issue #7, 10-24: a session already on AVPlay (its
+         * first room decoded at no tier) and this room's AVPlay with nothing to
+         * play — on that Tizen 4.0 set, every room. MSE gets one try, and a
+         * picture there brings the rooms after it back to MSE. */
+        ["直播：整次运行在 AVPlay 上、AVPlay 放不了这个直播间 → 试 MSE，出画面后回到 MSE", 300, function () {
+            if (!probe.mseTry) {
+                probe.mseTry = true;
+                window.__stLiveNative(true, "none");
+                return WAIT;
+            }
+            if (visible("shell")) { window.__stLiveNative(false); return "退回了网格（看 live: 那几行）"; }
+            var st = window.__stLiveRoom() || {};
+            if (!st.mseTry || Player.mode() !== "live" || !livePlaying()) { return WAIT; }
+            window.__stLiveNative(false);
+            return st.native ? "MSE 放出来了，这次运行却还在 AVPlay 上" : null;
+        }, 30000, "30 秒没在 MSE 上出画面（看 live: 那几行）"],
         /* Issue #7 (10-23, a Tizen 4.0 set): a room offering no fMP4 was closed
          * with 「没有 HLS-fMP4 的流」 whatever else it had. With only TS it goes
          * to AVPlay, on any set. TS not answering here is weather: the room
@@ -1539,6 +1593,7 @@ var SelfTest = (function () {
             var nf = probe.noFmp4;
             if (!nf) {
                 nf = probe.noFmp4 = { t0: -1, reopened: false };
+                window.__stLiveNative(false);   /* in case the step above timed out with AVPlay given nothing */
                 window.__stLiveNoFmp4(true);
                 return WAIT;
             }

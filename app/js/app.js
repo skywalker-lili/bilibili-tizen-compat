@@ -2461,13 +2461,18 @@
         liveFail4032Once = true;
         if (liveRoom) { liveRoom.nativeFor = ""; Player.stop(); startLiveRoom(""); }
     };
+    window.__stLiveDecodeFailOnce = function () {
+        liveFailDecodeOnce = true;
+        if (liveRoom) { liveRoom.nativeFor = ""; Player.stop(); startLiveRoom(""); }
+    };
     window.__stLiveNoFmp4 = function (on) {
         liveNoFmp4 = !!on;
         if (on && liveRoom) { liveRoom.nativeFor = ""; Player.stop(); startLiveRoom(""); }
     };
     window.__stLiveRoom = function () {
-        return liveRoom && { room: liveRoom.nativeFor, fmt: liveRoom.nativeFmt, used: liveRoom.nativeUsed,
-                             below: liveRoom.tsBelow, gaveUp: liveRoom.tsGaveUp, token: liveRoom.token, moved: liveRoom.moved };
+        return liveRoom && { room: liveRoom.nativeFor, fmt: liveRoom.nativeFmt, used: liveRoom.qnUsed,
+                             below: liveRoom.tsBelow, gaveUp: liveRoom.tsGaveUp, token: liveRoom.token, moved: liveRoom.moved,
+                             mseSteps: liveRoom.mseSteps, mseTry: liveRoom.mseTry, native: liveNative };
     };
     window.__stWake = function () { lastWake = 0; wokeUp("自测模拟关机再开机", AWAY_MS); };
 
@@ -3157,6 +3162,11 @@
                 }, 2000);
             } else if (tracks.length) {
                 report("subtitle", "再问一次还是没有地址，这次没有字幕");
+            } else {
+                /* 10-24: the selftest's own player/v2 listed a track for a video
+                 * and its playback showed none, with not one subtitle line. One
+                 * line a video, and only with subtitles switched on. */
+                report("subtitle", "player/v2 没给字幕轨");
             }
             return;
         }
@@ -4306,10 +4316,19 @@
      * live room failed with the element's decode error (Shaka 3016, data[0]=3)
      * — the live fMP4 has audio and video muxed in one stream where on-demand
      * keeps them apart, and 原画 is 1080p High@5.0; which of the two the engine
-     * refuses is not known. Whatever it is, the native player sidesteps it:
-     * after one such failure, this room and every later one this session go to
-     * AVPlay. Not kept across launches — a stray decode error on a newer set
-     * should cost one session, not the set's whole life.
+     * refuses is not known. Whatever it is, the native player sidesteps it.
+     *
+     * Issue #7, 10-24 (Tizen 4.0, 1.4.2): there MSE played one room's 原画 and
+     * failed the next one's the same way, with the same codec string and size
+     * — so it is the stream, not the set, and not the muxing. That set's AVPlay
+     * played nothing (fMP4 never left prepare, both TS hosts silent), and one
+     * decode error had moved the whole session onto it: every room after it
+     * failed, the first one too. Now a decode error steps this room down a
+     * tier, still on MSE (at most twice); when no tier decodes, this room goes
+     * to AVPlay — and the session with it only while MSE has not shown one live
+     * picture yet (liveMseOk). A session on AVPlay whose AVPlay has nothing for
+     * a room tries MSE on it once (room.mseTry); a picture there brings later
+     * rooms back to MSE first. Not kept across launches.
      *
      * Which playlist AVPlay gets: TS, from the first host whose playlist
      * answers. TS is weather — on 10-22 one room's TS was 404 on one host and
@@ -4329,11 +4348,13 @@
      * So does a room whose playlist Shaka finds nothing playable in (4032,
      * LIVE_UNSUPPORTED): reconnecting fetched the same refusal three times. */
     var liveNative = false;
+    var liveMseOk = false;          /* MSE has shown a live picture this session */
     var liveFmp4Dead = false;       /* AVPlay could not start HLS-fMP4 this session */
-    var liveNativeForce = "";       /* selftest only: "ts" | "fmp4" */
+    var liveNativeForce = "";       /* selftest only: "ts" | "fmp4" | "none" (AVPlay is given nothing) */
     var liveFailTsOnce = false;     /* selftest only: the next TS start reports NOT_SUPPORTED_FORMAT */
     var liveNoFmp4 = false;         /* selftest only: every room answers as if it had TS and no fMP4 */
     var liveFail4032Once = false;   /* selftest only: the next Shaka start reports 4032 */
+    var liveFailDecodeOnce = false; /* selftest only: the next Shaka start reports 3016 */
     var LIVE_DECODE_FAIL = /code=3016 .*data\[0\]=[34](?!\d)|媒体元素出错 code=[34](?!\d)/;
     /* Shaka's CONTENT_UNSUPPORTED_BY_BROWSER: nothing in this room's playlist
      * is playable here. 10-23 one room on the Tizen 9 set, four times running,
@@ -4357,8 +4378,8 @@
         if (index < 0) { list = [v]; index = 0; }
         liveRoom = { list: list, index: index, tries: 0, token: 0, item: null,
                      qnName: "", pausedAt: 0, timed: false, failing: false, okTimer: null,
-                     nativeFmt: "", nativeFor: "", nativeQn: 0, nativeUsed: 0, nativeAccept: [], tsBelow: 0, tsGaveUp: false, steps: 0,
-                     timedAt: 0, moved: false, clockPos: -1, clockMovedAt: 0, bufAt: 0, mseRefused: false };
+                     nativeFmt: "", nativeFor: "", qnAsk: 0, qnUsed: 0, qnAccept: [], tsBelow: 0, tsGaveUp: false, steps: 0,
+                     timedAt: 0, moved: false, clockPos: -1, clockMovedAt: 0, bufAt: 0, mseRefused: false, mseSteps: 0, mseTry: false };
         startLiveRoom("");
     }
 
@@ -4375,14 +4396,16 @@
         room.clockPos = -1;
         room.bufAt = 0;
         room.failing = false;
-        /* What the native route learned is about this room's streams. */
+        /* What either route learned is about this room's streams. */
         if (room.nativeFor !== String(v.roomid)) {
             room.nativeFor = String(v.roomid);
-            room.nativeQn = 0;
+            room.qnAsk = 0;
             room.tsBelow = 0;
             room.tsGaveUp = false;
             room.steps = 0;
             room.mseRefused = false;
+            room.mseSteps = 0;
+            room.mseTry = false;
         }
         el("shell").className = "veiled";
         el("pause-glyph").className = "hidden";
@@ -4402,27 +4425,38 @@
                        "，主机 " + (u.split("/")[2] || "?") + (why ? "（" + why + "）" : "") + (note || ""));
                 paintLiveUi();
             }
-            if (!liveNative && url && !room.mseRefused) {
-                open(p.qnName, p.codec, "", url);
+            function mse(note) {
+                room.qnUsed = p.qn;
+                room.qnAccept = p.acceptQn;
+                open(p.qnName, p.codec, "", url, note);
                 Player.playLive(url);
-                if (liveFail4032Once) {
-                    liveFail4032Once = false;
+                var fake = liveFail4032Once ? "直播：加载失败 code=4032 category=4 severity=2（自测造的）" :
+                           liveFailDecodeOnce ? "直播：shaka code=3016 category=3 severity=2 data[0]=3（自测造的）" : "";
+                liveFail4032Once = liveFailDecodeOnce = false;
+                if (fake) {
                     setTimeout(function () {
-                        if (liveRoom === room && token === room.token && !room.timed) {
-                            onLiveEvent("error", "直播：加载失败 code=4032 category=4 severity=2（自测造的）");
-                        }
+                        if (liveRoom === room && token === room.token && !room.timed) { onLiveEvent("error", fake); }
                     }, 0);
                 }
-                return;
+                /* 10-24 selftest: a host answering the playlist 403 is only a
+                 * recoverable error to Shaka, retried for as long as anyone
+                 * waits — thirty seconds of spinner and no exit. The same
+                 * deadline as AVPlay's; the reconnect takes the other host. */
+                setTimeout(function () {
+                    if (liveRoom === room && token === room.token && !room.timed && !Player.userPaused()) {
+                        onLiveEvent("error", "直播：MSE " + (LIVE_NATIVE_WAIT / 1000) + " 秒没出画面");
+                    }
+                }, LIVE_NATIVE_WAIT);
             }
+            if ((!liveNative || room.mseTry) && url && !room.mseRefused) { mse(""); return; }
             /* No fMP4 for Shaka: the TS is AVPlay's on any set (issue #7). */
             if (!url) { report("live", "房间 " + v.roomid + " 没有 HLS-fMP4，给的是 " + p.shape); }
             function native(fmt, u, note) {
                 if (liveRoom !== room || token !== room.token) { return; }
                 var ts = fmt === "HLS-TS";
                 room.nativeFmt = fmt;
-                room.nativeUsed = ts ? p.tsQn : p.qn;
-                room.nativeAccept = ts ? p.tsAcceptQn : p.acceptQn;
+                room.qnUsed = ts ? p.tsQn : p.qn;
+                room.qnAccept = ts ? p.tsAcceptQn : p.acceptQn;
                 room.qnName = ts ? p.tsQnName : p.qnName;
                 open(room.qnName, ts ? p.tsCodec : p.codec, " " + fmt + " 走 AVPlay", u, note);
                 Player.playLiveNative(u);
@@ -4455,9 +4489,16 @@
                 }, 1000);
             }
             function withoutTs(note) {
-                if (!liveFmp4Dead && url) { native("HLS-fMP4", url, note); return; }
-                report("live", "房间 " + v.roomid + " 没有 AVPlay 放得了的流" + note +
-                       (url ? "（HLS-fMP4 这次运行里 AVPlay 起不来）" : "（也没有 HLS-fMP4）"));
+                if (!liveFmp4Dead && url && liveNativeForce !== "none") { native("HLS-fMP4", url, note); return; }
+                var lacks = note + (!url ? "（也没有 HLS-fMP4）" : liveFmp4Dead ? "（HLS-fMP4 这次运行里 AVPlay 起不来）" : "");
+                /* The session is on AVPlay because of some other room; this
+                 * one MSE has not refused. */
+                if (liveNative && url && !room.mseRefused && !room.mseTry) {
+                    room.mseTry = true;
+                    mse("（AVPlay 放不了它" + lacks + "，试一次 MSE）");
+                    return;
+                }
+                report("live", "房间 " + v.roomid + " 没有 AVPlay 放得了的流" + lacks);
                 stopLive();
                 trouble("这个直播间现在放不了");
             }
@@ -4467,6 +4508,7 @@
                 report("live", "要了低于 qn" + room.tsBelow + " 的 TS，给的还是 qn" + p.tsQn + "，这个直播间不再试 TS");
                 room.tsGaveUp = true;
             }
+            if (liveNativeForce === "none") { withoutTs("（自测：当作 AVPlay 什么都放不了）"); return; }
             var tsUrls = room.tsGaveUp ? [] : p.tsUrls;
             if (!tsUrls.length) { withoutTs(room.tsGaveUp ? "（这个直播间的 TS 各档都试过了）" : "（没给 HLS-TS）"); return; }
             /* Starting from the host this reconnect is due, then the other. */
@@ -4489,7 +4531,16 @@
             report("live", "房间 " + v.roomid + " 取不到流：" + whyNot + (shape ? "（" + shape + "）" : ""));
             stopLive();
             trouble("这个直播间现在放不了：" + whyNot);
-        }, room.nativeQn);
+        }, room.qnAsk);
+    }
+
+    /* The next tier below `used` in a room's accept list; 0 when there is none. */
+    function lowerQn(accept, used) {
+        var lower = 0;
+        for (var q = 0; q < accept.length; q++) {
+            if (accept[q] < used && accept[q] > lower) { lower = accept[q]; }
+        }
+        return lower;
     }
 
     /* Does a playlist answer as one, within four seconds? For choosing what
@@ -4530,6 +4581,13 @@
                 room.timedAt = room.clockMovedAt = new Date().getTime();
                 report("live", "到画面 " + Player.timings());
                 showLiveUi();
+                if (Player.mode() === "live") {
+                    liveMseOk = true;
+                    if (liveNative) {
+                        liveNative = false;
+                        report("live", "MSE 放得了这个直播间，之后的直播间先走 MSE");
+                    }
+                }
             }
             /* A good minute buys the reconnect budget back. */
             if (room.okTimer) { clearTimeout(room.okTimer); }
@@ -4565,19 +4623,33 @@
             room.failing = true;
             report("live", data);
             if (room.okTimer) { clearTimeout(room.okTimer); room.okTimer = null; }
-            /* Not a reconnect: the same room again on the other player, with the
-             * budget untouched and nothing new on the screen. */
-            if (!liveNative && Player.mode() === "live" && LIVE_DECODE_FAIL.test(String(data))) {
-                liveNative = true;
-                report("live", "这台电视的 MSE 解不了直播流，这个和之后的直播间都改走 AVPlay");
+            /* Not a reconnect: the same room again a tier down or on the other
+             * player, with the budget untouched and nothing new on the screen. */
+            var decode = LIVE_DECODE_FAIL.test(String(data));
+            if (Player.mode() === "live" && !room.mseRefused && (decode || LIVE_UNSUPPORTED.test(String(data)))) {
+                var down = decode && room.mseSteps < 2 ? lowerQn(room.qnAccept, room.qnUsed) : 0;
                 Player.stop();
-                startLiveRoom("");
-                return;
-            }
-            if (!liveNative && !room.mseRefused && Player.mode() === "live" && LIVE_UNSUPPORTED.test(String(data))) {
+                if (down) {
+                    room.mseSteps++;
+                    room.qnAsk = down;
+                    report("live", "MSE 解不了 " + room.qnName + "（qn" + room.qnUsed + "），这个直播间降到 qn" + down + " 再试");
+                    startLiveRoom("");
+                    return;
+                }
                 room.mseRefused = true;
-                report("live", "这个直播间的流 MSE 放不了（4032），这个直播间改走 AVPlay");
-                Player.stop();
+                var what = decode ? "MSE 哪一档都解不了" : "这个直播间的流 MSE 放不了（4032）";
+                if (room.mseTry) {
+                    report("live", what + "，AVPlay 也放不了，这个直播间放不了");
+                    stopLive();
+                    trouble("这个直播间现在放不了");
+                    return;
+                }
+                if (decode && !liveMseOk && !liveNative) {
+                    liveNative = true;
+                    report("live", what + "，这次运行 MSE 还没放出过直播，这个和之后的直播间都改走 AVPlay");
+                } else {
+                    report("live", what + "，这个直播间改走 AVPlay");
+                }
                 startLiveRoom("");
                 return;
             }
@@ -4592,17 +4664,14 @@
                 var stuck = /时间没走/.test(String(data));
                 if (room.nativeFmt === "HLS-fMP4" && !stuck) { liveFmp4Dead = true; }
                 if (room.nativeFmt === "HLS-TS" || stuck) {
-                    var lower = 0;
-                    for (var q = 0; q < room.nativeAccept.length; q++) {
-                        if (room.nativeAccept[q] < room.nativeUsed && room.nativeAccept[q] > lower) { lower = room.nativeAccept[q]; }
-                    }
+                    var lower = lowerQn(room.qnAccept, room.qnUsed);
                     /* At most three steps a room: a server that answers a lower ask
                      * with the same tier must not turn this into a loop. */
                     if (lower && room.steps < 3) {
                         room.steps++;
-                        report("live", room.nativeFmt + " " + room.qnName + "（qn" + room.nativeUsed + "）AVPlay 放不了，这个直播间降到 qn" + lower + " 再试");
-                        room.nativeQn = lower;
-                        if (room.nativeFmt === "HLS-TS") { room.tsBelow = room.nativeUsed; }
+                        report("live", room.nativeFmt + " " + room.qnName + "（qn" + room.qnUsed + "）AVPlay 放不了，这个直播间降到 qn" + lower + " 再试");
+                        room.qnAsk = lower;
+                        if (room.nativeFmt === "HLS-TS") { room.tsBelow = room.qnUsed; }
                         Player.stop();
                         startLiveRoom("");
                         return;
@@ -6454,9 +6523,13 @@
             if (got.resume !== undefined) { return; }
             got.resume = r;
             decide();
-        }, function () {
+        }, function (why) {
             clearTimeout(resumeTimer);
-            if (playing !== session || got.resume !== undefined) { return; }
+            if (playing !== session) { return; }
+            /* Where the subtitle list comes from, too: without this line a
+             * missing subtitle left nothing in the log (10-24 selftest). */
+            if (subtitlesEnabled()) { report("subtitle", "player/v2 没问到（" + why + "），这次没有字幕"); }
+            if (got.resume !== undefined) { return; }
             got.resume = null;
             decide();
         });
@@ -6777,6 +6850,10 @@
     var lastReport = { key: "", secs: -2, at: 0 };
     var csrfNoted = false;
     var routeNoted = false;
+    /* 10-24: one set's every heartbeat came back HTTP 403 on both routes, and
+     * those were 229 of the 600 lines its upload carried. Each different
+     * answer is said once a run. */
+    var historyFailSeen = {};
 
     function reportProgress(secs, force, durSecs) {
         if (!playing || !Auth.isLoggedIn()) { return; }
@@ -6830,7 +6907,9 @@
                 report("history", "上报成功，" + note);
             }
         }, function (why) {
-            report("history", "上报失败 " + d.bvid + " " + secs + "s：" + why);
+            if (historyFailSeen[why]) { return; }
+            historyFailSeen[why] = true;
+            report("history", "上报失败 " + d.bvid + " " + secs + "s：" + why + "（同样的失败这次运行不再记）");
         });
     }
 
