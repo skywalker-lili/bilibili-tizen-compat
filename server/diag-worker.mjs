@@ -10,7 +10,10 @@
  * The client scrubs before sending (names, titles, credentials); this end does
  * not store the sender's IP address — only the country Cloudflare resolves it
  * to, because "which region's CDN" is exactly the question issue #5 could not
- * answer. */
+ * answer. Nor an IP address inside the lines: 10-24, a CDN's 403 page quoted
+ * in a log line (Client_ip), a response header (x-debug-rmt-addr) and the
+ * stream url's oi= carried the viewer's, and every build already out there
+ * keeps sending them — so this end takes them out too (noIp). */
 
 const APPS = new Set(["bilibili-tizen", "douyin-tizen", "telegram-tizen"]);
 const MAX_BYTES = 600000;        // diag.js caps its ring at 160k characters; CJK is 3 bytes each
@@ -36,6 +39,20 @@ function json(obj, status = 200) {
 }
 
 function str(v, n) { return String(v == null ? "" : v).slice(0, n); }
+
+/* The same three rules as app/js/diag.js: a labelled address of any shape,
+ * oi= (an address as one integer), and any other dotted quad except a url's
+ * host (a CDN node) or a version after a slash (Chrome/120.0.0.0). */
+const IP_RULES = [
+  [/((?:client[_-]?ip|x-debug-rmt-addr|x-forwarded-for|x-real-ip|remote[_-]?addr)["']?\s*[:=]\s*["']?)[^\s"'<>,;&]+/gi, "$1…"],
+  [/(\boi ?[=:：] ?)\d+/g, "$1…"],
+  [/(:\/\/|\/)?\b\d{1,3}(?:\.\d{1,3}){3}\b/g, (m, kept) => (kept ? m : "…")],
+];
+function noIp(s) {
+  let out = String(s == null ? "" : s);
+  for (const [re, to] of IP_RULES) out = out.replace(re, to);
+  return out;
+}
 
 function makeId() {
   const bytes = new Uint8Array(8);
@@ -83,10 +100,10 @@ async function upload(request, env, url) {
   await env.DB.prepare(
     "INSERT INTO uploads (id, at, app, device, version, running, reason, manual, country, colo, ua, via, tv_at, tz, n, body) " +
     "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
-    .bind(id, now, d.app, d.device, str(d.version, 32), str(d.running, 32), str(d.reason, 300),
+    .bind(id, now, d.app, d.device, str(d.version, 32), str(d.running, 32), noIp(str(d.reason, 300)),
           d.manual ? 1 : 0, str(cf.country, 8), str(cf.colo, 8), str(d.ua, 300),
           url.protocol.replace(":", ""), Number(d.tvAt) || 0, Number(d.tz) || 0,
-          d.lines.length, d.lines.join("\n"))
+          d.lines.length, d.lines.map(noIp).join("\n"))
     .run();
   return json({ id });
 }
@@ -164,4 +181,4 @@ export default {
   async scheduled(event, env) { await prune(env); },
 };
 
-export const _test = { prune, PER_DEVICE_HOUR, PER_DAY, KEEP_MS, MANIFEST_TTL, BUNDLE_TTL };
+export const _test = { prune, noIp, PER_DEVICE_HOUR, PER_DAY, KEEP_MS, MANIFEST_TTL, BUNDLE_TTL };

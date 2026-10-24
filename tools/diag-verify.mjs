@@ -125,6 +125,25 @@ await t("地址里的签名和会话参数抹掉，主机和路径留着", () =>
   assert.doesNotMatch(Diag.scrub("cookie SESSDATA=abc%2C123; bili_jct=zzz"), /abc%2C123|zzz/);
 });
 
+await t("观众的 IP 不出门：CDN 的 403 页、响应头、流地址里的 oi；CDN 节点的地址和版本号留着", () => {
+  const { Diag } = television();
+  /* Made-up addresses (documentation ranges), in the shapes 10-24's uploads carried. */
+  const lines = [
+    "live: 直播：shaka 可恢复的错误 code=1001 data[0]=https://d1--ov-gotcha208.bilivideo.com/live-bvc/1/live_1_bluray/index.m3u8" +
+      "?expires=1792832256&len=0&oi=3405803777&pt=web&qn=10000 data[1]=403 data[2]=<html> <p>Client_ip: 203.0.113.7</p> " +
+      "<p>Client_ip: 2001:db8::7</p> </html> data[3]={\"server\":\"nginx\",\"x-debug-rmt-addr\":\"198.51.100.23\",\"status\":\"403\"}",
+    "player: 加载失败 upos-sz-mirrorcosov.bilivideo.com /upgcxcode/1.m4s os=cosovbv oi=3405803777 platform=pc",
+    "probe: 你的地址 192.0.2.44 被拒",
+  ];
+  for (const l of lines) {
+    const s = Diag.scrub(l);
+    assert.doesNotMatch(s, /203\.0\.113\.7|2001:db8::7|198\.51\.100\.23|3405803777|192\.0\.2\.44/, s);
+  }
+  assert.match(Diag.scrub(lines[0]), /d1--ov-gotcha208\.bilivideo\.com\/live-bvc/);
+  assert.match(Diag.scrub("player: https://192.0.2.80:4483/upgcxcode/1.m4s 403"), /https:\/\/192\.0\.2\.80:4483/);
+  assert.match(Diag.scrub("engine: Mozilla/5.0 Chrome/120.0.0.0 Safari/537.36"), /Chrome\/120\.0\.0\.0/);
+});
+
 await t("上传的整份内容里没有任何包起来的东西（原因也过一遍）", () => {
   const tv = television();
   tv.Diag.record("player", "BV1abc " + tv.Diag.priv("秘密标题") + " 播放错误");
@@ -339,6 +358,19 @@ await t("worker：收下 diag.js 发的那份，凭令牌能列、能取", async
   assert.equal(one.body.reason, "所有路都试过");
   const viaHttp = await call(env, "POST", "/v1/upload", { body: envelope(), scheme: "http" });
   assert.equal((await call(env, "GET", "/v1/get?id=" + viaHttp.body.id, { token: "s3cret" })).body.via, "http");
+});
+
+await t("worker：旧版本没去掉的 IP，这一头也不存（CDN 节点的地址留着）", async () => {
+  const env = { DB: d1(), READ_TOKEN: "s3cret" };
+  const lines = ["live: data[0]=https://d1--ov-gotcha208.bilivideo.com/x/index.m3u8?oi=3405803777&pt=web data[2]=<p>Client_ip: 203.0.113.7</p>",
+                 "player: data[3]={\"x-debug-rmt-addr\":\"198.51.100.23\"} https://192.0.2.80:4483/upgcxcode/1.m4s",
+                 "probe: 你的地址 192.0.2.44，Client_ip: 2001:db8::7"];
+  const up = await call(env, "POST", "/v1/upload", { body: envelope({ lines, reason: "被拒 Client_ip: 203.0.113.7" }) });
+  const one = (await call(env, "GET", "/v1/get?id=" + up.body.id, { token: "s3cret" })).body;
+  assert.doesNotMatch(one.body + one.reason, /203\.0\.113\.7|198\.51\.100\.23|3405803777|192\.0\.2\.44|2001:db8::7/, one.body);
+  assert.match(one.body, /https:\/\/d1--ov-gotcha208\.bilivideo\.com\/x\/index\.m3u8/);
+  assert.match(one.body, /https:\/\/192\.0\.2\.80:4483/);
+  assert.equal(workerTest.noIp("engine: Chrome/120.0.0.0"), "engine: Chrome/120.0.0.0");
 });
 
 await t("worker：没令牌或令牌不对读不到；没设令牌谁都读不到", async () => {

@@ -103,6 +103,15 @@ var Diag = (function () {
         /* Signed and session parameters in any url that reaches a log line. */
         [/([?&](?:access_key|access_token|refresh_token|upsig|hdnts|sign|w_rid|csrf|SESSDATA|bili_jct|DedeUserID|buvid3|mid)=)[^&\s"'<>]*/g, "$1…"],
         [/\b(SESSDATA|bili_jct|DedeUserID|DedeUserID__ckMd5|buvid3)=[^;&\s]+/g, "$1=…"],
+        /* The viewer's IP address (10-24: issue #7's uploads carried it seven
+         * times over). A CDN's 403 page prints it (Client_ip), a response
+         * header Shaka quotes names it (x-debug-rmt-addr), the stream url
+         * carries it as one integer (oi=). Any other dotted quad goes too,
+         * except a url's host — a CDN node is worth knowing — and a version
+         * after a slash (Chrome/120.0.0.0). */
+        [/((?:client[_-]?ip|x-debug-rmt-addr|x-forwarded-for|x-real-ip|remote[_-]?addr)["']?\s*[:=]\s*["']?)[^\s"'<>,;&]+/gi, "$1…"],
+        [/(\boi ?[=:：] ?)\d+/g, "$1…"],
+        [/(:\/\/|\/)?\b\d{1,3}(?:\.\d{1,3}){3}\b/g, function (m, kept) { return kept ? m : "…"; }],
         /* access_key and upsig are both 32 hex digits; nothing a reader needs is. */
         [/\b[0-9a-f]{32}\b/g, "…"]
     ];
